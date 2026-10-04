@@ -21,8 +21,9 @@ The design goal is not to build another prompt-heavy chatbot. It is to split res
 - **RuleCheeseBench** reuses the exact same runtime to compare models under replayable scenarios.
 
 SAGA provides persistent state, replay, branching, and durable external tool results.
-The PocketRisu command demo now connects stable user turns to that runtime without NMOS.
-Production NMOS, MCP, and LLM bindings remain separate integration work.
+The PocketRisu command demo connects stable user turns to that runtime without NMOS,
+with optional Vertex narration after commit. Production NMOS, MCP, and LLM intent
+bindings remain separate integration work.
 
 ## Why this shape
 
@@ -45,8 +46,15 @@ adapter; SAGA does not embed a second memory system into the game engine.
 For the API-key-free PocketRisu **6011** playtest, use the
 [isolated deployment](deploy/README.md) and [starter card/provider](packs/risu-starter/README.md).
 Send `attack opponent`, `check strength 10`, or `save dexterity 12`; regeneration reuses the
-committed event and dice. This is a command-driven SRD subset with fallback narration, not
-natural-language TRPG orchestration.
+committed event and dice. This is a command-driven SRD subset; natural-language intent is
+not supported. Fallback narration needs no key. For optional Gemini narration, open
+**Settings → Plugins → SAGA SRD Demo → Vertex 서비스 계정 JSON** and paste the entire
+service-account JSON. Keep **SAGA SRD Demo** as main; SAGA derives the project/global endpoint
+and uses **Gemini 3.8 Flash** automatically. No other model settings are needed. Blank input
+keeps fallback; model failure/timeout preserves committed facts and status. See the
+[setup and credential boundaries](packs/risu-starter/README.md#optional-vertex-narration).
+Two approved live Gemini calls on 6011 passed with unchanged authoritative results; see the
+[verification report](docs/progress/risu-vertex-narration.md) for scope and cost uncertainty.
 
 Set `useSayNothing=false` in host settings for this demo. Full non-comment history, including
 hidden context, is limited to 256 user turns; semantic latest-action edits fork safely, while
@@ -148,6 +156,7 @@ Implemented:
 - FastAPI debug endpoints
 - a versioned OpenAI-shaped Risu completion adapter with immutable host-turn mapping
 - PocketRisu v3 provider and starter card for no-memory SRD commands and authoritative status
+- opt-in Vertex narration from one service-account JSON input, after commit with bounded fallback
 - NMOS and MCP Dice ports/adapters with explicit TODO contracts
 - benchmark result models and scenario shape
 - tests for the most important invariants
@@ -157,7 +166,7 @@ Not implemented yet:
 - production NMOS API binding
 - production MCP client binding
 - LLM intent interpreter
-- general RisuAI card/lore compatibility, LLM narration and streaming
+- general RisuAI card/lore compatibility and streaming (narration copies only bounded text context)
 - legacy JSONL import and future state/event semantic migrations
 - complete TRPG rulesets
 - full RuleCheeseBench runner and judges

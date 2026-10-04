@@ -110,6 +110,36 @@
       ],
       "title": "HostTurn",
       "type": "object"
+    },
+    "VertexNarrationOptions": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "items": {
+            "maxLength": 4000,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Context",
+          "type": "array"
+        },
+        "provider": {
+          "const": "vertex",
+          "title": "Provider",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "provider"
+      ],
+      "title": "VertexNarrationOptions",
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -128,6 +158,17 @@
       "const": "saga-srd-demo",
       "title": "Model",
       "type": "string"
+    },
+    "narration": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/VertexNarrationOptions"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "saga": {
       "$ref": "#/$defs/HostTurn"

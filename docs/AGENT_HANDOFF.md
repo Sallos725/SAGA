@@ -26,9 +26,26 @@ unchanged. The starter can proceed independently while NMOS remains unavailable.
 
 Bridge identity v2 subsequently fixes cosmetic command rerolls and context-hiding resets;
 read [the identity fix report](progress/risu-identity-context-fix.md) before extending it.
-Plugin 0.2.0 sends hidden non-comment user turns for committed-prefix validation. Existing
+Plugin 0.2.0 introduced hidden non-comment user turns for committed-prefix validation. Existing
 v1 worlds are exact-history read-only, with new v2 play requiring a new host chat. No database
 or runtime schema migration was added. This trusted demo is not adversarial benchmark isolation.
+
+Plugin 0.3.0 adds optional Vertex narration after commit. The user pastes service-account
+JSON into one plugin field; blank input keeps fallback. SAGA derives the project/global endpoint
+and uses `gemini-3.8-flash`. Credentials travel in a host-redacted secret header and remain
+request-scoped in SAGA, outside game events/state/journals. The optional typed narration body
+contains only bounded context. Invalid JSON/key fails before dispatch; OAuth/model failures
+return committed fallback with a generic notice. Standard `google-auth` is an API-extra dependency.
+Read the [narration report](progress/risu-vertex-narration.md) and starter guide for timing,
+credential handling and evidence. No PocketRisu modification or auxiliary-model configuration
+is required. Installation, JSON input rejection, fallback regeneration and two approved live
+Gemini calls are verified on 6011; authoritative results stayed unchanged. Exact billed cost
+was not observed. Natural-language intent and NMOS remain deferred.
+
+Owner rule for billable provider tests: before every future test, disclose its scope, maximum
+call count, estimated cost and assumptions/uncertainty, then obtain explicit approval. Stop
+at the approved limit or the first failure; do not make unapproved retries. The recorded
+two-call allowance has been consumed. This is an agent workflow rule, not an application UI step.
 
 The owner's oneuldo memory-pilot branch provides a concrete PocketRisu plugin route to
 chat/message ids. Read [the integration review](RISUAI_INTEGRATION.md#host-identity-reference-oneuldo-memory-pilot)
@@ -65,7 +82,7 @@ The plugin was not run; backend transport and live host compatibility remain unv
 
 > The command/provider slice is implemented. First read its integration contract and current-host evidence. Preserve one stable runtime event per unchanged user action and immutable edit branches. A regenerated assistant reply must reuse the committed result and must not reinterpret intent or call dice/tools again.
 >
-> Add an opt-in LLM intent/narrator binding only when a provider is selected. Keep deterministic commands and fallback narration usable without credentials or NMOS. Preserve pre-narration commit and rerender tests. Address bounded history/branch storage before claiming long-horizon host operation. General card/lore compatibility and continuation remain separate work.
+> Opt-in Vertex narration is implemented; check its current host/provider verification in the narration report. An LLM intent binding remains separate work and must produce a validated closed GameEvent. Keep deterministic commands and fallback narration usable without credentials or NMOS. Preserve pre-narration commit and rerender tests. Address bounded history/branch storage before claiming long-horizon host operation. General card/lore compatibility and continuation remain separate work.
 
 ## Fourth prompt: RuleCheeseBench
 

@@ -4,9 +4,9 @@
 
 The [starter](../packs/risu-starter/README.md) implements a small playable path on PocketRisu
 1.13.0: v3 provider → `POST /v1/chat/completions` → validated SRD `GameEvent` → persistent
-repository → committed-fact narration → authoritative status. It uses deterministic commands,
-local seeded dice and no memory provider. It does not implement LLM intent interpretation,
-LLM narration, streaming, arbitrary card/lore integration, or a complete ruleset.
+repository → fallback or optional Vertex narration → authoritative status. It uses
+deterministic commands, local seeded dice and no memory provider. It does not implement LLM
+intent interpretation, streaming, arbitrary card/lore integration, or a complete ruleset.
 
 The current installation uses the **SAGA SRD Demo** plugin provider, rather than configuring
 an ordinary Custom API URL: stable host identities and a main-generation guard are required.
@@ -35,16 +35,71 @@ and `localNetwork.ts`:
   and disable insertion before resuming commands.
 - That hook adds an opaque, single-use, in-memory ticket to the prompt. Only this plugin's
   provider can consume the ticket. Stable identities and raw user commands then travel in
-  JSON metadata; the ticket, card, system prompt and assistant prose are not sent to SAGA.
+  JSON metadata. Tickets are never sent to SAGA; when Vertex narration is enabled, bounded
+  card/system/dialogue text is sent separately as narration context.
   Auxiliary calls have no ticket. Continuation with `useSayNothing=false` is explicitly
   rejected before networking; the enabled synthetic-user path instead fails closed at the API.
 - `nativeFetch` with `networkRoute: local_network` routes through PocketRisu's server. Its
   local-network classifier accepts single-label Docker service names such as `saga-runtime`.
 - Before and after I/O, the plugin verifies the selected character/chat, full message
-  snapshot and server/host settings. Stale responses are suppressed. The unload handler
+  snapshot and server/host/credential settings. Stale responses are suppressed. The unload handler
   clears tickets and removes the replacer. Provider lifecycle cleanup belongs to the host.
 
 These observations apply to the pinned PocketRisu build, not every upstream RisuAI version.
+
+### Optional Vertex narration in plugin 0.3.0
+
+Paste service-account JSON into the plugin's **Vertex 서비스 계정 JSON** field; keep SAGA as
+main. Blank input retains deterministic fallback. The plugin does not use PocketRisu's model,
+preset or auxiliary APIs and makes no PocketRisu source/API/image change. See the
+[one-field setup](../packs/risu-starter/README.md#optional-vertex-narration).
+
+The completion contract adds optional `narration` metadata:
+
+```json
+{"narration": {"schema_version": 1, "provider": "vertex", "context": ["user: attack opponent"]}}
+```
+
+It must be paired with `x-saga-vertex-secret`: base64-encoded UTF-8 service-account JSON.
+The credential is deliberately absent from the JSON body because the pinned host redacts this
+entire secret header in its request logs. Base64 is not encryption. Missing/conflicting options,
+malformed encoding/JSON, invalid account shape/key, and non-Google token URLs fail before dispatch.
+The header is capped at 24,000 characters; decoded JSON at 16,000. `SecretStr` protects internal
+representations. Completion validation errors omit supplied inputs, and narrator failure logs
+omit exception tracebacks/provider text. Other API routes retain their existing validation behavior.
+Credentials remain request-scoped and never enter an event, state, journal, snapshot or narration
+prompt. PocketRisu itself retains the user-entered plugin setting; this is not encrypted-secret
+storage and exports/settings must be protected. Existing saved credentials are not inspected.
+
+The thin `VertexNarrator` uses standard `google-auth` with a service-account key. It fixes OAuth
+to `https://oauth2.googleapis.com/token`, derives the project path from validated `project_id`,
+and fixes inference to the global Vertex endpoint and `gemini-3.8-flash`. No uploaded endpoint,
+universe, delegation or quota override configures transport. Only after commit or exact replay
+does it obtain a token and call `generateContent`, with LOW thinking, no thought output, a
+2,048-token cap, no model tools and no streaming. The API extra declares
+`google-auth[requests,cryptography]`; the runtime/domain/storage dependencies are unchanged.
+
+Context is bounded to the first eight textual system messages and the latest 24 textual
+user/assistant messages, each including a role prefix within 4,000 characters. Ticket-bearing
+messages, other content types and metadata are removed. Hidden raw history is never reconstructed.
+Committed facts, state, rolls, resolution and event id are added separately as read-only JSON.
+The model's prose never updates state; the plugin appends authoritative status from SAGA's result.
+
+Empty/malformed output, authentication/provider failure or timeout preserves the committed
+fallback plus a generic visible notice. Only non-thought text up to 12,000 characters is accepted.
+Narration has a 25-second overall budget, 5-second OAuth transport timeout and 15-second Vertex
+HTTP timeout. The plugin's 33-second proxy timeout and 35-second wait allow that fallback to return.
+No inference retries are added; standard OAuth refresh may retry transient token failures within
+the outer wait budget. A worker-thread OAuth call or Google inference may finish after local
+cancellation; no completed game action is rolled back. Retrying the same message replays the event
+before attempting fresh narration. Existing stale-selection/message/configuration/unload guards
+suppress delivery after changes. Bridge identity v2 and runtime/storage schemas remain unchanged.
+
+Automated tests use simulated OAuth/Vertex transports, including real SDK signing with an
+in-memory synthetic key. Separately, two explicitly approved live Gemini calls through 6011
+both returned 200 and displayed fresh prose with unchanged event/state/rolls/journal. Actual
+billed cost was not observed. See the [narration report](progress/risu-vertex-narration.md)
+for that bounded live verification.
 
 ### HTTP contract v2 (legacy v1 is read-only)
 

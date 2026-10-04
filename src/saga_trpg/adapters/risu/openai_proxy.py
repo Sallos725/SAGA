@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 import re
 from typing import Annotated, Literal
 
-from fastapi import APIRouter
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from fastapi import APIRouter, Header
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 from saga_trpg.adapters.narrator.fallback import FallbackNarrator
+from saga_trpg.adapters.narrator.vertex import VertexNarrator
 from saga_trpg.adapters.storage.sqlite import (
     RepositoryConflict,
     RepositoryNotFound,
@@ -59,11 +61,20 @@ class ChatMessage(ClosedModel):
     content: str = Field(max_length=32000)
 
 
+class VertexNarrationOptions(ClosedModel):
+    schema_version: Literal[1]
+    provider: Literal["vertex"]
+    context: list[Annotated[str, Field(max_length=4000)]] = Field(
+        default_factory=list, max_length=32
+    )
+
+
 class CompletionRequest(ClosedModel):
     model: Literal["saga-srd-demo"]
     messages: list[ChatMessage] = Field(min_length=1, max_length=512)
     stream: Literal[False] = False
     saga: HostTurn
+    narration: VertexNarrationOptions | None = None
 
     @model_validator(mode="after")
     def matching_action(self) -> CompletionRequest:
@@ -155,7 +166,16 @@ class RisuBridge:
             raise RepositoryConflict("SAGA branch history conflicts with host action identities")
         return entries[-1]
 
-    async def complete(self, request: CompletionRequest) -> dict:
+    async def complete(
+        self, request: CompletionRequest, *, vertex_credentials: SecretStr | None = None
+    ) -> dict:
+        if (request.narration is None) != (vertex_credentials is None):
+            raise ValueError(
+                "Vertex narration requires its configuration and service-account JSON."
+            )
+        narrator = (
+            VertexNarrator(vertex_credentials) if vertex_credentials is not None else self.narrator
+        )
         turn = request.saga
         legacy_world, legacy_ids = self.identities(turn, version=1)
         try:
@@ -258,13 +278,14 @@ class RisuBridge:
             world_id=world_id,
             event=saved.committed.event.model_copy(deep=True),
             result=saved.result.model_copy(deep=True),
+            recent_dialogue=request.narration.context if request.narration else [],
         )
         try:
-            prose = await self.narrator.render(narration)
+            prose = await narrator.render(narration)
             if not isinstance(prose, str) or not prose.strip():
                 raise ValueError("empty narrator response")
         except Exception:
-            logger.warning("Risu narrator failed after commit; using recorded facts", exc_info=True)
+            logger.warning("Risu narrator failed after commit; using recorded facts")
             prose = await FallbackNarrator().render(
                 NarrationRequest(
                     world_id=world_id,
@@ -272,6 +293,8 @@ class RisuBridge:
                     result=saved.result.model_copy(deep=True),
                 )
             )
+            if request.narration:
+                prose += "\n\n모델 서술에 실패하여 확정된 기본 서술을 표시합니다."
         result = saved.result.model_dump(mode="json")
         return {
             "id": "chatcmpl-" + event_id,
@@ -303,8 +326,20 @@ def router(bridge: RisuBridge) -> APIRouter:
     routes = APIRouter()
 
     @routes.post("/v1/chat/completions")
-    async def complete(request: CompletionRequest) -> dict:
-        return await bridge.complete(request)
+    async def complete(
+        request: CompletionRequest,
+        vertex_secret: Annotated[SecretStr | None, Header(alias="x-saga-vertex-secret")] = None,
+    ) -> dict:
+        credentials = None
+        if vertex_secret is not None:
+            try:
+                encoded = vertex_secret.get_secret_value()
+                if not 1 <= len(encoded) <= 24000:
+                    raise ValueError
+                credentials = SecretStr(base64.b64decode(encoded, validate=True).decode("utf-8"))
+            except Exception:
+                raise ValueError("Vertex 서비스 계정 JSON을 확인하세요.") from None
+        return await bridge.complete(request, vertex_credentials=credentials)
 
     @routes.get("/v1/models")
     async def models() -> dict:

@@ -1,9 +1,10 @@
 # SAGA PocketRisu starter
 
 An API-key-free command demo for PocketRisu **1.13.0**, plugin API **3.0**.
-It uses the existing SRD 5.2.1 subset, deterministic local dice, committed facts as narration,
-and no semantic memory. It does not call an LLM or NMOS.
-Plugin **0.2.0** uses bridge protocol/identity **v2**.
+It uses the existing SRD 5.2.1 subset, deterministic local dice, committed facts as default
+narration, and no semantic memory. Optional Vertex narration needs service-account JSON;
+the default remains API-key-free. NMOS is not connected.
+Plugin **0.3.0** uses unchanged bridge protocol/identity **v2**.
 
 ## Install
 
@@ -39,6 +40,48 @@ to read it, or start a **new host chat** for v2 play. The adapter checks for the
 using the v2 namespace, so upgrading cannot silently restart an existing chat at genesis.
 There is no database migration and no automatic transfer of a v1 campaign to v2.
 
+## Optional Vertex narration
+
+Open **설정 → 플러그인 → SAGA SRD Demo → Vertex 서비스 계정 JSON** and paste the entire
+service-account JSON. Keep **SAGA SRD Demo** as the main model. SAGA reads `project_id` and
+uses the global Vertex endpoint with **Gemini 3.8 Flash** automatically. No endpoint, model,
+region, auxiliary-model or preset configuration is needed. Leave the field empty for the
+existing deterministic fallback.
+
+The input is `vertex_service_account_json`; expand the plugin's parameters if it is hidden.
+A malformed JSON/key is rejected before any game action. A valid key with failed authentication,
+permissions, model output or timeout falls back to recorded facts after the action commits,
+with a short visible notice. Regenerate the same message to retry narration; the event, HP and
+rolls remain unchanged. Two approved live Gemini calls on 6011 succeeded with unchanged
+authoritative results. Actual billed cost was not observed; see the
+[verification report](../../docs/progress/risu-vertex-narration.md).
+
+The backend fixes the model to `gemini-3.8-flash`, thinking to `LOW` and output to 2,048 tokens.
+[Google's model guide](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-3-8-flash)
+documents the model and supported thinking levels. No natural-language intent or NMOS is added.
+
+### Credential and narration boundaries
+
+PocketRisu saves this input as a plugin setting; protect settings and exports containing it.
+It is not claimed to be encrypted. The plugin sends it only to the configured SAGA server in
+`x-saga-vertex-secret`, encoded as base64. Base64 is transport encoding, not encryption. The
+pinned host masks that entire header in request logs; use the trusted private deployment or
+HTTPS for credentials. SAGA keeps credentials/tokens in request memory, never its game state,
+journal, snapshots, files or error responses. Uploaded token URLs cannot redirect authentication.
+Existing saved host presets/key pools are not read or copied.
+
+Only bounded text already present in the host prompt is sent for narration: eight system and
+24 recent user/assistant messages, each capped at 4,000 characters. Ticket-bearing messages,
+metadata and non-text content are omitted; hidden raw history is not rebuilt. The model also
+receives committed facts, state, rolls and event id. Its prose is not parsed into state;
+the separately appended **SAGA 확정 판정** block remains authoritative.
+
+The backend has a 25-second narration budget, with bounded OAuth and Vertex HTTP calls. The
+plugin waits up to 35 seconds for the whole response. Cancellation or changed chat/settings
+suppresses stale output but cannot undo a committed action or guarantee cancellation at Google.
+Regeneration can incur another narration request. Streaming, multimodal context, model tools
+and general card/lore compatibility are not supported.
+
 ## Play
 
 | Command | Effect |
@@ -58,7 +101,8 @@ or complete combat simulation. A new host chat starts a new world.
 
 The response shows recorded facts, authoritative HP, exact rolls and the event id.
 **Regenerate** reuses the same event and rolls. Sending the same text as a **new user message**
-is a new action. The fallback text is deterministic, so regenerated prose normally stays the same.
+is a new action. Default fallback text is deterministic; optional Vertex narration can change
+the prose on regeneration while retaining the authoritative result.
 For v2 chats, changing case, spacing or DC zero padding on the same message (for example
 `check strength 10` → `CHECK  strength 010`) reuses its event and rolls. A genuinely different
 validated command still creates an alternate branch.
