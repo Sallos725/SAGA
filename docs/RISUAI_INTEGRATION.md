@@ -202,7 +202,8 @@ as an event; restore it for review or remove the unused draft. A hidden latest a
 New message ids intentionally remain new actions. Client-controlled ids, genuine semantic edits
 and the known seed still permit deliberate outcome selection; this is not adversarial benchmark
 isolation. Journal storage is linear in an unedited chat; each divergent edit copies its
-prefix once. Requests still carry and verify the whole action history, so they remain bounded
+prefix once. Requests still carry and verify the whole action history, and each hidden turn
+adds its own prefix read (quadratic in the worst case), so they remain bounded
 to 256 non-comment user actions, including hidden turns. Longer campaigns need incremental
 prefix verification and paginated history reads, without weakening the current replay contract.
 

@@ -95,8 +95,12 @@ still runs the earlier image.
 ## Remaining limits
 
 Requests still submit and verify the whole action history, and each prefix check reads the
-branch through the located event, so per-request work stays linear in chat length. The cap of
-256 non-comment user turns, including hidden history, is unchanged. Each divergent edit still
+branch through the located event. With no hidden turns that is one read, linear in chat
+length. Every `context_hidden` turn is verified with its own prefix read, so hidden history
+makes a request quadratic in the worst case: a regeneration with all earlier turns hidden read
+55, 210 and 820 entries at 10, 20 and 40 turns, against 10, 20 and 40 without hidden turns.
+This verification cost predates this change and is not addressed by it; only storage became
+linear. The cap of 256 non-comment user turns, including hidden history, is unchanged. Each divergent edit still
 copies its prefix once; shared immutable prefixes were not needed for this fix.
 
 Every journal entry still stores a full post-event state. An interrupted fork whose action is
