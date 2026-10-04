@@ -1,0 +1,141 @@
+{
+  "$defs": {
+    "ChatMessage": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "maxLength": 32000,
+          "title": "Content",
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "system",
+            "user",
+            "assistant",
+            "developer"
+          ],
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "content"
+      ],
+      "title": "ChatMessage",
+      "type": "object"
+    },
+    "HostAction": {
+      "additionalProperties": false,
+      "properties": {
+        "message_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Message Id",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id",
+        "text"
+      ],
+      "title": "HostAction",
+      "type": "object"
+    },
+    "HostTurn": {
+      "additionalProperties": false,
+      "properties": {
+        "actions": {
+          "items": {
+            "$ref": "#/$defs/HostAction"
+          },
+          "maxItems": 256,
+          "minItems": 1,
+          "title": "Actions",
+          "type": "array"
+        },
+        "actor_id": {
+          "const": "player",
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "chat_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Chat Id",
+          "type": "string"
+        },
+        "host_instance_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Host Instance Id",
+          "type": "string"
+        },
+        "purpose": {
+          "const": "action",
+          "title": "Purpose",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "host_instance_id",
+        "chat_id",
+        "actor_id",
+        "purpose",
+        "actions"
+      ],
+      "title": "HostTurn",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "messages": {
+      "items": {
+        "$ref": "#/$defs/ChatMessage"
+      },
+      "maxItems": 512,
+      "minItems": 1,
+      "title": "Messages",
+      "type": "array"
+    },
+    "model": {
+      "const": "saga-srd-demo",
+      "title": "Model",
+      "type": "string"
+    },
+    "saga": {
+      "$ref": "#/$defs/HostTurn"
+    },
+    "stream": {
+      "const": false,
+      "default": false,
+      "title": "Stream",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "model",
+    "messages",
+    "saga"
+  ],
+  "title": "CompletionRequest",
+  "type": "object"
+}

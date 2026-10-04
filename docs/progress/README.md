@@ -9,7 +9,8 @@ Agents should place phase handoff notes here, for example:
 
 Each note should capture completed work, tests, architectural deviations, unresolved risks, and the next recommended task.
 
-Current checkpoint: [SAGA foundation hardening](saga-foundation-hardening.md).
+Current integration checkpoint: [PocketRisu command demo](risu-command-demo.md).
+Runtime foundation: [SAGA foundation hardening](saga-foundation-hardening.md).
 Earlier reports describe their recorded revisions and may list work completed in later reports.
 
 Optional parallel investigation: [performance foundation](performance-foundation.md), with

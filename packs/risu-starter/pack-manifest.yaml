@@ -1,18 +1,26 @@
 schema_version: 1
 id: saga-trpg-starter
 name: SAGA Starter
-status: scaffold
+status: command-demo
 backend:
   required: true
-  base_url_hint: http://127.0.0.1:4850
+  base_url_hint: http://saga-runtime:4850
 campaign:
-  default: demo
+  identity: host-instance-and-chat-id
 ruleset:
-  default: generic-fantasy
+  default: srd-5.2.1
+  version: 0.1.0
 memory:
-  provider: nmos
+  provider: none
+host:
+  product: PocketRisu
+  version: 1.13.0
+  plugin_api: '3.0'
 artifacts:
-  card: null
+  card: saga-srd-demo.card.json
+  plugin: saga_provider.js
   lorebooks: []
 notes:
-  - Generate current-format RisuAI artifacts during implementation; do not hand-maintain duplicated state.
+  - Select the SAGA SRD Demo main provider; auxiliary calls and continuation are rejected.
+  - Deterministic commands and fallback narration; no LLM or NMOS connection.
+  - Exact state and rolls are persisted by the backend, not by the card.

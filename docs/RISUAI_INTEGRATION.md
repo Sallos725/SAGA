@@ -1,5 +1,122 @@
 # RisuAI Integration Notes
 
+## Current implementation: no-memory command demo
+
+The [starter](../packs/risu-starter/README.md) implements a small playable path on PocketRisu
+1.13.0: v3 provider → `POST /v1/chat/completions` → validated SRD `GameEvent` → persistent
+repository → committed-fact narration → authoritative status. It uses deterministic commands,
+local seeded dice and no memory provider. It does not implement LLM intent interpretation,
+LLM narration, streaming, arbitrary card/lore integration, or a complete ruleset.
+
+The current installation uses the **SAGA SRD Demo** plugin provider, rather than configuring
+an ordinary Custom API URL: stable host identities and a main-generation guard are required.
+The desired transparent-card experience below remains a future target.
+
+### Observed host contract and request guard
+
+The pinned image is recorded in [deployment instructions](../deploy/README.md). Its distributed
+source maps were inspected for `apiV3/v3.svelte.ts`, `process/request/request.ts`,
+`process/index.svelte.ts`, `DefaultChatScreen.svelte`, `plugins.svelte.ts`, `characterCards.ts`
+and `localNetwork.ts`:
+
+- `getCharacter()` returns the selected character with `chats[chatPage]`. `chat.id` identifies
+  the chat; `message.chatId` identifies a message. The current host's
+  `getCurrentCharacterIndex()` returns a string character id, whereas `getChatFromIndex()`
+  resolves a numeric array index. The new plugin uses `getCharacter()` to avoid that mismatch.
+- The `beforeRequest(prompt, mode)` replacer receives the real request mode. The v3 provider
+  callback receives `mode: v3`, because the host overwrites the original mode.
+- Main send and regeneration leave the current active message as `user`; the host removes
+  the previous assistant before regenerating. With the required demo setting
+  `useSayNothing=false`, continuation retains the assistant. The plugin requires mode `model`,
+  a matching prompt user message, and a final active user message. PocketRisu defaults
+  `useSayNothing` to true: an empty Continue then appends `*says nothing*` as a user message.
+  That path reaches the backend but is rejected by the closed interpreter with 422, with no
+  dice or state mutation. Host retries do not change that outcome. Remove the placeholder
+  and disable insertion before resuming commands.
+- That hook adds an opaque, single-use, in-memory ticket to the prompt. Only this plugin's
+  provider can consume the ticket. Stable identities and raw user commands then travel in
+  JSON metadata; the ticket, card, system prompt and assistant prose are not sent to SAGA.
+  Auxiliary calls have no ticket. Continuation with `useSayNothing=false` is explicitly
+  rejected before networking; the enabled synthetic-user path instead fails closed at the API.
+- `nativeFetch` with `networkRoute: local_network` routes through PocketRisu's server. Its
+  local-network classifier accepts single-label Docker service names such as `saga-runtime`.
+- Before and after I/O, the plugin verifies the selected character/chat, full message
+  snapshot and server/host settings. Stale responses are suppressed. The unload handler
+  clears tickets and removes the replacer. Provider lifecycle cleanup belongs to the host.
+
+These observations apply to the pinned PocketRisu build, not every upstream RisuAI version.
+
+### HTTP contract v1
+
+`GET /v1/models` lists `saga-srd-demo`. The non-streaming OpenAI-shaped completion request is
+closed and described by [JSON Schema](../schemas/risu-completion.schema.json):
+
+```json
+{
+  "model": "saga-srd-demo",
+  "stream": false,
+  "messages": [{"role": "user", "content": "attack opponent"}],
+  "saga": {
+    "schema_version": 1,
+    "host_instance_id": "my-pocketrisu-installation",
+    "chat_id": "host-chat-uuid",
+    "actor_id": "player",
+    "purpose": "action",
+    "actions": [{"message_id": "host-user-message-uuid", "text": "attack opponent"}]
+  }
+}
+```
+
+`actions` is the complete active user-message prefix, excluding disabled/comments. Assistant
+prose never identifies an action. All ids must be present and user ids unique; the last prompt
+message must match the latest action text exactly. `stream: true`, auxiliary purposes, extra
+fields, other actors/models and missing metadata are rejected with 422 before dispatch. This
+is a narrow OpenAI-compatible response/request subset, not a general-purpose model proxy.
+
+The response contains normal `id/object/created/model/choices` fields (`created: 0` denotes
+no timestamp), plus `saga` with `schema_version`, `world_id`, `branch_id`, `event_id`, `seq`,
+`replayed`, `state`, `facts`, `rolls`, `patches`, `trace` and `resolution`. The plugin renders
+HP and rolls directly from this result. It does not parse generated prose back into state.
+
+### Persistent identity and immutable history
+
+`stable_value_hash` uses canonical JSON and SHA-256. Namespace `saga-risu-v1` plus host
+instance/chat ids derives the world id. Namespace `saga-risu-action-v1` plus world id,
+parent event id, user-message id and exact raw text derives the event id. The branch id equals
+the event id. Actor/ruleset are fixed to `player` / `srd-5.2.1@0.1.0` in contract v1.
+
+Each new action forks the committed parent prefix using existing repository APIs. `main`
+remains the initial state. Each derived branch contains that prefix and at most its one new
+event; later actions fork it. No mapping table or storage migration is added. A request first
+reads the matching committed branch, before interpreting intent. Regeneration and restart
+therefore perform neither intent reinterpretation nor dice execution. New message ids create
+new actions even when text repeats. Concurrent duplicate requests converge through repository
+fork conflict checks and event idempotency. Pre-dispatch empty forks are recoverable.
+
+Editing the latest action automatically creates an alternate branch from its known parent.
+Deleting the latest action selects the retained earlier branch. A changed earlier prefix that
+has not itself been committed returns 409; rewind to the first changed turn and generate there.
+The bridge never silently reruns every remaining turn. Foreign entries in a derived branch
+also produce 409. Branch copies make this first implementation quadratic in retained journal
+storage; active requests are bounded to 256 user actions. Efficient long campaigns need a later
+storage design, without weakening the current replay contract.
+
+### Failures and verification boundaries
+
+Malformed commands/intents fail validation before dice. Unknown actor targets fail ruleset
+validation before dice. Repository/disk failures use the existing 503 handling. No successful
+completion is returned for an uncommitted event. Narration begins only after commit and receives
+a deep copy; exceptions or empty narration fall back to immutable recorded facts. Cancelled or
+timed-out transport may have committed, so retry the **same host message identity**. Ambiguous
+external tool claims retain the existing durable-tape policy; this deployment uses local dice.
+
+Run `pytest tests/test_risu_api.py` and `node --test tests/risu_provider.test.cjs`. The API suite
+checks ten regenerations, zero extra dice and interpretation, restart, edits/deletions, concurrent
+duplicates, pre-dispatch interruption, malformed identities/intents, isolation and narrator failure.
+The Node suite exercises the plugin protocol/lifecycle with a host API harness, including
+stale/inflight selection and auxiliary/continuation rejection. A harness is not a browser UI test;
+live host verification is reported separately in [the integration progress report](progress/risu-command-demo.md).
+
 ## Target UX
 
 Ideal user path:
@@ -85,10 +202,10 @@ separately records installation and manual synchronization; actual PM-provider m
 generation was not part of that installation verification. Neither host was accessed
 or modified during this review.
 
-Next, implement the plugin-to-SAGA turn mapping and verify the current target host's
-regeneration, continuation, edited-input, repeated-text/new-message, and auxiliary-request
-paths. The ten-regeneration acceptance test below must also prove no repeated dice/tool
-execution. Host ids are an available integration route, not yet a completed SAGA binding.
+That historical review led to the current plugin-to-SAGA mapping described above. Its actual
+host send/regeneration, edited-input, repeated-text/new-message and restart checks are recorded
+in the progress report. Continuation also requires the `useSayNothing` qualification above;
+the original pilot evidence did not establish that setting-sensitive command behavior.
 
 ## Card compatibility strategy
 
