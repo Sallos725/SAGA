@@ -4,6 +4,7 @@ from saga_trpg.adapters.storage.tool_tape import SQLiteToolResultTape
 from saga_trpg.domain.models import RollRecord
 from saga_trpg.domain.tools import ToolCall
 from saga_trpg.ports.tools import ToolBinding, ToolExecutionPending
+from saga_trpg.runtime.rng import parse_dice_expression
 
 
 class ToolResultRequired(Exception):
@@ -30,6 +31,7 @@ class RecordedDice:
         self.consumed_keys: set[str] = set()
 
     def roll(self, *, world_id: str, event_id: str, roll_key: str, expression: str) -> RollRecord:
+        count, sides, modifier = parse_dice_expression(expression)
         call = ToolCall(
             world_id=world_id,
             branch_id=self.branch_id,
@@ -49,5 +51,12 @@ class RecordedDice:
         result = RollRecord.model_validate(saved.result, strict=True)
         if result.roll_key != roll_key or result.expression != expression:
             raise ValueError("external dice result does not match the requested roll")
+        if (
+            len(result.raw) != count
+            or any(value < 1 or value > sides for value in result.raw)
+            or result.modifier != modifier
+            or result.total != sum(result.raw) + modifier
+        ):
+            raise ValueError("external dice result is inconsistent with the requested expression")
         self.consumed_keys.add(roll_key)
         return result

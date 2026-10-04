@@ -289,6 +289,69 @@ def test_invalid_dice_result_is_persisted_but_never_consumed_or_rerolled(tape):
     assert repo.entries("test") == []
 
 
+@pytest.mark.parametrize("roll_key", ["attack", "damage"])
+@pytest.mark.parametrize(
+    "corruption", ["total", "empty", "extra", "below_range", "above_range", "modifier"]
+)
+def test_inconsistent_external_rolls_cannot_commit_or_reroll(tape, roll_key, corruption):
+    class InconsistentDice(FakeTool):
+        def execute(self, call, *, idempotency_key):
+            result = super().execute(call, idempotency_key=idempotency_key)
+            if call.tool_call_key != roll_key:
+                return result
+            if corruption == "total":
+                result["total"] = 999
+                return result
+            if corruption == "empty":
+                result["raw"] = []
+            elif corruption == "extra":
+                result["raw"].append(1)
+            elif corruption == "below_range":
+                result["raw"] = [0]
+            elif corruption == "above_range":
+                result["raw"] = [21]
+            elif corruption == "modifier":
+                result["modifier"] += 1
+            # These cases are arithmetically consistent but violate the requested expression.
+            result["total"] = sum(result["raw"]) + result["modifier"]
+            return result
+
+    tool = InconsistentDice()
+    event = attack(event_id="inconsistent")
+    for _ in range(2):
+        repo = SQLiteWorldRepository(tape.path, external_dice=binding(tool))
+        with pytest.raises(ValueError, match="inconsistent"):
+            repo.dispatch("test", event)
+        assert repo.get_state("test") == initial_state()
+        assert repo.replay("test") == initial_state()
+        assert repo.entries("test") == []
+    assert len(tool.calls) == (1 if roll_key == "attack" else 2)
+    recorded = tape.get(tool.calls[-1][0])
+    assert recorded.status == "completed"
+    with sqlite3.connect(tape.path) as connection:
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM tool_executions WHERE status = 'committed'"
+            ).fetchone()[0]
+            == 0
+        )
+
+
+@pytest.mark.parametrize("expression", ["d6", " 2d6 + 3 ", "4d3-8"])
+def test_external_dice_accepts_supported_count_and_modifier_forms(tape, expression):
+    tool = FakeTool()
+    repo = SQLiteWorldRepository(tape.path, external_dice=binding(tool))
+    event = attack(event_id="valid-expression")
+    event.payload["damage"] = expression
+    first = repo.dispatch("test", event)
+    damage = first.entry.result.rolls[-1]
+    assert damage.expression == expression
+    assert damage.total == sum(damage.raw) + damage.modifier
+    assert repo.replay("test") == first.entry.result.state
+    assert repo.dispatch("test", event).replayed
+    assert len(tool.calls) == 2
+
+
 def test_api_reports_pending_and_conflicting_external_calls(tape):
     from fastapi.testclient import TestClient
 

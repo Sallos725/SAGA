@@ -103,7 +103,8 @@ costs of this small design. No automatic cleanup or operator reconciliation UI w
 
 ## Executed verification
 
-All results below refer to the foundation code and its 98 collected tests. Later, independent
+This initial checkpoint refers to the foundation code published as `ae5a9ff` and its
+98 collected tests. The PR review follow-up below records subsequent changes. Independent
 performance tests are outside this recorded suite. The 51-file foundation verification manifest
 (source, existing/new foundation tests, fixture, package metadata, workflow, schema exporter)
 has canonical JSON SHA-256:
@@ -255,3 +256,33 @@ Upgrade: stop the host and run the documented migration with a new backup path b
 opening existing v1 storage. Generic remote exactly-once execution is not promised;
 provider-specific reconciliation and live NMOS/MCP/RisuAI clients remain deferred.
 ```
+
+## PR review follow-up — 2026-10-04
+
+The [inline review](https://github.com/Sallos725/SAGA/pull/1#discussion_r4176044565)
+and [repository-owner review](https://github.com/Sallos725/SAGA/pull/1#issuecomment-5976518718)
+identified the same valid P1: strict `RollRecord` field validation did not enforce numerical
+consistency. An external result with `raw=[1]` and `total=999` reached hit/damage calculations
+and committed an invalid world state.
+
+`RecordedDice` now checks die count, die ranges, modifier, and total against the requested
+expression before consuming a result. It shares the reference roller's unchanged parser and
+bounds. Seed hashing and local roll generation are unchanged. Invalid recorded responses stay
+`completed`; dispatch fails without a world/journal commit or another external execution on
+retry, including after reopening the repository. Existing committed history is not rewritten.
+
+Verification on Python 3.12.3:
+
+- Before the fix, all 12 new invalid-response cases failed because dispatch accepted them;
+  three valid-expression cases passed. Cases cover both attack and later damage results.
+- After the fix, `pytest -q tests/test_tool_tape.py tests/test_dice.py`: **40 passed**.
+- Isolated staged PR snapshot: `pytest -q`: **113 passed, 1 warning in 5.72 s**;
+  `ruff check .`, `ruff format --check .` (77 files), and `python -m compileall -q src` passed.
+- Concurrent expanded working tree: **149 passed, 1 warning in 5.67 s**. Its independent
+  performance changes remain outside this PR. The warning is the existing TestClient warning.
+- The initial PR commit's hosted Python 3.11/3.12/3.13 checks passed. Updated hosted results
+  are recorded on the PR; the local follow-up above ran on Python 3.12 only.
+
+Self-review: validation remains at the external dice boundary; deterministic code gains no
+I/O, clock reads, or unseeded randomness. No schema changes, dependencies, or provider calls
+were added. Live MCP/NMOS/RisuAI and provider reconciliation remain unverified.

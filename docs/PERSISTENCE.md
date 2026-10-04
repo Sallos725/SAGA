@@ -135,8 +135,11 @@ repo = SQLiteWorldRepository(
 ```
 
 No remote implementation is supplied yet. Dice arguments are `roll_key` and `expression`;
-the result must validate as a matching `RollRecord`. The tool receives a detached call,
-never a mutable `WorldState`. Pure local dice continue using the original path.
+the result must validate as a matching `RollRecord`. Before consuming it, `RecordedDice`
+checks the requested expression's die count, die ranges, and modifier, and requires
+`total == sum(raw) + modifier`. Expressions use the same grammar and bounds as the reference
+roller (including `d6`, `2d6+3`, and `4d3-8`). The tool receives a detached call, never a mutable
+`WorldState`. Pure local dice continue using the original path.
 
 Identity is `(world_id, branch_id, event_id, tool_call_key)`. Canonical JSON SHA-256 hashes
 normalize dictionary order while preserving array order and distinguishing booleans/numbers.
@@ -185,7 +188,9 @@ remote tool or process-local cache.
   `pending` means in-flight **or** ambiguous; there are no wall-clock leases or automatic
   retries. A provider-specific, audited reconciliation path must be implemented before live
   MCP enablement. This slice deliberately has no reset/delete/retry-pending endpoint.
-  A malformed but persisted dice response also fails closed on every retry.
+  A malformed or inconsistent persisted dice response also fails closed on every retry. Its
+  tape record remains `completed`, not `committed`; world state and journal remain unchanged.
+  Reopening the repository and retrying never reruns that recorded call.
 - The tape and event history live in the same SQLite file and must be backed up/restored
   together. Restoring an older backup can lose knowledge of later remote side effects;
   do not resume such operations without reconciling with the remote service.
