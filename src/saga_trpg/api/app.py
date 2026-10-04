@@ -6,6 +6,8 @@ import sqlite3
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from saga_trpg.adapters.risu.openai_proxy import RisuBridge
@@ -33,6 +35,17 @@ def create_app(
     *, repository: SQLiteWorldRepository | None = None, risu_bridge: RisuBridge | None = None
 ) -> FastAPI:
     app = FastAPI(title="SAGA — Stateful Agentic Game Architecture", version="0.2.0")
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_request(request: Request, exc: RequestValidationError):
+        # FastAPI's default error includes input values, including malformed credentials.
+        if request.url.path == "/v1/chat/completions":
+            return JSONResponse(
+                status_code=422,
+                content={"detail": "SAGA 요청의 식별자·명령·Vertex 설정 형식을 확인하세요."},
+            )
+        return await request_validation_exception_handler(request, exc)
+
     worlds = (
         repository
         if repository is not None

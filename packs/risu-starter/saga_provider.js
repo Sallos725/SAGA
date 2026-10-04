@@ -1,15 +1,24 @@
 //@name saga_runtime
 //@display-name SAGA SRD Demo
 //@api 3.0
-//@version 0.2.0
+//@version 0.3.0
 //@arg server_url string SAGA URL (default http://saga-runtime:4850)
 //@arg host_instance_id string Stable host identity (empty generates a persistent local identity)
+//@arg vertex_service_account_json string {{name::Vertex 서비스 계정 JSON}}{{textarea}} JSON 전체를 붙여넣으세요. Gemini 3.8 Flash 자동 연결; 비우면 기본 서술.
 
 (() => {
   "use strict";
   const PROVIDER = "SAGA SRD Demo";
   const MARKER = "SAGA request ticket: ";
   const HELP = "명령: attack opponent / check strength 10 / save dexterity 12. 뒤에 advantage 또는 disadvantage를 붙일 수 있습니다.";
+
+  function narrationContext(prompt) {
+    const text = prompt.filter(message => ["system", "user", "assistant"].includes(message?.role) &&
+      typeof message.content === "string" && message.content.trim() && !message.content.includes(MARKER));
+    return [...text.filter(message => message.role === "system").slice(0, 8),
+      ...text.filter(message => message.role !== "system").slice(-24)]
+      .map(message => (message.role + ": " + message.content).slice(0, 4000));
+  }
 
   function snapshotOf(character, selection) {
     const chat = character?.chats?.[character.chatPage];
@@ -65,12 +74,14 @@
         instance = await identityPromise;
       }
       if (typeof instance !== "string" || !/^\S{1,200}$/.test(instance)) throw new Error("호스트 식별자 형식이 잘못되었습니다.");
-      return { base: url.origin, instance };
+      const credentials = await argument("vertex_service_account_json");
+      if (new TextEncoder().encode(credentials).length > 16000) throw new Error("Vertex 서비스 계정 JSON이 너무 깁니다. 파일 내용만 붙여넣으세요.");
+      return { base: url.origin, instance, credentials };
     }
     const signature = value => JSON.stringify(value);
     async function assertCurrent(snapshot, settings) {
       if (disposed || signature(await current()) !== signature(snapshot) ||
-          signature(await config()) !== signature(settings)) {
+          signature(await config()) !== signature(settings) || disposed) {
         throw new Error("요청 중 채팅이나 설정이 변경되었습니다. 현재 채팅에서 다시 생성하세요. 이전 결과는 기록에 보존됩니다.");
       }
     }
@@ -117,15 +128,22 @@
           messages: [{ role: "user", content: actions.at(-1).text }],
           saga: { schema_version: 2, host_instance_id: settings.instance, chat_id: snapshot.chatId,
             actor_id: "player", purpose: "action", actions } };
+        const headers = { "content-type": "application/json" };
+        if (settings.credentials) {
+          // This header is fully masked by the pinned host's request logger; a JSON body is not.
+          headers["x-saga-vertex-secret"] = btoa(String.fromCharCode(...new TextEncoder().encode(settings.credentials)));
+          body.narration = { schema_version: 1, provider: "vertex", context: narrationContext(arg.prompt_chat) };
+        }
+        const timeout = settings.credentials ? 33000 : 15000;
         let timer;
         let response;
         try {
           response = await Promise.race([
             api.nativeFetch(settings.base + "/v1/chat/completions", {
-              method: "POST", headers: { "content-type": "application/json" },
-              body: JSON.stringify(body), networkRoute: "local_network", requestTimeoutMs: 15000,
+              method: "POST", headers,
+              body: JSON.stringify(body), networkRoute: "local_network", requestTimeoutMs: timeout,
             }),
-            new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("SAGA 응답 시간이 초과되었습니다. 같은 메시지를 재생성하면 저장된 결과를 복구합니다.")), 16000); }),
+            new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("SAGA 응답 시간이 초과되었습니다. 같은 메시지를 재생성하면 저장된 결과를 복구합니다.")), timeout + 2000); }),
           ]);
         } finally { clearTimeout(timer); }
         const result = await response.json();

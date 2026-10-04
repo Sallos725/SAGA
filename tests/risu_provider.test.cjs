@@ -5,7 +5,7 @@ const vm = require("node:vm");
 const { test } = require("node:test");
 
 const source = fs.readFileSync(path.join(__dirname, "../packs/risu-starter/saga_provider.js"), "utf8");
-const sandbox = { console: { warn() {}, error() {} }, URL, setTimeout, clearTimeout };
+const sandbox = { console: { warn() {}, error() {} }, URL, TextEncoder, btoa: value => Buffer.from(value, "binary").toString("base64"), setTimeout, clearTimeout };
 vm.runInNewContext(source, sandbox);
 const { createClient, snapshotOf } = sandbox.SagaRisu;
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -231,4 +231,110 @@ test("v2 plugin preserves raw legacy text and shows read-only legacy response", 
   assert.equal(result.success, true);
   assert.match(result.content, /읽기 전용/);
   assert.equal(f.calls[0].body.saga.actions[0].text, "Attack  opponent");
+});
+
+test("blank credentials keep fallback with no credential header or narration config", async () => {
+  for (const value of [undefined, "", "   "]) {
+    const f = fixture();
+    f.args.vertex_service_account_json = value;
+    f.api.runLLMModel = async () => { throw new Error("must never use a host model"); };
+    assert.equal((await f.send(await f.prepare())).success, true);
+    assert.equal(f.calls[0].headers["x-saga-vertex-secret"], undefined);
+    assert.equal(f.calls[0].body.narration, undefined);
+    assert.equal(f.calls[0].requestTimeoutMs, 15000);
+  }
+});
+
+test("one JSON input travels only in the masked header with clean context", async () => {
+  const f = fixture();
+  const secret = JSON.stringify({ private_key: "SYNTHETIC SECRET", project_id: "test-project", note: "한글" });
+  f.args.vertex_service_account_json = secret;
+  f.character.chats[0].message.unshift({ chatId: "hidden", role: "user", data: "HIDDEN RAW", disabled: true });
+  f.prompt.unshift({ role: "system", content: "Card: a misty arena.", metadata: "PRIVATE METADATA" },
+    { role: "assistant", content: "Earlier prose." },
+    { role: "user", content: [{ type: "image", data: "IMAGE CONTENT" }] },
+    { role: "system", content: "Merged instruction\nSAGA request ticket: old-ticket" });
+  const result = await f.send(await f.prepare());
+  assert.equal(result.success, true);
+  assert.equal(f.calls.length, 1);
+  assert.equal(Buffer.from(f.calls[0].headers["x-saga-vertex-secret"], "base64").toString("utf8"), secret);
+  assert.equal(f.calls[0].requestTimeoutMs, 33000);
+  assert.equal(f.calls[0].body.narration.schema_version, 1);
+  assert.equal(f.calls[0].body.narration.provider, "vertex");
+  const context = JSON.stringify(f.calls[0].body.narration.context);
+  assert.match(context, /misty arena/);
+  assert.match(context, /Earlier prose/);
+  for (const excluded of ["SYNTHETIC SECRET", "SAGA request ticket:", "test-uuid", "HIDDEN RAW", "PRIVATE METADATA", "IMAGE CONTENT"]) {
+    assert.equal(context.includes(excluded), false, excluded);
+  }
+  assert.doesNotMatch(JSON.stringify(f.calls[0].body), /SYNTHETIC SECRET/);
+  assert.doesNotMatch(result.content, /SYNTHETIC SECRET/);
+});
+
+test("narration context is bounded independently from full action history", async () => {
+  const f = fixture();
+  f.args.vertex_service_account_json = "{}";
+  f.prompt.unshift(...Array.from({ length: 12 }, (_, i) => ({ role: "system", content: "system" + i + "x".repeat(6000) })),
+    ...Array.from({ length: 40 }, (_, i) => ({ role: "assistant", content: "prose" + i + "x".repeat(6000) })));
+  await f.send(await f.prepare());
+  assert.equal(f.calls[0].body.narration.context.length, 32);
+  assert.ok(f.calls[0].body.narration.context.every(line => line.length <= 4000));
+  assert.equal(f.calls[0].body.saga.actions.length, 1);
+});
+
+test("credential changes invalidate a ticket or suppress an in-flight result", async () => {
+  const f = fixture();
+  f.args.vertex_service_account_json = "first secret";
+  const prompt = await f.prepare();
+  f.args.vertex_service_account_json = "second secret";
+  assert.equal((await f.send(prompt)).success, false);
+  assert.equal(f.calls.length, 0);
+  const reply = f.reply;
+  f.reply = async () => { f.args.vertex_service_account_json = "third secret"; return reply(); };
+  assert.equal((await f.send(await f.prepare())).success, false);
+  assert.equal(f.calls.length, 1);
+});
+
+test("narration and failure fallback retain the independent authoritative status", async () => {
+  const f = fixture();
+  f.args.vertex_service_account_json = "{}";
+  const response = await f.reply();
+  const data = await response.json();
+  data.saga.replayed = true;
+  let prose = "Fresh narration.";
+  f.reply = async () => ({ ...response, json: async () => ({ ...data, choices: [{ message: { content: prose } }] }) });
+  const first = await f.send(await f.prepare());
+  prose = "Recorded facts. 모델 서술에 실패하여 확정된 기본 서술을 표시합니다.";
+  const second = await f.send(await f.prepare());
+  assert.equal(first.success, true);
+  assert.equal(second.success, true);
+  assert.notEqual(first.content, second.content);
+  assert.equal(first.content.split("\n\n---\n\n")[1], second.content.split("\n\n---\n\n")[1]);
+  assert.deepEqual(f.calls[0].body, f.calls[1].body);
+});
+
+test("invalid JSON error is safe and oversized input never dispatches", async () => {
+  const f = fixture();
+  f.args.vertex_service_account_json = "not-json";
+  f.reply = async () => ({ ok: false, status: 422, json: async () => ({ detail: "Vertex 서비스 계정 JSON을 확인하세요." }) });
+  const response = await f.send(await f.prepare());
+  assert.equal(response.success, false);
+  assert.match(response.content, /JSON을 확인/);
+  assert.doesNotMatch(response.content, /not-json/);
+  f.args.vertex_service_account_json = "x".repeat(16001);
+  assert.equal((await f.send(await f.prepare())).success, false);
+  assert.equal(f.calls.length, 1);
+});
+
+test("unload during asynchronous final config check suppresses the committed reply", async () => {
+  const f = fixture();
+  const getArgument = f.api.getArgument;
+  let unload = false;
+  f.api.getArgument = async name => {
+    if (unload && name === "vertex_service_account_json") f.client.dispose();
+    return getArgument(name);
+  };
+  const reply = f.reply;
+  f.reply = async () => { unload = true; return reply(); };
+  assert.equal((await f.send(await f.prepare())).success, false);
 });

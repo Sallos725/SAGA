@@ -2,7 +2,7 @@ schema_version: 1
 id: saga-trpg-starter
 name: SAGA Starter
 status: command-demo
-version: 0.2.0
+version: 0.3.0
 bridge:
   protocol_version: 2
   identity_version: 2
@@ -17,6 +17,13 @@ ruleset:
   version: 0.1.0
 memory:
   provider: none
+narration:
+  default: fallback
+  opt_in_argument: vertex_service_account_json
+  provider: vertex
+  model: gemini-3.8-flash
+  region: global
+  timeout_seconds: 25
 host:
   product: PocketRisu
   version: 1.13.0
@@ -27,5 +34,7 @@ artifacts:
   lorebooks: []
 notes:
   - Select the SAGA SRD Demo main provider; auxiliary calls and continuation are rejected.
-  - Deterministic commands and fallback narration; no LLM or NMOS connection.
+  - Deterministic commands and default fallback narration; no NMOS connection.
+  - Optional Vertex narration after commit; paste service-account JSON in the plugin setting.
+  - Credentials are request-scoped in SAGA and never written to the runtime journal.
   - Exact state and rolls are persisted by the backend, not by the card.
