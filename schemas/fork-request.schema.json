@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "at_event_id": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "At Event Id"
+    },
+    "branch_id": {
+      "minLength": 1,
+      "title": "Branch Id",
+      "type": "string"
+    },
+    "source_branch_id": {
+      "default": "main",
+      "minLength": 1,
+      "title": "Source Branch Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "branch_id",
+    "at_event_id"
+  ],
+  "title": "ForkRequest",
+  "type": "object"
+}

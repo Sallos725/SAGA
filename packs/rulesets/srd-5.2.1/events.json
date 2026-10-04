@@ -1,0 +1,38 @@
+[
+  {
+    "actor_id": "player",
+    "event_id": "example-1",
+    "idempotency_key": null,
+    "kind": "ability_check",
+    "parent_event_id": null,
+    "payload": {
+      "ability": "strength",
+      "difficulty": 12,
+      "proficiency": "athletics"
+    },
+    "schema_version": 1
+  },
+  {
+    "actor_id": "player",
+    "event_id": "example-2",
+    "idempotency_key": null,
+    "kind": "saving_throw",
+    "parent_event_id": null,
+    "payload": {
+      "ability": "strength",
+      "difficulty": 15
+    },
+    "schema_version": 1
+  },
+  {
+    "actor_id": "player",
+    "event_id": "example-3",
+    "idempotency_key": null,
+    "kind": "attack",
+    "parent_event_id": null,
+    "payload": {
+      "target_id": "opponent"
+    },
+    "schema_version": 1
+  }
+]

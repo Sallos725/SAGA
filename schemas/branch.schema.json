@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "branch_id": {
+      "title": "Branch Id",
+      "type": "string"
+    },
+    "fork_event_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Fork Event Id"
+    },
+    "fork_seq": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Fork Seq",
+      "type": "integer"
+    },
+    "parent_branch_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parent Branch Id"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "world_id": {
+      "title": "World Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "world_id",
+    "branch_id"
+  ],
+  "title": "BranchInfo",
+  "type": "object"
+}

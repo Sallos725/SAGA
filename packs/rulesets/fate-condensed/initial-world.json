@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "world_id": "fate-condensed-example",
+  "seq": 0,
+  "simulated_time": 0,
+  "actors": {
+    "player": {
+      "actor_id": "player",
+      "hp": 10,
+      "max_hp": 10,
+      "inventory": {},
+      "conditions": [],
+      "stats": {
+        "skill:investigate": 2,
+        "skill:athletics": 1,
+        "skill:notice": 3
+      }
+    }
+  },
+  "flags": {
+    "fate_aspects": {},
+    "fate_boosts": {}
+  },
+  "quest_state": {}
+}

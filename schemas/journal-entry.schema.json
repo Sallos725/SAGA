@@ -1,0 +1,394 @@
+{
+  "$defs": {
+    "ActorState": {
+      "properties": {
+        "actor_id": {
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "conditions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Conditions",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "hp": {
+          "default": 10,
+          "title": "Hp",
+          "type": "integer"
+        },
+        "inventory": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Inventory",
+          "type": "object"
+        },
+        "max_hp": {
+          "default": 10,
+          "title": "Max Hp",
+          "type": "integer"
+        },
+        "stats": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "title": "Stats",
+          "type": "object"
+        }
+      },
+      "required": [
+        "actor_id"
+      ],
+      "title": "ActorState",
+      "type": "object"
+    },
+    "CommittedEvent": {
+      "properties": {
+        "event": {
+          "$ref": "#/$defs/GameEvent"
+        },
+        "seq": {
+          "title": "Seq",
+          "type": "integer"
+        },
+        "state_hash_after": {
+          "title": "State Hash After",
+          "type": "string"
+        },
+        "state_hash_before": {
+          "title": "State Hash Before",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event",
+        "seq",
+        "state_hash_before",
+        "state_hash_after"
+      ],
+      "title": "CommittedEvent",
+      "type": "object"
+    },
+    "GameEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "actor_id": {
+          "minLength": 1,
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "event_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Event Id"
+        },
+        "idempotency_key": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Idempotency Key"
+        },
+        "kind": {
+          "minLength": 1,
+          "title": "Kind",
+          "type": "string"
+        },
+        "parent_event_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Event Id"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "actor_id"
+      ],
+      "title": "GameEvent",
+      "type": "object"
+    },
+    "RollRecord": {
+      "properties": {
+        "expression": {
+          "title": "Expression",
+          "type": "string"
+        },
+        "modifier": {
+          "default": 0,
+          "title": "Modifier",
+          "type": "integer"
+        },
+        "raw": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Raw",
+          "type": "array"
+        },
+        "roll_key": {
+          "title": "Roll Key",
+          "type": "string"
+        },
+        "total": {
+          "title": "Total",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "roll_key",
+        "expression",
+        "raw",
+        "total"
+      ],
+      "title": "RollRecord",
+      "type": "object"
+    },
+    "RuleResolution": {
+      "description": "Structured mechanical result; unresolved fictional choices are explicitly marked.",
+      "properties": {
+        "damage": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Damage"
+        },
+        "outcome": {
+          "enum": [
+            "failure",
+            "tie",
+            "success",
+            "success_with_style",
+            "miss",
+            "hit",
+            "critical_hit"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "pending_adjudication": {
+          "default": false,
+          "title": "Pending Adjudication",
+          "type": "boolean"
+        },
+        "target": {
+          "title": "Target",
+          "type": "integer"
+        },
+        "total": {
+          "title": "Total",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "outcome",
+        "total",
+        "target"
+      ],
+      "title": "RuleResolution",
+      "type": "object"
+    },
+    "RuleResult": {
+      "properties": {
+        "facts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Facts",
+          "type": "array"
+        },
+        "patches": {
+          "items": {
+            "$ref": "#/$defs/StatePatch"
+          },
+          "title": "Patches",
+          "type": "array"
+        },
+        "resolution": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RuleResolution"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "rolls": {
+          "items": {
+            "$ref": "#/$defs/RollRecord"
+          },
+          "title": "Rolls",
+          "type": "array"
+        },
+        "state": {
+          "$ref": "#/$defs/WorldState"
+        },
+        "trace": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Trace",
+          "type": "array"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "title": "RuleResult",
+      "type": "object"
+    },
+    "StatePatch": {
+      "properties": {
+        "after": {
+          "default": null,
+          "title": "After"
+        },
+        "before": {
+          "default": null,
+          "title": "Before"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "StatePatch",
+      "type": "object"
+    },
+    "WorldState": {
+      "properties": {
+        "actors": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ActorState"
+          },
+          "title": "Actors",
+          "type": "object"
+        },
+        "flags": {
+          "additionalProperties": true,
+          "title": "Flags",
+          "type": "object"
+        },
+        "quest_state": {
+          "additionalProperties": true,
+          "title": "Quest State",
+          "type": "object"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "seq": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "simulated_time": {
+          "default": 0,
+          "title": "Simulated Time",
+          "type": "integer"
+        },
+        "world_id": {
+          "minLength": 1,
+          "title": "World Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "world_id"
+      ],
+      "title": "WorldState",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "committed": {
+      "$ref": "#/$defs/CommittedEvent"
+    },
+    "result": {
+      "$ref": "#/$defs/RuleResult"
+    },
+    "runtime_version": {
+      "const": "0.2.0",
+      "default": "0.2.0",
+      "title": "Runtime Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "committed",
+    "result"
+  ],
+  "title": "JournalEntry",
+  "type": "object"
+}

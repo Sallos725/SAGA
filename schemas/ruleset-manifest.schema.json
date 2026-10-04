@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attribution": {
+      "default": "",
+      "title": "Attribution",
+      "type": "string"
+    },
+    "event_payload_schemas": {
+      "additionalProperties": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Event Payload Schemas",
+      "type": "object"
+    },
+    "implementation_scope": {
+      "enum": [
+        "example",
+        "legacy-scaffold"
+      ],
+      "title": "Implementation Scope",
+      "type": "string"
+    },
+    "implemented": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Implemented",
+      "type": "array"
+    },
+    "license_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "License Id"
+    },
+    "license_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "License Url"
+    },
+    "modifications": {
+      "title": "Modifications",
+      "type": "string"
+    },
+    "narrator_instructions": {
+      "title": "Narrator Instructions",
+      "type": "string"
+    },
+    "not_implemented": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Not Implemented",
+      "type": "array"
+    },
+    "ruleset_id": {
+      "title": "Ruleset Id",
+      "type": "string"
+    },
+    "ruleset_version": {
+      "title": "Ruleset Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "source_revision": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Revision"
+    },
+    "source_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Url"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ruleset_id",
+    "ruleset_version",
+    "title",
+    "implementation_scope",
+    "modifications",
+    "implemented",
+    "not_implemented",
+    "narrator_instructions"
+  ],
+  "title": "RulesetManifest",
+  "type": "object"
+}

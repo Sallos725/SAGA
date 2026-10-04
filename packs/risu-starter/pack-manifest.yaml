@@ -1,0 +1,18 @@
+schema_version: 1
+id: nmos-trpg-starter
+name: NMOS TRPG Starter
+status: scaffold
+backend:
+  required: true
+  base_url_hint: http://127.0.0.1:4850
+campaign:
+  default: demo
+ruleset:
+  default: generic-fantasy
+memory:
+  provider: nmos
+artifacts:
+  card: null
+  lorebooks: []
+notes:
+  - Generate current-format RisuAI artifacts during implementation; do not hand-maintain duplicated state.

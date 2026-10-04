@@ -1,0 +1,91 @@
+{
+  "attribution": "Fate Condensed ©2020 Evil Hat Productions, LLC.\n\nThis work is based on Fate Condensed (found at http://www.faterpg.com/), a product of Evil Hat Productions, LLC, developed, authored, and edited by PK Sullivan, Lara Turner, Leonard Balsera, Fred Hicks, Richard Bellingham, Robert Hanz, Ryan Macklin, and Sophie Lagacé, and licensed for our use under the Creative Commons Attribution 3.0 Unported license (http://creativecommons.org/licenses/by/3.0/).",
+  "event_payload_schemas": {
+    "create_advantage": {
+      "additionalProperties": false,
+      "properties": {
+        "aspect_name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Aspect Name",
+          "type": "string"
+        },
+        "difficulty": {
+          "maximum": 20,
+          "minimum": -10,
+          "title": "Difficulty",
+          "type": "integer"
+        },
+        "skill": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Skill",
+          "type": "string"
+        }
+      },
+      "required": [
+        "skill",
+        "difficulty",
+        "aspect_name"
+      ],
+      "title": "CreateAdvantage",
+      "type": "object"
+    },
+    "overcome": {
+      "additionalProperties": false,
+      "properties": {
+        "boost_name": {
+          "default": "Temporary advantage",
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Boost Name",
+          "type": "string"
+        },
+        "difficulty": {
+          "maximum": 20,
+          "minimum": -10,
+          "title": "Difficulty",
+          "type": "integer"
+        },
+        "skill": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Skill",
+          "type": "string"
+        }
+      },
+      "required": [
+        "skill",
+        "difficulty"
+      ],
+      "title": "Overcome",
+      "type": "object"
+    }
+  },
+  "implementation_scope": "example",
+  "implemented": [
+    "overcome against static opposition",
+    "four outcome grades",
+    "create a new situation aspect",
+    "one/two free invokes on new aspects",
+    "boost records"
+  ],
+  "license_id": "CC-BY-3.0",
+  "license_url": "https://creativecommons.org/licenses/by/3.0/",
+  "modifications": "Selected unmodified-roll mechanics reimplemented in Python; 4d3-8 represents four Fate dice. Original example actors and prompts. Costs remain explicit pending adjudications.",
+  "narrator_instructions": "Selected system: Fate Condensed example, version 0.1.0.\nUse overcome or create_advantage against static opposition, with a stored skill:<name> rating.\nFour journaled d3 faces map 1/2/3 to -1/0/+1. The recorded total includes the skill rating.\nAn overcome failure/tie, or failed advantage, leaves a fictional choice pending; do not state that\na cost or adverse aspect was applied. Successful new aspects and boosts are stored in world flags.\nFree invokes are recorded but spending invokes and expiring boosts are not automated in this slice.\nDo not use generic HP or SRD combat mechanics to fill in unsupported Fate rules.\n",
+  "not_implemented": [
+    "character creation and advancement",
+    "paid/free invocations and rerolls",
+    "stunts and compels",
+    "attack, defend, stress and consequences",
+    "opposed rolls and existing-aspect advantages",
+    "applying costs and boost expiry"
+  ],
+  "ruleset_id": "fate-condensed",
+  "ruleset_version": "0.1.0",
+  "schema_version": 1,
+  "source_revision": "Fate-Condensed-SRD-CC-BY.html; SHA256 a0f556ce2415fe4dc88ff71e56755bb92e113a52f8041bda69b759b63782544e; checked 2026-10-04",
+  "source_url": "https://fate-srd.com/downloads/CC-BY-SRDs.zip",
+  "title": "Fate Condensed example"
+}

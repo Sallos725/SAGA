@@ -1,0 +1,10 @@
+{
+  "kind": "attack",
+  "actor_id": "player",
+  "payload": {
+    "target_id": "goblin",
+    "attack_bonus": 5,
+    "target_ac": 14,
+    "damage": "1d8+3"
+  }
+}

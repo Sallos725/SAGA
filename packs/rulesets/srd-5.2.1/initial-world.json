@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "world_id": "srd-5.2.1-example",
+  "seq": 0,
+  "simulated_time": 0,
+  "actors": {
+    "player": {
+      "actor_id": "player",
+      "hp": 20,
+      "max_hp": 20,
+      "inventory": {},
+      "conditions": [],
+      "stats": {
+        "strength": 16,
+        "dexterity": 12,
+        "constitution": 14,
+        "intelligence": 10,
+        "wisdom": 12,
+        "charisma": 10,
+        "proficiency_bonus": 2,
+        "save_proficient:strength": true,
+        "proficient:athletics": true,
+        "weapon_ability": "strength",
+        "weapon_damage": "1d8",
+        "weapon_proficient": true,
+        "armor_class": 15
+      }
+    },
+    "opponent": {
+      "actor_id": "opponent",
+      "hp": 30,
+      "max_hp": 30,
+      "inventory": {},
+      "conditions": [],
+      "stats": {
+        "armor_class": 13
+      }
+    }
+  },
+  "flags": {},
+  "quest_state": {}
+}

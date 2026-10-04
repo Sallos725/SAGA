@@ -1,0 +1,14 @@
+services:
+  trpg-runtime:
+    build: .
+    command: uvicorn nmos_trpg.api.app:create_app --factory --host 0.0.0.0 --port 4850
+    ports:
+      - "4850:4850"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+
+  # Intentionally not bundling NMOS here.
+  # Connect an existing NMOS deployment using NMOS_BASE_URL.
+  # Do not fork or vendor NMOS internals into this stack.

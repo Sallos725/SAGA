@@ -1,0 +1,27 @@
+[
+  {
+    "actor_id": "player",
+    "event_id": "example-1",
+    "idempotency_key": null,
+    "kind": "overcome",
+    "parent_event_id": null,
+    "payload": {
+      "difficulty": 2,
+      "skill": "investigate"
+    },
+    "schema_version": 1
+  },
+  {
+    "actor_id": "player",
+    "event_id": "example-2",
+    "idempotency_key": null,
+    "kind": "create_advantage",
+    "parent_event_id": null,
+    "payload": {
+      "aspect_name": "Mapped escape route",
+      "difficulty": 1,
+      "skill": "notice"
+    },
+    "schema_version": 1
+  }
+]

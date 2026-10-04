@@ -1,0 +1,109 @@
+{
+  "$defs": {
+    "ActorState": {
+      "properties": {
+        "actor_id": {
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "conditions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Conditions",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "hp": {
+          "default": 10,
+          "title": "Hp",
+          "type": "integer"
+        },
+        "inventory": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Inventory",
+          "type": "object"
+        },
+        "max_hp": {
+          "default": 10,
+          "title": "Max Hp",
+          "type": "integer"
+        },
+        "stats": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "title": "Stats",
+          "type": "object"
+        }
+      },
+      "required": [
+        "actor_id"
+      ],
+      "title": "ActorState",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "actors": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ActorState"
+      },
+      "title": "Actors",
+      "type": "object"
+    },
+    "flags": {
+      "additionalProperties": true,
+      "title": "Flags",
+      "type": "object"
+    },
+    "quest_state": {
+      "additionalProperties": true,
+      "title": "Quest State",
+      "type": "object"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "seq": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Seq",
+      "type": "integer"
+    },
+    "simulated_time": {
+      "default": 0,
+      "title": "Simulated Time",
+      "type": "integer"
+    },
+    "world_id": {
+      "minLength": 1,
+      "title": "World Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "world_id"
+  ],
+  "title": "WorldState",
+  "type": "object"
+}

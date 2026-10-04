@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "ruleset_id": {
+      "minLength": 1,
+      "title": "Ruleset Id",
+      "type": "string"
+    },
+    "ruleset_version": {
+      "minLength": 1,
+      "title": "Ruleset Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ruleset_id",
+    "ruleset_version"
+  ],
+  "title": "CreateWorldRequest",
+  "type": "object"
+}

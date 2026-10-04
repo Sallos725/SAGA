@@ -1,0 +1,11 @@
+id: demo
+ruleset: generic-fantasy
+ruleset_version: 0.1.0
+memory:
+  provider: nmos
+  fail_mode: soft
+runtime:
+  journal: jsonl
+  seed: demo-seed
+frontend:
+  risuai: true

@@ -1,0 +1,23 @@
+{
+  "scenario_id": "demo-drainage-route",
+  "version": "1",
+  "description": "A tiny long-horizon scaffold scenario: an early clue may provide a later non-obvious route.",
+  "initial_world": {
+    "world_id": "bench-demo",
+    "actors": {
+      "player": {"actor_id": "player", "hp": 20, "max_hp": 20},
+      "guard": {"actor_id": "guard", "hp": 10, "max_hp": 10}
+    },
+    "flags": {"west_gate_locked": true, "drainage_route_known": false}
+  },
+  "allowed_actions": ["investigate", "talk", "move", "use_item", "attack"],
+  "hidden_checks": [
+    {
+      "id": "legal_alternate_route",
+      "description": "Recognize and legally exploit the drainage route after learning the clue.",
+      "type": "placeholder"
+    }
+  ],
+  "fixed_rolls": null,
+  "max_turns": 30
+}

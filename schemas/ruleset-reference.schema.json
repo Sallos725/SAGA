@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "ruleset_id": {
+      "title": "Ruleset Id",
+      "type": "string"
+    },
+    "ruleset_version": {
+      "title": "Ruleset Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ruleset_id",
+    "ruleset_version"
+  ],
+  "title": "RulesetReference",
+  "type": "object"
+}
