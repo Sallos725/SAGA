@@ -48,9 +48,15 @@ Send `attack opponent`, `check strength 10`, or `save dexterity 12`; regeneratio
 committed event and dice. This is a command-driven SRD subset with fallback narration, not
 natural-language TRPG orchestration.
 
-Set `useSayNothing=false` in host settings for this demo. Active history is limited to 256
-user turns; latest-action edits fork safely, while changed earlier history must be resumed
+Set `useSayNothing=false` in host settings for this demo. Full non-comment history, including
+hidden context, is limited to 256 user turns; semantic latest-action edits fork safely, while
+changed earlier history must be resumed
 from its first uncommitted turn. Disable the demo plugin when selecting another main provider.
+
+Bridge v2 keeps the same event for cosmetic command edits and preserves committed hidden turns.
+Existing v1 chats remain read-only for exact original-history replay; start a new chat for v2
+actions. Client-controlled message ids and the known seed still make this a trusted demo, not adversarial
+benchmark isolation. See the [identity fix report](docs/progress/risu-identity-context-fix.md).
 
 ```bash
 python -m venv .venv
@@ -97,6 +103,7 @@ python -m compileall src
 ```
 
 GitHub Actions runs the complete suite on all three versions for pushes and pull requests.
+The provider tests also run in CI with Node.js 22: `node --test tests/risu_provider.test.cjs`.
 
 Two selectable system examples are available: **SRD 5.2.1** (CC BY 4.0) and **Fate Condensed**
 (CC BY 3.0). Each includes typed action handlers, a module manifest, the shared bot description,

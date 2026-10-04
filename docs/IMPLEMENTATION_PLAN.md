@@ -69,6 +69,10 @@ The no-memory command slice is independent of Phase 2. See
 integration and efficient long-history branch storage remain open; the demo caps active
 history at 256 user actions.
 
+Bridge identity v2 now canonicalizes cosmetic command variants, retains committed context-hidden
+turns, and keeps legacy v1 worlds exact-history read-only. See
+[the review-fix report](progress/risu-identity-context-fix.md) before extending these contracts.
+
 ## Phase 4 — MCP/tool layer
 
 - [ ] Select a concrete MCP dice server.

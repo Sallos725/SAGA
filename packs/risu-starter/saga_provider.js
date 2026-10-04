@@ -1,7 +1,7 @@
 //@name saga_runtime
 //@display-name SAGA SRD Demo
 //@api 3.0
-//@version 0.1.0
+//@version 0.2.0
 //@arg server_url string SAGA URL (default http://saga-runtime:4850)
 //@arg host_instance_id string Stable host identity (empty generates a persistent local identity)
 
@@ -110,11 +110,12 @@
         busy = acquired = true;
         await assertCurrent(snapshot, settings);
         if (signal?.aborted) throw new Error("요청이 취소되었습니다.");
-        const actions = snapshot.messages.filter(message => message.role === "user" && !message.disabled && !message.comment)
-          .map(message => ({ message_id: message.id, text: message.text }));
+        const actions = snapshot.messages.filter(message => message.role === "user" && !message.comment)
+          .map(message => ({ message_id: message.id, text: message.text, context_hidden: message.disabled }));
+        if (actions.at(-1)?.context_hidden) throw new Error("마지막 사용자 메시지가 숨겨져 있습니다. 다시 표시한 뒤 생성하세요.");
         const body = { model: "saga-srd-demo", stream: false,
           messages: [{ role: "user", content: actions.at(-1).text }],
-          saga: { schema_version: 1, host_instance_id: settings.instance, chat_id: snapshot.chatId,
+          saga: { schema_version: 2, host_instance_id: settings.instance, chat_id: snapshot.chatId,
             actor_id: "player", purpose: "action", actions } };
         let timer;
         let response;
@@ -136,7 +137,7 @@
         if (signal?.aborted) throw new Error("요청이 취소되었습니다. 완료된 판정은 기록에 보존됩니다.");
         const state = result.saga;
         const prose = result.choices?.[0]?.message?.content;
-        if (state?.schema_version !== 1 || typeof state.event_id !== "string" ||
+        if (state?.schema_version !== 2 || ![1, 2].includes(state.identity_version) || typeof state.event_id !== "string" ||
             typeof prose !== "string" || !Array.isArray(state.rolls) || !state.state?.actors) {
           throw new Error("SAGA 응답 형식이 잘못되었습니다.");
         }
@@ -144,7 +145,8 @@
         const rolls = state.rolls.map(roll => roll.expression + " → [" + roll.raw.join(", ") + "] = " + roll.total).join(" · ");
         const status = "**SAGA 확정 판정 · 턴 " + state.seq + (state.replayed ? " · 기록 재사용" : "") + "**\n\n" +
           hp + "\n\n주사위: " + (rolls || "없음") + "\n\n이벤트: `" + state.event_id + "`";
-        return { success: true, content: prose + "\n\n---\n\n" + status };
+        const legacy = state.legacy_read_only ? "\n\n기존 v1 기록은 읽기 전용입니다. 새 행동은 새 채팅에서 시작하세요." : "";
+        return { success: true, content: prose + "\n\n---\n\n" + status + legacy };
       } catch (error) {
         return { success: false, content: error instanceof Error ? error.message : "SAGA 요청 실패" };
       } finally {

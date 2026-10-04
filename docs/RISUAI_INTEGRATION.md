@@ -46,7 +46,7 @@ and `localNetwork.ts`:
 
 These observations apply to the pinned PocketRisu build, not every upstream RisuAI version.
 
-### HTTP contract v1
+### HTTP contract v2 (legacy v1 is read-only)
 
 `GET /v1/models` lists `saga-srd-demo`. The non-streaming OpenAI-shaped completion request is
 closed and described by [JSON Schema](../schemas/risu-completion.schema.json):
@@ -57,33 +57,53 @@ closed and described by [JSON Schema](../schemas/risu-completion.schema.json):
   "stream": false,
   "messages": [{"role": "user", "content": "attack opponent"}],
   "saga": {
-    "schema_version": 1,
+    "schema_version": 2,
     "host_instance_id": "my-pocketrisu-installation",
     "chat_id": "host-chat-uuid",
     "actor_id": "player",
     "purpose": "action",
-    "actions": [{"message_id": "host-user-message-uuid", "text": "attack opponent"}]
+    "actions": [{"message_id": "host-user-message-uuid", "text": "attack opponent", "context_hidden": false}]
   }
 }
 ```
 
-`actions` is the complete active user-message prefix, excluding disabled/comments. Assistant
+`actions` is the complete user-message prefix, excluding only comments. Disabled and
+`allBefore` user turns remain present with `context_hidden: true`. Assistant
 prose never identifies an action. All ids must be present and user ids unique; the last prompt
 message must match the latest action text exactly. `stream: true`, auxiliary purposes, extra
 fields, other actors/models and missing metadata are rejected with 422 before dispatch. This
 is a narrow OpenAI-compatible response/request subset, not a general-purpose model proxy.
 
 The response contains normal `id/object/created/model/choices` fields (`created: 0` denotes
-no timestamp), plus `saga` with `schema_version`, `world_id`, `branch_id`, `event_id`, `seq`,
+no timestamp), plus `saga` with `schema_version` matching the request, `identity_version`,
+`legacy_read_only`, `world_id`, `branch_id`, `event_id`, `seq`,
 `replayed`, `state`, `facts`, `rolls`, `patches`, `trace` and `resolution`. The plugin renders
 HP and rolls directly from this result. It does not parse generated prose back into state.
 
 ### Persistent identity and immutable history
 
-`stable_value_hash` uses canonical JSON and SHA-256. Namespace `saga-risu-v1` plus host
-instance/chat ids derives the world id. Namespace `saga-risu-action-v1` plus world id,
-parent event id, user-message id and exact raw text derives the event id. The branch id equals
-the event id. Actor/ruleset are fixed to `player` / `srd-5.2.1@0.1.0` in contract v1.
+`stable_value_hash` uses canonical JSON and SHA-256. Namespace `saga-risu-v2` plus host
+instance/chat ids derives the world id. Namespace `saga-risu-action-v2` plus world id,
+parent event id, user-message id and the validated `{kind, actor_id, payload}` command derives
+the event id. Canonical payloads include explicit ruleset defaults. The branch id equals
+the event id. Actor/ruleset remain fixed to `player` / `srd-5.2.1@0.1.0`.
+
+The synchronous closed-command parser normalizes case, whitespace and numeric DC formatting
+before hashing. For the same message id and ancestry, `attack opponent`, `Attack  opponent`
+and ` ATTACK opponent ` share an identity; so do `check strength 10` and `CHECK strength 010`.
+This pure canonicalization does not call the injected async `IntentPort`. Committed entries
+are retrieved before that port is invoked; on a new action its proposal must agree with the
+canonical kind, actor and validated payload. No stochastic interpreter determines an identity.
+
+Before resolving v2, the adapter looks up the legacy `saga-risu-v1` world for the same host/chat.
+If it exists, both v1 and v2 requests may **only replay an exact original raw-text v1 prefix**.
+The original event ids, state and rolls are returned with `identity_version: 1` and
+`legacy_read_only: true`. Any unmatched prefix, new action, cosmetic raw-text edit or unknown
+truncation returns 409, without creating a v2 world. V1 requests cannot create worlds or actions.
+Legacy journals do not contain recoverable original host metadata; the adapter does not guess
+that metadata or normalize old hashes. Restore exact old history for reading, or create a new
+host chat for v2 play. Upgrade plugin/backend together and stop old writers; no automatic
+migration, game-state metadata flag or database schema change is involved.
 
 Each new action forks the committed parent prefix using existing repository APIs. `main`
 remains the initial state. Each derived branch contains that prefix and at most its one new
@@ -93,12 +113,19 @@ therefore perform neither intent reinterpretation nor dice execution. New messag
 new actions even when text repeats. Concurrent duplicate requests converge through repository
 fork conflict checks and event idempotency. Pre-dispatch empty forks are recoverable.
 
-Editing the latest action automatically creates an alternate branch from its known parent.
+In v2, a genuine semantic edit to the latest action creates an alternate branch from its known parent.
 Deleting the latest action selects the retained earlier branch. A changed earlier prefix that
 has not itself been committed returns 409; rewind to the first changed turn and generate there.
 The bridge never silently reruns every remaining turn. Foreign entries in a derived branch
-also produce 409. Branch copies make this first implementation quadratic in retained journal
-storage; active requests are bounded to 256 user actions. Efficient long campaigns need a later
+also produce 409. Hidden user turns do not disappear from the chain: each must match a committed
+prefix or the request returns 409 before any write. A never-executed hidden draft is not treated
+as an event; restore it for review or remove the unused draft. A hidden latest action returns
+422 before any world/fork write. Visibility flags themselves are not part of event identity.
+
+New message ids intentionally remain new actions. Client-controlled ids, genuine semantic edits
+and the known seed still permit deliberate outcome selection; this is not adversarial benchmark
+isolation. Branch copies make this implementation quadratic in retained journal storage;
+requests are bounded to 256 non-comment user actions, including hidden turns. Efficient long campaigns need a later
 storage design, without weakening the current replay contract.
 
 ### Failures and verification boundaries

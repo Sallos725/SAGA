@@ -1,3 +1,4 @@
+import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 
@@ -9,15 +10,16 @@ from saga_trpg.adapters.risu.openai_proxy import CommandInterpreter, RisuBridge
 from saga_trpg.adapters.storage.sqlite import SQLiteWorldRepository
 from saga_trpg.api.app import create_app
 from saga_trpg.domain.events import GameEvent
+from saga_trpg.runtime.hashing import stable_value_hash
 
 
-def request(*actions, instance="host-1", chat="chat-1"):
+def request(*actions, instance="host-1", chat="chat-1", version=2):
     actions = actions or (("u1", "attack opponent"),)
     return {
         "model": "saga-srd-demo",
         "messages": [{"role": "user", "content": actions[-1][1]}],
         "saga": {
-            "schema_version": 1,
+            "schema_version": version,
             "host_instance_id": instance,
             "chat_id": chat,
             "purpose": "action",
@@ -256,3 +258,192 @@ def test_exported_request_schema_matches_current_contract():
     )
     schema.pop("$schema")
     assert schema == CompletionRequest.model_json_schema()
+
+
+@pytest.mark.parametrize(
+    "variants",
+    [
+        ["attack opponent", "Attack opponent", "attack  opponent", "\n attack opponent\t"],
+        ["check strength 10", "Check STRENGTH 010", "check  strength 010"],
+        ["save dexterity 12 advantage", " SAVE Dexterity 012 ADVANTAGE "],
+    ],
+)
+def test_cosmetic_commands_keep_one_record_without_reinterpreting(tmp_path, variants):
+    repo, dice, intent, client = setup(tmp_path)
+    responses = [
+        client.post("/v1/chat/completions", json=request(("u1", text))) for text in variants
+    ]
+    assert all(response.status_code == 200 for response in responses)
+    saved = responses[0].json()["saga"]
+    assert all(response.json()["saga"]["event_id"] == saved["event_id"] for response in responses)
+    assert all(response.json()["saga"]["state"] == saved["state"] for response in responses)
+    assert dice.calls == len(saved["rolls"]) and intent.calls == 1
+    assert len(repo.branches(saved["world_id"])) == 2
+
+
+def test_context_hidden_committed_prefix_keeps_state_and_drafts_reject(tmp_path):
+    repo, dice, intent, client = setup(tmp_path)
+    actions = []
+    for index in range(1, 7):
+        actions.append((f"m{index}", "attack opponent"))
+        response = client.post("/v1/chat/completions", json=request(*actions))
+        assert response.status_code == 200
+    previous = response.json()["saga"]
+    body = request(*actions, ("m7", "check strength 10"))
+    for action in body["saga"]["actions"][:-1]:
+        action["context_hidden"] = True
+    continued = client.post("/v1/chat/completions", json=body)
+    assert continued.status_code == 200, continued.text
+    saved = continued.json()["saga"]
+    assert saved["seq"] == 7
+    assert (
+        saved["state"]["actors"]["opponent"]["hp"] == previous["state"]["actors"]["opponent"]["hp"]
+    )
+    before = dice.calls, intent.calls, repo.branches(saved["world_id"])
+    replay = client.post(
+        "/v1/chat/completions", json=request(*actions, ("m7", "CHECK strength 010"))
+    )
+    assert replay.status_code == 200 and replay.json()["saga"]["event_id"] == saved["event_id"]
+    unknown = request(("draft", "attack opponent"), ("new", "check strength 10"))
+    unknown["saga"]["actions"][0]["context_hidden"] = True
+    assert client.post("/v1/chat/completions", json=unknown).status_code == 409
+    hidden_latest = deepcopy(body)
+    hidden_latest["saga"]["actions"][-1]["context_hidden"] = True
+    assert client.post("/v1/chat/completions", json=hidden_latest).status_code == 422
+    assert (dice.calls, intent.calls, repo.branches(saved["world_id"])) == before
+
+
+def seed_legacy(repo, text):
+    """Write a frozen v1-style record through existing repository APIs, without this bridge."""
+    world_id = "risu-" + stable_value_hash(["saga-risu-v1", "host-1", "chat-1"])
+    event_id = "risu-" + stable_value_hash(["saga-risu-action-v1", world_id, None, "u1", text])
+    definition = repo.registry.get("srd-5.2.1", "0.1.0")
+    repo.create_world(
+        definition.example_world(world_id), ruleset_id="srd-5.2.1", ruleset_version="0.1.0"
+    )
+    repo.fork(world_id, branch_id=event_id, at_event_id=None)
+    event = asyncio.run(
+        CommandInterpreter().interpret(world_id=world_id, actor_id="player", text=text)
+    )
+    event.event_id = event.idempotency_key = event_id
+    return repo.dispatch(world_id, event, branch_id=event_id).entry
+
+
+@pytest.mark.parametrize("text", ["attack opponent", "Attack  opponent", "CHECK Strength 010"])
+def test_legacy_exact_records_remain_read_only_across_upgrade_and_restart(tmp_path, text):
+    repo, _, _, _ = setup(tmp_path)
+    original = seed_legacy(repo, text)
+    world_id = original.result.state.world_id
+    before = repo.branches(world_id)
+    for _ in range(2):
+        reopened, dice, intent, client = setup(tmp_path)
+        for version in (1, 2):
+            response = client.post(
+                "/v1/chat/completions", json=request(("u1", text), version=version)
+            )
+            assert response.status_code == 200, response.text
+            saved = response.json()["saga"]
+            assert saved["event_id"] == original.committed.event.event_id
+            assert saved["state"] == original.result.state.model_dump(mode="json")
+            assert saved["rolls"] == [roll.model_dump() for roll in original.result.rolls]
+            assert saved["legacy_read_only"] and saved["identity_version"] == 1
+            for altered in (
+                request(("u1", text + " "), version=version),
+                request(("u1", text), ("u2", "attack opponent"), version=version),
+                request(("u2", "attack opponent"), version=version),
+            ):
+                assert client.post("/v1/chat/completions", json=altered).status_code == 409
+        assert reopened.branches(world_id) == before
+        assert dice.calls == intent.calls == 0
+
+
+def test_v1_cannot_create_worlds_or_bypass_v2_identity(tmp_path):
+    _, dice, intent, client = setup(tmp_path)
+    assert client.post("/v1/chat/completions", json=request(version=1)).status_code == 409
+    first = client.post("/v1/chat/completions", json=request(version=2))
+    assert first.status_code == 200
+    before = dice.calls, intent.calls
+    assert (
+        client.post(
+            "/v1/chat/completions", json=request(("u1", "Attack opponent"), version=1)
+        ).status_code
+        == 409
+    )
+    assert (dice.calls, intent.calls) == before
+
+
+def test_concurrent_cosmetic_first_submissions_converge_and_reopen(tmp_path):
+    repo, dice, _, client = setup(tmp_path)
+    variants = ["attack opponent", "Attack  opponent", " ATTACK opponent "]
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        responses = list(
+            pool.map(
+                lambda text: client.post("/v1/chat/completions", json=request(("u1", text))),
+                variants,
+            )
+        )
+    assert all(response.status_code == 200 for response in responses)
+    saved = responses[0].json()["saga"]
+    assert {response.json()["saga"]["event_id"] for response in responses} == {saved["event_id"]}
+    assert sum(not response.json()["saga"]["replayed"] for response in responses) == 1
+    assert dice.calls == len(saved["rolls"])
+    assert len(repo.branches(saved["world_id"])) == 2
+
+    class NeverInterpret:
+        async def interpret(self, **kwargs):
+            raise AssertionError("regeneration must not invoke the intent port")
+
+    _, reopened_dice, _, reopened = setup(tmp_path, interpreter=NeverInterpret())
+    response = reopened.post("/v1/chat/completions", json=request(("u1", "aTtAcK opponent")))
+    assert response.status_code == 200 and response.json()["saga"]["event_id"] == saved["event_id"]
+    assert reopened_dice.calls == 0
+
+
+def test_canonical_identity_refuses_different_valid_interpreter_proposal(tmp_path):
+    class ChangedIntent:
+        async def interpret(self, **kwargs):
+            return GameEvent(
+                kind="ability_check",
+                actor_id="player",
+                payload={"ability": "strength", "difficulty": 10},
+            )
+
+    repo, dice, _, client = setup(tmp_path, interpreter=ChangedIntent())
+    response = client.post("/v1/chat/completions", json=request())
+    assert response.status_code == 422
+    assert "canonical" in response.json()["detail"]
+    assert dice.calls == 0
+    with repo.database.transaction() as connection:
+        assert connection.execute("SELECT count(*) FROM worlds").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("hidden", [False, True])
+def test_malformed_earlier_command_rejects_before_any_world_write(tmp_path, hidden):
+    repo, dice, intent, client = setup(tmp_path)
+    body = request(("u1", "unexecuted draft"), ("u2", "attack opponent"))
+    body["saga"]["actions"][0]["context_hidden"] = hidden
+    response = client.post("/v1/chat/completions", json=body)
+    assert response.status_code == (409 if hidden else 422)
+    assert dice.calls == intent.calls == 0
+    with repo.database.transaction() as connection:
+        assert connection.execute("SELECT count(*) FROM worlds").fetchone()[0] == 0
+
+
+def test_hidden_latest_and_true_first_turn_edit_have_distinct_behavior(tmp_path):
+    repo, dice, intent, client = setup(tmp_path)
+    body = request()
+    body["saga"]["actions"][0]["context_hidden"] = True
+    assert client.post("/v1/chat/completions", json=body).status_code == 422
+    assert dice.calls == intent.calls == 0
+    with repo.database.transaction() as connection:
+        assert connection.execute("SELECT count(*) FROM worlds").fetchone()[0] == 0
+    attack = client.post("/v1/chat/completions", json=request()).json()["saga"]
+    edited = client.post("/v1/chat/completions", json=request(("u1", "check strength 10"))).json()[
+        "saga"
+    ]
+    assert edited["event_id"] != attack["event_id"] and edited["seq"] == attack["seq"] == 1
+    assert edited["state"]["actors"]["opponent"]["hp"] == 30
+    assert (
+        repo.get_state(attack["world_id"], branch_id=attack["branch_id"]).model_dump(mode="json")
+        == attack["state"]
+    )

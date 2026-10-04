@@ -6,15 +6,19 @@
     "description": "SAGA의 API 키 없는 SRD 5.2.1 일부 규칙 데모. player와 opponent의 정확한 HP, 주사위, 판정은 SAGA 서버가 관리합니다. 이 카드는 상태를 저장하거나 주사위를 굴리지 않습니다.",
     "personality": "확정된 판정 기록을 보여주는 간결한 진행자.",
     "scenario": "player HP 20/20, opponent HP 30/30, opponent AC 13. SRD 5.2.1 일부: 공격, 능력 판정, 내성 굴림. 자동 적 턴이나 자연어 행동 해석은 없습니다.",
-    "first_mes": "SAGA 판정 연습장입니다. 모델을 **SAGA SRD Demo**로 선택한 뒤 아래 명령을 보내세요.\n\n- `attack opponent` — 상대 공격\n- `check strength 10` — 힘 DC 10 판정\n- `save dexterity 12` — 민첩 DC 12 내성\n\n명령 뒤에 `advantage` 또는 `disadvantage`를 붙일 수 있습니다. 능력: strength, dexterity, constitution, intelligence, wisdom, charisma.\n\n**같은 응답의 재생성은 기존 판정과 주사위를 재사용합니다.** 같은 명령을 새 메시지로 보내면 새 행동입니다. 이어쓰기는 지원하지 않습니다. 판정을 새로 시작하려면 새 채팅을 만드세요.",
+    "first_mes": "SAGA 판정 연습장입니다. 모델을 **SAGA SRD Demo**로 선택한 뒤 아래 명령을 보내세요.\n\n- `attack opponent` — 상대 공격\n- `check strength 10` — 힘 DC 10 판정\n- `save dexterity 12` — 민첩 DC 12 내성\n\n명령 뒤에 `advantage` 또는 `disadvantage`를 붙일 수 있습니다. 능력: strength, dexterity, constitution, intelligence, wisdom, charisma.\n\n**같은 응답의 재생성은 기존 판정과 주사위를 재사용합니다.** 같은 명령을 새 메시지로 보내면 새 행동입니다. 이어쓰기는 지원하지 않습니다. 판정을 새로 시작하려면 새 채팅을 만드세요.\n\nv2에서는 같은 메시지의 대소문자·공백 수정이 새 판정을 만들지 않습니다. 문맥에서 숨긴 턴도 확정 상태는 유지됩니다. 기존 v1 채팅은 읽기 전용이므로 새 행동은 새 채팅에서 시작하세요.",
     "mes_example": "",
     "creator_notes": "Install saga_provider.js as a v3 plugin and select SAGA SRD Demo. Default backend http://saga-runtime:4850 via PocketRisu local-network proxy. No API key or NMOS required. Rules scope and attribution: docs/RULESET_LICENSES.md in the SAGA repository. Includes material adapted from System Reference Document 5.2.1 by Wizards of the Coast LLC, licensed CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). https://www.dndbeyond.com/srd",
     "system_prompt": "Use the SAGA SRD Demo provider. Authoritative state and roll results come only from the committed SAGA response. This command demo does not call an LLM.",
     "post_history_instructions": "",
     "alternate_greetings": [],
-    "tags": ["SAGA", "SRD", "runtime-demo"],
+    "tags": [
+      "SAGA",
+      "SRD",
+      "runtime-demo"
+    ],
     "creator": "SAGA",
-    "character_version": "0.1.0",
+    "character_version": "0.2.0",
     "extensions": {}
   }
 }

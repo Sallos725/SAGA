@@ -3,6 +3,7 @@
 An API-key-free command demo for PocketRisu **1.13.0**, plugin API **3.0**.
 It uses the existing SRD 5.2.1 subset, deterministic local dice, committed facts as narration,
 and no semantic memory. It does not call an LLM or NMOS.
+Plugin **0.2.0** uses bridge protocol/identity **v2**.
 
 ## Install
 
@@ -28,6 +29,16 @@ host plugin storage. Keep that identity and the backend save volume when restart
 the same installation. Use a different identity for an independent installation; changing it
 starts a different campaign namespace.
 
+### Upgrading an existing v1 chat
+
+Upgrade the backend and plugin together; do not run old and new backends against the same
+database concurrently. Existing v1 chat worlds are **read-only**: regenerating an exact original
+user-message prefix returns its original event id and rolls. New actions and any unmatched raw
+text, including cosmetic edits to old v1 messages, return 409. Restore the exact original history
+to read it, or start a **new host chat** for v2 play. The adapter checks for the old world before
+using the v2 namespace, so upgrading cannot silently restart an existing chat at genesis.
+There is no database migration and no automatic transfer of a v1 campaign to v2.
+
 ## Play
 
 | Command | Effect |
@@ -48,6 +59,9 @@ or complete combat simulation. A new host chat starts a new world.
 The response shows recorded facts, authoritative HP, exact rolls and the event id.
 **Regenerate** reuses the same event and rolls. Sending the same text as a **new user message**
 is a new action. The fallback text is deterministic, so regenerated prose normally stays the same.
+For v2 chats, changing case, spacing or DC zero padding on the same message (for example
+`check strength 10` → `CHECK  strength 010`) reuses its event and rolls. A genuinely different
+validated command still creates an alternate branch.
 **Continue** is unsupported and returns a clear error without a runtime request when the
 required `useSayNothing=false` setting is applied. PocketRisu defaults this setting to true;
 when enabled, an empty Continue inserts a synthetic `*says nothing*` user turn instead.
@@ -56,21 +70,32 @@ host retries. Remove the placeholder before the next command and disable the set
 
 ## Editing and recovery
 
-- Editing the latest user command creates a branch from its committed predecessor. The old
+- Changing the meaning of the latest v2 user command creates a branch from its committed predecessor. The old
   branch remains intact. Deleting the last action and regenerating an earlier turn reuses that
   earlier committed state.
-- After editing/deleting an earlier turn, rewind the chat to the first changed user turn and
+- After editing/deleting an earlier turn in a v2 chat, rewind to the first changed user turn and
   generate there. The bridge rejects an uncommitted changed prefix instead of automatically
-  executing every later action. Disabled/comment user turns are excluded from the active prefix.
+  executing every later action. Comment messages are excluded from the action history.
+- Disabling messages or using **disable all before** only hides prompt context. Hidden user
+  turns remain in the submitted history, and their committed events remain authoritative.
+  A hidden turn without a matching committed prefix (including a never-executed draft) returns
+  409; restore it for review, or remove the unused draft. Hidden turns are never executed
+  automatically. Restore a hidden latest user turn before generating.
 - After an unsupported command, edit or remove that user message before continuing.
 - If a response is lost, regenerate the same user message. A completed event is recovered from
   SQLite even after a runtime restart. Do not send a duplicate new message to retry.
 - If chat, swipe, command or plugin settings change in flight, the plugin suppresses the result.
   A committed result remains on its original immutable branch and can be recovered by returning
   to that history. Cancellation/timeouts cannot undo an already committed action.
-- This first slice limits active history to 256 user turns. Every prefix gets a copied journal
+- This first slice limits full non-comment history, including hidden turns, to 256 user turns.
+  Every prefix gets a copied journal
   branch; storage grows quadratically with turn count. Long-horizon storage optimization is
   a later task, not a demonstrated capacity of this demo.
 
 The card and plugin are presentation/transport artifacts. Exact state remains in the runtime
 save volume; exported cards and host chat backups alone are not campaign backups.
+
+This is a trusted solo-play demo, not adversarial benchmark isolation. A new message id is
+intentionally a new action; editable client ids, true semantic edits and a known seed can still
+be used to explore alternate outcomes. The v2 fixes prevent accidental cosmetic rerolls and
+context-hiding resets, not every form of deliberate result selection.

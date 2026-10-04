@@ -25,3 +25,13 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: python -m compileall src
+
+  risu-provider:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - run: node --test tests/risu_provider.test.cjs
