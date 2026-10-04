@@ -20,7 +20,8 @@
 - [x] RisuAI world/session mapping
 - [x] rerender detection
 - [x] closed deterministic command interpretation
-- [ ] LLM intent interpreter
+- [x] bounded Vertex natural-language attack/check/save interpreter, existing durable tape (offline verified)
+- [ ] live natural-language quality and 6011 upgrade verification
 - [x] opt-in Vertex narration after commit, with fallback
 - [ ] narration streaming and general card/lore compatibility
 

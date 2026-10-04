@@ -114,7 +114,12 @@ commands and parent events (bridge identity v2). Consecutive actions append to o
 only a divergent edit forks its committed parent prefix. Prompt-hidden user turns retain their
 committed ancestry. Legacy v1 raw-text identities remain exact-history read-only; they are
 not silently migrated or replaced with new worlds. Committed entries are read before calling
-the intent port on regeneration. No domain
+the intent port on regeneration. Protocol 3 additionally tags raw natural action text while
+retaining the v2 world and command identities. New natural interpretation is claimed and saved
+on the existing generic tool tape, anchored to main plus the host event id, before game
+dispatch. Its context hash uses verified committed parent state or persisted genesis; branch
+reselection never changes its logical call identity. Pending interpretation is never blindly
+reissued. No domain
 or runtime I/O, state schema, or database schema was changed for this bridge. See
 [the Risu integration contract](RISUAI_INTEGRATION.md) for its bounded demo scope.
 

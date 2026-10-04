@@ -57,6 +57,15 @@ snapshots. Neither path invokes rules or dice. Snapshot recovery does not audit 
 use full replay to detect corruption before the snapshot. Hashes detect state-chain corruption,
 not cryptographic authenticity of every event, trace, or tool field.
 
+`get_initial_state(world_id)` reads the persisted genesis through the existing state loader,
+without snapshots or a moving head. It performs no rules or dice and changes no schema.
+The Risu natural-intent adapter binds its existing generic tape claim to this state for first
+actions, or to a verified committed parent for later actions. Its call is anchored to `main`
+even when the game action later forks. Completed proposals/refusals remain tape records;
+game commitment is represented by the existing journal. Raw natural action text is retained
+in tape arguments, while credentials and rejected provider output are excluded. See the
+[natural-intent contract](progress/risu-natural-intent.md) for pending/crash behavior.
+
 ## Idempotency and branching
 
 Supply `event_id`, `idempotency_key`, or both for retryable requests. Their uniqueness is scoped

@@ -1,16 +1,16 @@
 //@name saga_runtime
 //@display-name SAGA SRD Demo
 //@api 3.0
-//@version 0.3.0
+//@version 0.4.0
 //@arg server_url string SAGA URL (default http://saga-runtime:4850)
 //@arg host_instance_id string Stable host identity (empty generates a persistent local identity)
-//@arg vertex_service_account_json string {{name::Vertex 서비스 계정 JSON}}{{textarea}} JSON 전체를 붙여넣으세요. Gemini 3.8 Flash 자동 연결; 비우면 기본 서술.
+//@arg vertex_service_account_json string {{name::Vertex 서비스 계정 JSON}}{{textarea}} JSON 전체를 붙여넣으세요. Gemini 3.8 Flash로 자연어 행동·서술; 비우면 명령·기본 서술.
 
 (() => {
   "use strict";
   const PROVIDER = "SAGA SRD Demo";
   const MARKER = "SAGA request ticket: ";
-  const HELP = "명령: attack opponent / check strength 10 / save dexterity 12. 뒤에 advantage 또는 disadvantage를 붙일 수 있습니다.";
+  const HELP = "Vertex JSON 설정 시 자연어 단일 행동도 지원합니다: 상대를 공격한다 / 힘 난이도 10 판정. 명령: attack opponent / check strength 10 / save dexterity 12. 뒤에 advantage 또는 disadvantage를 붙일 수 있습니다.";
 
   function narrationContext(prompt) {
     const text = prompt.filter(message => ["system", "user", "assistant"].includes(message?.role) &&
@@ -126,7 +126,7 @@
         if (actions.at(-1)?.context_hidden) throw new Error("마지막 사용자 메시지가 숨겨져 있습니다. 다시 표시한 뒤 생성하세요.");
         const body = { model: "saga-srd-demo", stream: false,
           messages: [{ role: "user", content: actions.at(-1).text }],
-          saga: { schema_version: 2, host_instance_id: settings.instance, chat_id: snapshot.chatId,
+          saga: { schema_version: 3, host_instance_id: settings.instance, chat_id: snapshot.chatId,
             actor_id: "player", purpose: "action", actions } };
         const headers = { "content-type": "application/json" };
         if (settings.credentials) {
@@ -134,7 +134,7 @@
           headers["x-saga-vertex-secret"] = btoa(String.fromCharCode(...new TextEncoder().encode(settings.credentials)));
           body.narration = { schema_version: 1, provider: "vertex", context: narrationContext(arg.prompt_chat) };
         }
-        const timeout = settings.credentials ? 33000 : 15000;
+        const timeout = settings.credentials ? 65000 : 15000;
         let timer;
         let response;
         try {
@@ -155,7 +155,7 @@
         if (signal?.aborted) throw new Error("요청이 취소되었습니다. 완료된 판정은 기록에 보존됩니다.");
         const state = result.saga;
         const prose = result.choices?.[0]?.message?.content;
-        if (state?.schema_version !== 2 || ![1, 2].includes(state.identity_version) || typeof state.event_id !== "string" ||
+        if (state?.schema_version !== 3 || ![1, 2, 3].includes(state.identity_version) || typeof state.event_id !== "string" ||
             typeof prose !== "string" || !Array.isArray(state.rolls) || !state.state?.actors) {
           throw new Error("SAGA 응답 형식이 잘못되었습니다.");
         }

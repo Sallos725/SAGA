@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
 import re
@@ -10,6 +11,12 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Header
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
+from saga_trpg.adapters.intent.vertex import (
+    PENDING,
+    TARGET_ALIASES,
+    VertexIntentTool,
+    event_from_result,
+)
 from saga_trpg.adapters.narrator.fallback import FallbackNarrator
 from saga_trpg.adapters.narrator.vertex import VertexNarrator
 from saga_trpg.adapters.storage.sqlite import (
@@ -19,10 +26,13 @@ from saga_trpg.adapters.storage.sqlite import (
     SQLiteWorldRepository,
 )
 from saga_trpg.domain.events import GameEvent
+from saga_trpg.domain.models import WorldState
+from saga_trpg.domain.tools import ToolCall
 from saga_trpg.modules.srd_5_2_1.rules import SRD521Rules
 from saga_trpg.ports.intent import IntentPort
 from saga_trpg.ports.narrator import NarrationRequest, NarratorPort
-from saga_trpg.runtime.hashing import stable_value_hash
+from saga_trpg.ports.tools import ToolExecutionPending
+from saga_trpg.runtime.hashing import stable_model_hash, stable_value_hash
 from saga_trpg.runtime.journal import JournalEntry
 
 logger = logging.getLogger(__name__)
@@ -40,7 +50,7 @@ class HostAction(ClosedModel):
 
 
 class HostTurn(ClosedModel):
-    schema_version: Literal[1, 2]
+    schema_version: Literal[1, 2, 3]
     host_instance_id: Identity
     chat_id: Identity
     actor_id: Literal["player"]
@@ -101,10 +111,31 @@ def canonical_command(*, actor_id: str, text: str) -> GameEvent:
     else:
         raise ValueError(
             "Supported commands: attack opponent; check strength 10; save dexterity 12. "
-            "Optionally append advantage or disadvantage. No natural-language intents yet."
+            "Optionally append advantage or disadvantage. "
+            "Natural language requires protocol 3 and Vertex JSON."
         )
     validated = SRD521Rules.payload_models[kind].model_validate(payload)
     return GameEvent(kind=kind, actor_id=actor_id, payload=validated.model_dump())
+
+
+def command_for(action: HostAction, actor_id: str, *, natural: bool) -> GameEvent | None:
+    """Preserve v2 command identities; raw text is a separate explicit v3 contract."""
+    try:
+        return canonical_command(actor_id=actor_id, text=action.text)
+    except ValueError:
+        words = action.text.strip().lower().split()
+        if natural and words and words[0] not in {"attack", "check", "save"}:
+            if action.text.strip().lower() != "*says nothing*":
+                return None
+        if action.context_hidden:
+            raise RepositoryConflict(
+                "Hidden user history is not a committed supported action. "
+                "Restore it for review; hidden drafts are never executed automatically."
+            ) from None
+        raise ValueError(
+            "Supported commands: attack opponent; check strength 10; save dexterity 12. "
+            "Empty actions and malformed commands are not interpreted automatically."
+        ) from None
 
 
 class CommandInterpreter:
@@ -127,30 +158,102 @@ class RisuBridge:
         self.narrator = narrator or FallbackNarrator()
 
     @staticmethod
-    def identities(turn: HostTurn, *, version: Literal[1, 2] = 2) -> tuple[str, list[str]]:
+    def identities(
+        turn: HostTurn, *, version: Literal[1, 2, 3] | None = None
+    ) -> tuple[str, list[str]]:
+        version = version or (3 if turn.schema_version == 3 else 2)
+        world_version = 1 if version == 1 else 2
         world_id = "risu-" + stable_value_hash(
-            [f"saga-risu-v{version}", turn.host_instance_id, turn.chat_id]
+            [f"saga-risu-v{world_version}", turn.host_instance_id, turn.chat_id]
         )
         identities = []
         parent = None
         for action in turn.actions:
             content: str | dict = action.text
-            if version == 2:
-                try:
-                    event = canonical_command(actor_id=turn.actor_id, text=action.text)
-                except ValueError as exc:
-                    if action.context_hidden:
-                        raise RepositoryConflict(
-                            "Hidden user history is not a committed supported command. "
-                            "Restore it for review; hidden drafts are never executed automatically."
-                        ) from exc
-                    raise
-                content = {"kind": event.kind, "actor_id": event.actor_id, "payload": event.payload}
+            action_version = version
+            if version != 1:
+                event = command_for(action, turn.actor_id, natural=version == 3)
+                if event is None:
+                    content = {
+                        "kind": "natural_language",
+                        "schema_version": 1,
+                        "actor_id": turn.actor_id,
+                        "text": action.text,
+                    }
+                    action_version = 3
+                else:
+                    content = {
+                        "kind": event.kind,
+                        "actor_id": event.actor_id,
+                        "payload": event.payload,
+                    }
+                    action_version = 2
             parent = "risu-" + stable_value_hash(
-                [f"saga-risu-action-v{version}", world_id, parent, action.message_id, content]
+                [
+                    f"saga-risu-action-v{action_version}",
+                    world_id,
+                    parent,
+                    action.message_id,
+                    content,
+                ]
             )
             identities.append(parent)
         return world_id, identities
+
+    def _ensure_world(self, world_id: str) -> WorldState:
+        definition = self.repository.registry.get("srd-5.2.1", "0.1.0")
+        initial = definition.example_world(world_id)
+        self.repository.create_world(
+            initial,
+            if_missing=True,
+            ruleset_id="srd-5.2.1",
+            ruleset_version="0.1.0",
+        )
+        selection = self.repository.ruleset_for_world(world_id)
+        if (selection.ruleset_id, selection.ruleset_version) != ("srd-5.2.1", "0.1.0"):
+            raise RepositoryConflict("host world has an incompatible ruleset")
+        return self.repository.get_initial_state(world_id)
+
+    async def _natural_intent(
+        self,
+        world_id: str,
+        identities: list[str],
+        turn: HostTurn,
+        parent: JournalEntry | None,
+        vertex: VertexNarrator,
+    ) -> GameEvent:
+        initial = self._ensure_world(world_id)
+        # A branch head can move while inference runs. Only the verified committed prefix
+        # (or immutable ruleset genesis) supplies the snapshot bound to this interpretation.
+        state = parent.result.state if parent else initial
+        call = ToolCall(
+            world_id=world_id,
+            branch_id="main",
+            event_id=identities[-1],
+            tool_call_key="risu-natural-intent-v1",
+            tool_name="vertex-intent",
+            tool_version="1",
+            protocol_version="saga-risu-intent-v1",
+            arguments={
+                "text": turn.actions[-1].text,
+                "actor_id": turn.actor_id,
+                "targets": {
+                    key: aliases for key, aliases in TARGET_ALIASES.items() if key in state.actors
+                },
+            },
+            context_hash=stable_model_hash(state),
+        )
+        try:
+            execution = await asyncio.wait_for(
+                asyncio.to_thread(
+                    self.repository.tool_tape.execute, call, VertexIntentTool(vertex)
+                ),
+                timeout=27,
+            )
+        except (TimeoutError, ToolExecutionPending):
+            # Cancellation does not revoke a durable claim or allow another remote attempt.
+            raise ToolExecutionPending(PENDING) from None
+        return event_from_result(execution.result, call.arguments)
 
     def _read_prefix(self, world_id: str, identities: list[str]) -> tuple[str, JournalEntry] | None:
         """The committed latest action and its branch, verified against the whole prefix."""
@@ -251,6 +354,10 @@ class RisuBridge:
                     "Bridge v1 is read-only. Update the plugin to protocol v2 for new chats."
                 )
             world_id, identities = self.identities(turn)
+            if turn.schema_version == 3 and any(
+                command_for(action, turn.actor_id, natural=True) is None for action in turn.actions
+            ):
+                identity_version = 3
             for index, action in enumerate(turn.actions):
                 if (
                     action.context_hidden
@@ -264,21 +371,40 @@ class RisuBridge:
             saved = self._read_prefix(world_id, identities)
         event_id = identities[-1]
         if saved is None:
-            if len(identities) > 1 and self._read_prefix(world_id, identities[:-1]) is None:
+            parent = self._read_prefix(world_id, identities[:-1]) if len(identities) > 1 else None
+            if len(identities) > 1 and parent is None:
                 raise RepositoryConflict(
                     "Uncommitted or edited earlier history. Rewind the host chat to the first "
                     "changed user turn and generate there before adding later actions."
                 )
-            proposed = await self.interpreter.interpret(
-                world_id=world_id, actor_id=turn.actor_id, text=turn.actions[-1].text
+            expected = command_for(
+                turn.actions[-1], turn.actor_id, natural=turn.schema_version == 3
             )
-            proposed = GameEvent.model_validate(proposed.model_dump())
+            if expected is None:
+                if vertex_credentials is None:
+                    raise ValueError(
+                        "자연어 행동에는 Vertex 서비스 계정 JSON이 필요합니다. "
+                        "명령은 키 없이 사용할 수 있습니다."
+                    )
+                proposed = await self._natural_intent(
+                    world_id,
+                    identities,
+                    turn,
+                    parent[1] if parent else None,
+                    narrator,
+                )
+            else:
+                proposed = await self.interpreter.interpret(
+                    world_id=world_id, actor_id=turn.actor_id, text=turn.actions[-1].text
+                )
+                proposed = GameEvent.model_validate(proposed.model_dump())
             payload_model = SRD521Rules.payload_models.get(proposed.kind)
             if payload_model is None or proposed.actor_id != turn.actor_id:
                 raise ValueError("intent must select a supported action for the identified actor")
             payload = payload_model.model_validate(proposed.payload)
-            expected = canonical_command(actor_id=turn.actor_id, text=turn.actions[-1].text)
-            if proposed.kind != expected.kind or payload.model_dump() != expected.payload:
+            if expected is not None and (
+                proposed.kind != expected.kind or payload.model_dump() != expected.payload
+            ):
                 raise ValueError("interpreter proposal differs from the canonical v2 command")
             event = GameEvent(
                 event_id=event_id,
@@ -288,16 +414,7 @@ class RisuBridge:
                 kind=proposed.kind,
                 payload=payload.model_dump(),
             )
-            definition = self.repository.registry.get("srd-5.2.1", "0.1.0")
-            self.repository.create_world(
-                definition.example_world(world_id),
-                if_missing=True,
-                ruleset_id="srd-5.2.1",
-                ruleset_version="0.1.0",
-            )
-            selection = self.repository.ruleset_for_world(world_id)
-            if (selection.ruleset_id, selection.ruleset_version) != ("srd-5.2.1", "0.1.0"):
-                raise RepositoryConflict("host world has an incompatible ruleset")
+            self._ensure_world(world_id)
             # Racing requests may move a head, create the fork or commit this action first.
             # Every commit is guarded in its own transaction, so reselect instead of guessing.
             for attempt in range(3):

@@ -1,12 +1,16 @@
 # RisuAI Integration Notes
 
-## Current implementation: no-memory command demo
+## Current implementation: no-memory action demo
 
 The [starter](../packs/risu-starter/README.md) implements a small playable path on PocketRisu
 1.13.0: v3 provider → `POST /v1/chat/completions` → validated SRD `GameEvent` → persistent
 repository → fallback or optional Vertex narration → authoritative status. It uses
-deterministic commands, local seeded dice and no memory provider. It does not implement LLM
-intent interpretation, streaming, arbitrary card/lore integration, or a complete ruleset.
+deterministic commands, optional bounded natural-language intent, local seeded dice and no
+memory provider. Streaming, arbitrary card/lore integration and a complete ruleset remain open.
+Plugin/card 0.4.0 and protocol 3 are verified offline. Backend/plugin 0.4.0 are now deployed
+to 6011; one natural attack and one regeneration passed live. The existing host card was
+retained, so importing the 0.4.0 starter card remains unverified. See the
+[live report](progress/risu-natural-intent-live.md).
 
 The current installation uses the **SAGA SRD Demo** plugin provider, rather than configuring
 an ordinary Custom API URL: stable host identities and a main-generation guard are required.
@@ -46,6 +50,40 @@ and `localNetwork.ts`:
   clears tickets and removes the replacer. Provider lifecycle cleanup belongs to the host.
 
 These observations apply to the pinned PocketRisu build, not every upstream RisuAI version.
+
+### Natural-language intent in plugin 0.4.0
+
+The same Vertex JSON field enables a separate structured interpretation before game commit.
+Supported scope is one explicit attack/check/save for player; unknown targets, missing DCs,
+proficiency, modifiers, raw state/damage and extra proposal fields are rejected. For example,
+`상대를 공격한다`, `힘으로 난이도 10 판정을 한다`, or `Make a dexterity saving throw, DC 12`.
+Target aliases are opponent/상대/상대방/적, drawn from the committed roster. A check/save needs
+an explicit ability and `DC`/`난이도` integer. The leading words attack/check/save still select
+the strict command syntax, so malformed commands do not trigger paid repair attempts.
+
+Protocol 3 keeps the v2 world namespace and exact canonical command hashes. Natural action
+ids use `saga-risu-action-v3` and tagged raw text plus parent/message ids; no LLM is needed
+to derive or replay them. Natural text edits intentionally create a new action even for
+whitespace changes. Hidden natural turns require a committed prefix, and v1 history remains
+exact-history read-only. Upgrading a v2 chat needs no reset or storage migration.
+
+The existing generic tool tape durably claims interpretation before the remote attempt and
+stores its validated proposal/refusal before dispatch. It is anchored to main plus event id,
+with immutable raw action/roster arguments and a verified parent-state hash. Branch reselection,
+changed assistant prose and restart reuse the same result. Definite refusal returns generic
+422 with no event/dice; timeout or ambiguous execution stays pending and returns 503 without
+another interpretation attempt. A refusal can leave an empty initialized world and safe tape
+record. Raw action text is retained; credentials, tokens and rejected model output are not.
+No second cache/store was introduced, and committed-event replay already avoided interpretation.
+
+New accepted natural actions make at most one intent and one narration generation; commands
+and committed replays make zero intent calls and at most one narration call. Intent uses a
+25-second provider/27-second tape wait; narration retains 25 seconds, with 65/67-second plugin
+proxy/wait budgets. Blank credentials preserve command fallback and allow committed natural
+replay. Live Gemini verification is limited to `상대를 공격한다` and one regeneration;
+checks/saves and other language decisions remain unverified live. See the
+[natural-intent report](progress/risu-natural-intent.md) for strict grounding, pending failures,
+reference reuse and full offline evidence. All agent-run paid tests still require prior approval.
 
 ### Optional Vertex narration in plugin 0.3.0
 
@@ -88,12 +126,14 @@ The model's prose never updates state; the plugin appends authoritative status f
 Empty/malformed output, authentication/provider failure or timeout preserves the committed
 fallback plus a generic visible notice. Only non-thought text up to 12,000 characters is accepted.
 Narration has a 25-second overall budget, 5-second OAuth transport timeout and 15-second Vertex
-HTTP timeout. The plugin's 33-second proxy timeout and 35-second wait allow that fallback to return.
+HTTP timeout. Plugin 0.4.0 uses a 65-second proxy timeout and 67-second wait to cover interpretation
+plus narration and return fallback within the normal path.
 No inference retries are added; standard OAuth refresh may retry transient token failures within
 the outer wait budget. A worker-thread OAuth call or Google inference may finish after local
 cancellation; no completed game action is rolled back. Retrying the same message replays the event
 before attempting fresh narration. Existing stale-selection/message/configuration/unload guards
-suppress delivery after changes. Bridge identity v2 and runtime/storage schemas remain unchanged.
+suppress delivery after changes. Command identity v2 and runtime/storage schemas remain unchanged; protocol 3 adds only
+the explicitly tagged natural-action identity described above.
 
 Automated tests use simulated OAuth/Vertex transports, including real SDK signing with an
 in-memory synthetic key. Separately, two explicitly approved live Gemini calls through 6011
@@ -101,7 +141,7 @@ both returned 200 and displayed fresh prose with unchanged event/state/rolls/jou
 billed cost was not observed. See the [narration report](progress/risu-vertex-narration.md)
 for that bounded live verification.
 
-### HTTP contract v2 (legacy v1 is read-only)
+### HTTP contract v3 (v2 commands remain supported; legacy v1 is read-only)
 
 `GET /v1/models` lists `saga-srd-demo`. The non-streaming OpenAI-shaped completion request is
 closed and described by [JSON Schema](../schemas/risu-completion.schema.json):
@@ -112,7 +152,7 @@ closed and described by [JSON Schema](../schemas/risu-completion.schema.json):
   "stream": false,
   "messages": [{"role": "user", "content": "attack opponent"}],
   "saga": {
-    "schema_version": 2,
+    "schema_version": 3,
     "host_instance_id": "my-pocketrisu-installation",
     "chat_id": "host-chat-uuid",
     "actor_id": "player",
@@ -153,7 +193,7 @@ are retrieved before that port is invoked; on a new action its proposal must agr
 canonical kind, actor and validated payload. No stochastic interpreter determines an identity.
 
 Before resolving v2, the adapter looks up the legacy `saga-risu-v1` world for the same host/chat.
-If it exists, both v1 and v2 requests may **only replay an exact original raw-text v1 prefix**.
+If it exists, v1, v2 and v3 requests may **only replay an exact original raw-text v1 prefix**.
 The original event ids, state and rolls are returned with `identity_version: 1` and
 `legacy_read_only: true`. Any unmatched prefix, new action, cosmetic raw-text edit or unknown
 truncation returns 409, without creating a v2 world. V1 requests cannot create worlds or actions.

@@ -380,3 +380,15 @@ assert repo.get_state('conditions').seq == 1
         env={**os.environ, "PYTHONHASHSEED": "42"},
         check=True,
     )
+
+
+def test_initial_state_read_ignores_moving_heads_and_snapshots(repository):
+    original = initial_state()
+    repository.dispatch("test", attack())
+    repository.dispatch("test", GameEvent(kind="time_advance", actor_id="player"))
+    assert repository.get_state("test").seq == 2
+    assert repository.get_initial_state("test") == original
+    reread = SQLiteWorldRepository(repository.path).get_initial_state("test")
+    assert reread == original
+    reread.actors["goblin"].hp = 0
+    assert repository.get_initial_state("test") == original

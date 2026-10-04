@@ -56,7 +56,9 @@ Exit criterion: a 100+ turn synthetic campaign can retrieve an early clue withou
 - [x] Add session/world identity mapping.
 - [x] Add stable mapping from user turn to runtime event id.
 - [x] Detect regeneration/rerender without redispatch.
-- [x] Add closed-schema deterministic command interpretation (LLM interpretation deferred).
+- [x] Add closed-schema deterministic command interpretation.
+- [x] Add bounded Vertex natural attack/check/save proposals using the existing durable tape.
+- [ ] Verify actual natural-language model quality and upgraded 6011 UI with approved calls.
 - [x] Add opt-in Vertex narration from one JSON input after commit, with bounded waiting and fallback.
 - [ ] Stream narration if practical, after the state commit.
 - [ ] Preserve normal card prompt/lore behavior where compatible.
@@ -66,8 +68,8 @@ Exit criterion: regenerate the same assistant turn 10 times; journal length, HP,
 
 The no-memory command slice is independent of Phase 2. See
 [the integration contract](RISUAI_INTEGRATION.md) and
-[verification report](progress/risu-command-demo.md). Streaming and natural-language/card/lore
-integration remain open. Consecutive turns append to one branch, so journal storage is linear;
+[verification report](progress/risu-command-demo.md). Streaming and general card/lore
+integration remain open; the limited natural-language adapter is offline verified. Consecutive turns append to one branch, so journal storage is linear;
 requests still submit and verify the full history, capped at 256 user actions.
 
 Plugin 0.3.0 optionally narrates through Vertex using one user-pasted service-account JSON
@@ -76,7 +78,9 @@ Regeneration can change prose while retaining the event, state and rolls. Only b
 host context is copied; this does not complete general card/lore compatibility. See the
 [narration report](progress/risu-vertex-narration.md) for the optional request contract,
 secret-handling tests and two successful approved live calls. No PocketRisu code/API/image change or
-auxiliary-model configuration is needed. Natural-language intent and NMOS remain separate work.
+auxiliary-model configuration is needed. Plugin 0.4.0 adds limited natural-language intent before commit with the same JSON input,
+protocol 3, unchanged v2 command identities and durable precommit result reuse. See the
+[natural-intent report](progress/risu-natural-intent.md). Live language quality and NMOS remain open.
 
 Bridge identity v2 now canonicalizes cosmetic command variants, retains committed context-hidden
 turns, and keeps legacy v1 worlds exact-history read-only. See

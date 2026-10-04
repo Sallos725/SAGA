@@ -1,11 +1,12 @@
 schema_version: 1
 id: saga-trpg-starter
 name: SAGA Starter
-status: command-demo
-version: 0.3.0
+status: natural-intent-demo
+version: 0.4.0
 bridge:
-  protocol_version: 2
-  identity_version: 2
+  protocol_version: 3
+  identity_version: 3
+  command_identity_version: 2
   legacy_v1: exact-history-read-only
 backend:
   required: true
@@ -17,6 +18,12 @@ ruleset:
   version: 0.1.0
 memory:
   provider: none
+intent:
+  default: deterministic-command
+  opt_in_argument: vertex_service_account_json
+  provider: vertex
+  durable_tape: risu-natural-intent-v1
+  timeout_seconds: 27
 narration:
   default: fallback
   opt_in_argument: vertex_service_account_json
@@ -35,6 +42,6 @@ artifacts:
 notes:
   - Select the SAGA SRD Demo main provider; auxiliary calls and continuation are rejected.
   - Deterministic commands and default fallback narration; no NMOS connection.
-  - Optional Vertex narration after commit; paste service-account JSON in the plugin setting.
+  - Optional Vertex natural-language intent before commit and narration after commit; use the same JSON field.
   - Credentials are request-scoped in SAGA and never written to the runtime journal.
   - Exact state and rolls are persisted by the backend, not by the card.
