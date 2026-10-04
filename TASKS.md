@@ -16,11 +16,13 @@
 - [ ] current NMOS API audit
 - [ ] NMOS adapter
 - [ ] actor visibility model
-- [ ] RisuAI request audit
-- [ ] RisuAI world/session mapping
-- [ ] rerender detection
-- [ ] intent interpreter
-- [ ] narrator integration
+- [x] RisuAI request audit (pinned PocketRisu 1.13.0 provider subset)
+- [x] RisuAI world/session mapping
+- [x] rerender detection
+- [x] closed deterministic command interpretation
+- [ ] LLM intent interpreter
+- [x] opt-in Vertex narration after commit, with fallback
+- [ ] narration streaming and general card/lore compatibility
 
 ## P2 — Tools + rules
 

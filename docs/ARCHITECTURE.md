@@ -109,8 +109,9 @@ Never mutate historical event results in place. Edited user turns should create 
 ## Current persistence boundary
 
 The PocketRisu command adapter is an outer client of that boundary. It derives a world from
-host-instance/chat ids and immutable action branches from message ids, canonical validated
-commands and parent events (bridge identity v2). Prompt-hidden user turns retain their
+host-instance/chat ids and chained event ids from message ids, canonical validated
+commands and parent events (bridge identity v2). Consecutive actions append to one branch;
+only a divergent edit forks its committed parent prefix. Prompt-hidden user turns retain their
 committed ancestry. Legacy v1 raw-text identities remain exact-history read-only; they are
 not silently migrated or replaced with new worlds. Committed entries are read before calling
 the intent port on regeneration. No domain

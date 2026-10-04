@@ -77,6 +77,16 @@ the new branch id so new branch rolls do not accidentally share the source's gen
 Retries of inherited events return the inherited result. Explicit ids remain scoped per branch.
 Forks can themselves be forked. A required `at_event_id: null` selects genesis deliberately.
 
+`dispatch` accepts two optional preconditions for hosts that choose a branch before writing.
+`expected_seq` requires the branch head to be unchanged, and `unique_in_world` rejects an
+event id already committed on another branch of the world. It requires an explicit `event_id`
+(or a reservation that already fixed one); a generated id is rejected with `ValueError`. Both are evaluated inside the
+write transaction, apply only to a new commit (retries still return their record), and raise
+`RepositoryConflict`. `fork` likewise accepts `unless_committed`, which refuses inside the
+fork transaction to create a branch for an event id the world already holds. `locate_event` reports, per branch containing an event (or genesis), its
+sequence, the branch head, fork sequence and any unresolved tool event. The PocketRisu bridge
+uses these to append consecutive turns to one branch and fork only on divergence.
+
 Copies make this implementation simple and independently replayable, at the cost of storage
 proportional to the copied prefix. Large histories may later need shared immutable prefixes,
 compact patches, indexes, and paginated history reads; none are silently approximated here.

@@ -6,7 +6,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from saga_trpg.adapters.dice.local import DeterministicDice
-from saga_trpg.adapters.risu.openai_proxy import CommandInterpreter, RisuBridge
+from saga_trpg.adapters.risu.openai_proxy import (
+    CommandInterpreter,
+    CompletionRequest,
+    RisuBridge,
+)
 from saga_trpg.adapters.storage.sqlite import SQLiteWorldRepository
 from saga_trpg.api.app import create_app
 from saga_trpg.domain.events import GameEvent
@@ -53,7 +57,9 @@ def setup(tmp_path, *, narrator=None, interpreter=None):
     repo = SQLiteWorldRepository(tmp_path / "risu.sqlite3", dice=dice)
     intent = interpreter or CountingInterpreter()
     bridge = RisuBridge(repo, interpreter=intent, narrator=narrator)
-    return repo, dice, intent, TestClient(create_app(repository=repo, risu_bridge=bridge))
+    app = create_app(repository=repo, risu_bridge=bridge)
+    app.state.risu_bridge = bridge
+    return repo, dice, intent, TestClient(app)
 
 
 def test_ten_regenerations_and_restart_never_reinterpret_or_roll(tmp_path):
@@ -86,12 +92,14 @@ def test_new_identical_text_edit_and_delete_use_immutable_prefixes(tmp_path):
     second_request = request(("u1", "attack opponent"), ("u2", "attack opponent"))
     second = client.post("/v1/chat/completions", json=second_request).json()["saga"]
     assert first["event_id"] != second["event_id"]
-    assert first["branch_id"] != second["branch_id"]
+    assert first["branch_id"] == second["branch_id"] == "main"
     assert second["seq"] == 2
-    assert repo.get_state(first["world_id"], branch_id=first["branch_id"]).seq == 1
+    original = repo.entries(first["world_id"])
     edited = request(("u1", "attack opponent"), ("u2", "check strength 10"))
     third = client.post("/v1/chat/completions", json=edited).json()["saga"]
     assert third["seq"] == 2 and third["event_id"] != second["event_id"]
+    assert third["branch_id"] == third["event_id"]
+    assert repo.entries(first["world_id"]) == original
     assert third["state"]["actors"]["opponent"]["hp"] == first["state"]["actors"]["opponent"]["hp"]
     calls = dice.calls, intent.calls
     assert client.post("/v1/chat/completions", json=request()).json()["saga"]["replayed"]
@@ -139,7 +147,6 @@ def test_commit_precedes_narration_and_failure_is_retryable_without_mutation(tmp
                 repo.get_event(
                     narration.world_id,
                     narration.event.event_id,
-                    branch_id=narration.event.event_id,
                 )
                 is not None
             )
@@ -193,12 +200,12 @@ def test_concurrent_identical_requests_commit_one_action(tmp_path):
     assert len(repo.entries(first["world_id"], branch_id=first["branch_id"])) == 1
 
 
-def test_predispatch_crash_fork_recovers_and_contaminated_history_rejects(tmp_path, monkeypatch):
+def test_predispatch_crash_recovers_and_later_foreign_entries_never_merge(tmp_path, monkeypatch):
     repo, dice, intent, client = setup(tmp_path)
     dispatch = repo.dispatch
 
     def fail_before_dispatch(*args, **kwargs):
-        raise RuntimeError("process interruption after branch creation")
+        raise RuntimeError("process interruption before dispatch")
 
     monkeypatch.setattr(repo, "dispatch", fail_before_dispatch)
     with pytest.raises(RuntimeError, match="process interruption"):
@@ -218,8 +225,215 @@ def test_predispatch_crash_fork_recovers_and_contaminated_history_rejects(tmp_pa
         branch_id=saved["branch_id"],
     )
     calls = dice.calls, intent.calls
-    assert client.post("/v1/chat/completions", json=request()).status_code == 409
+    # The committed prefix still replays; an entry after it is not part of this history.
+    replay = client.post("/v1/chat/completions", json=request()).json()["saga"]
+    assert replay == {**saved, "replayed": True}
     assert (dice.calls, intent.calls) == calls
+    # The next host action must not build on the foreign entry: it forks from its parent.
+    body = request(("u1", "attack opponent"), ("u2", "check strength 10"))
+    following = client.post("/v1/chat/completions", json=body).json()["saga"]
+    assert following["seq"] == 2 and following["branch_id"] == following["event_id"]
+    assert [
+        entry.committed.event.event_id
+        for entry in repo.entries(saved["world_id"], branch_id=following["branch_id"])
+    ] == [saved["event_id"], following["event_id"]]
+
+
+def test_contaminated_prefix_rejects_without_dispatch(tmp_path):
+    repo, dice, intent, client = setup(tmp_path)
+    body = request()
+    turn = CompletionRequest.model_validate(body).saga
+    world_id, identities = RisuBridge.identities(turn)
+    definition = repo.registry.get("srd-5.2.1", "0.1.0")
+    repo.create_world(
+        definition.example_world(world_id), ruleset_id="srd-5.2.1", ruleset_version="0.1.0"
+    )
+    check = {"ability": "strength", "difficulty": 10}
+    for event_id in ("foreign", identities[0]):
+        repo.dispatch(
+            world_id,
+            GameEvent(kind="ability_check", event_id=event_id, actor_id="player", payload=check),
+        )
+    calls = dice.calls
+    assert client.post("/v1/chat/completions", json=body).status_code == 409
+    assert dice.calls == calls and intent.calls == 0
+
+
+def test_foreign_branch_ending_at_the_parent_id_is_never_continued(tmp_path):
+    repo, _, _, client = setup(tmp_path)
+    actions = [("a", "attack opponent"), ("b", "attack opponent"), ("c", "attack opponent")]
+    for index in range(3):
+        saved = client.post("/v1/chat/completions", json=request(*actions[: index + 1])).json()
+    world_id = saved["saga"]["world_id"]
+    _, identities = RisuBridge.identities(CompletionRequest.model_validate(request(*actions)).saga)
+    check = {"ability": "strength", "difficulty": 10}
+    # Explicit ids are branch scoped, so another writer may end a different history at B's id.
+    for branch_id in ("aa-foreign", "zz-foreign"):
+        repo.fork(world_id, branch_id=branch_id, at_event_id=None)
+        for event_id in ("foreign", identities[1]):
+            repo.dispatch(
+                world_id,
+                GameEvent(
+                    kind="ability_check", event_id=event_id, actor_id="player", payload=check
+                ),
+                branch_id=branch_id,
+            )
+    expected = repo.replay(world_id, at_event_id=identities[1])
+    foreign = {
+        name: repo.entries(world_id, branch_id=name) for name in ("aa-foreign", "zz-foreign")
+    }
+    edited = client.post(
+        "/v1/chat/completions", json=request(*actions[:2], ("d", "check strength 10"))
+    )
+    assert edited.status_code == 200, edited.text
+    result = edited.json()["saga"]
+    assert result["seq"] == 3 and result["branch_id"] == result["event_id"]
+    assert result["state"]["actors"] == expected.model_dump(mode="json")["actors"]
+    assert [
+        entry.committed.event.event_id
+        for entry in repo.entries(world_id, branch_id=result["branch_id"])
+    ] == [*identities[:2], result["event_id"]]
+    assert {
+        name: repo.entries(world_id, branch_id=name) for name in ("aa-foreign", "zz-foreign")
+    } == foreign
+    replay = client.post("/v1/chat/completions", json=request(*actions[:2])).json()["saga"]
+    assert replay["replayed"] and replay["branch_id"] == "main"
+
+
+@pytest.mark.parametrize("turns", [1, 2])
+def test_stale_read_of_a_just_committed_action_leaves_no_empty_fork(tmp_path, monkeypatch, turns):
+    repo, dice, intent, client = setup(tmp_path)
+    bridge = client.app.state.risu_bridge
+    actions = [("u1", "attack opponent"), ("u2", "check strength 10")][:turns]
+    for index in range(turns):
+        saved = client.post("/v1/chat/completions", json=request(*actions[: index + 1])).json()
+    saved = saved["saga"]
+    before = dice.calls, repo.branches(saved["world_id"])
+    read_prefix, stale = bridge._read_prefix, [2]
+
+    def raced(world_id, identities):
+        # A concurrent identical request committed after this request's reads.
+        if len(identities) == turns and stale[0]:
+            stale[0] -= 1
+            return None
+        return read_prefix(world_id, identities)
+
+    monkeypatch.setattr(bridge, "_read_prefix", raced)
+    response = client.post("/v1/chat/completions", json=request(*actions))
+    assert response.status_code == 200, response.text
+    assert response.json()["saga"] == {**saved, "replayed": True}
+    assert (dice.calls, repo.branches(saved["world_id"])) == before
+
+
+def test_linear_session_appends_to_one_branch(tmp_path):
+    repo, dice, intent, client = setup(tmp_path)
+    actions, results = [], []
+    for index in range(12):
+        actions.append((f"m{index}", "check strength 10"))
+        response = client.post("/v1/chat/completions", json=request(*actions))
+        assert response.status_code == 200, response.text
+        results.append(response.json()["saga"])
+    world_id = results[0]["world_id"]
+    assert [result["seq"] for result in results] == list(range(1, 13))
+    assert {result["branch_id"] for result in results} == {"main"}
+    assert [branch.branch_id for branch in repo.branches(world_id)] == ["main"]
+    with repo.database.transaction() as connection:
+        assert connection.execute("SELECT count(*) FROM entries").fetchone()[0] == 12
+    calls = dice.calls, intent.calls
+    # Regenerating any earlier turn reads its record from the same branch.
+    for index in (0, 5, 11):
+        again = client.post("/v1/chat/completions", json=request(*actions[: index + 1]))
+        assert again.json()["saga"] == {**results[index], "replayed": True}
+    assert (dice.calls, intent.calls) == calls
+    assert len(repo.branches(world_id)) == 1
+
+
+def test_only_a_semantic_edit_forks_and_both_lines_continue_in_place(tmp_path):
+    repo, _, _, client = setup(tmp_path)
+
+    def play(*actions):
+        response = client.post("/v1/chat/completions", json=request(*actions))
+        assert response.status_code == 200, response.text
+        return response.json()["saga"]
+
+    base = [("m1", "attack opponent"), ("m2", "attack opponent")]
+    play(*base[:1])
+    play(*base)
+    original = play(*base, ("m3", "attack opponent"))
+    edited = play(*base, ("m3", "check strength 10"))
+    world_id = original["world_id"]
+    assert original["branch_id"] == "main" and edited["branch_id"] == edited["event_id"]
+    assert len(repo.branches(world_id)) == 2
+    # Each line keeps appending to its own branch; no further branches appear.
+    edited_next = play(*base, ("m3", "check strength 10"), ("m4", "attack opponent"))
+    original_next = play(*base, ("m3", "attack opponent"), ("m4", "attack opponent"))
+    assert edited_next["branch_id"] == edited["branch_id"] and edited_next["seq"] == 4
+    assert original_next["branch_id"] == "main" and original_next["seq"] == 4
+    assert edited_next["event_id"] != original_next["event_id"]
+    assert len(repo.branches(world_id)) == 2
+    assert repo.replay(world_id).model_dump(mode="json") == original_next["state"]
+    assert (
+        repo.replay(world_id, branch_id=edited["branch_id"]).model_dump(mode="json")
+        == edited_next["state"]
+    )
+
+
+def test_per_turn_branch_layout_from_earlier_bridge_continues_without_new_branches(tmp_path):
+    repo, dice, intent, client = setup(tmp_path)
+    actions = [("m1", "attack opponent"), ("m2", "check strength 10")]
+    turn = CompletionRequest.model_validate(request(*actions)).saga
+    world_id, identities = RisuBridge.identities(turn)
+    definition = repo.registry.get("srd-5.2.1", "0.1.0")
+    repo.create_world(
+        definition.example_world(world_id), ruleset_id="srd-5.2.1", ruleset_version="0.1.0"
+    )
+    parent = None
+    for (_, text), event_id in zip(actions, identities, strict=True):
+        event = asyncio.run(
+            CommandInterpreter().interpret(world_id=world_id, actor_id="player", text=text)
+        )
+        event.event_id = event.idempotency_key = event_id
+        event.parent_event_id = parent
+        repo.fork(
+            world_id, branch_id=event_id, source_branch_id=parent or "main", at_event_id=parent
+        )
+        repo.dispatch(world_id, event, branch_id=event_id)
+        parent = event_id
+    calls = dice.calls
+    replay = client.post("/v1/chat/completions", json=request(*actions)).json()["saga"]
+    assert replay["replayed"] and replay["branch_id"] == replay["event_id"] == identities[-1]
+    assert dice.calls == calls and intent.calls == 0
+    following = client.post(
+        "/v1/chat/completions", json=request(*actions, ("m3", "attack opponent"))
+    ).json()["saga"]
+    assert following["seq"] == 3 and following["branch_id"] == identities[-1]
+    assert len(repo.branches(world_id)) == 3
+
+
+def test_concurrent_different_edits_of_one_turn_never_share_a_branch(tmp_path):
+    repo, _, _, client = setup(tmp_path)
+    first = client.post("/v1/chat/completions", json=request()).json()["saga"]
+    texts = ["attack opponent", "check strength 10", "save dexterity 12", "check wisdom 11"]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        responses = list(
+            pool.map(
+                lambda text: client.post(
+                    "/v1/chat/completions", json=request(("u1", "attack opponent"), ("u2", text))
+                ),
+                texts,
+            )
+        )
+    assert all(response.status_code == 200 for response in responses), [
+        response.text for response in responses
+    ]
+    results = [response.json()["saga"] for response in responses]
+    assert len({result["branch_id"] for result in results}) == 4
+    for result in results:
+        assert result["seq"] == 2
+        assert [
+            entry.committed.event.event_id
+            for entry in repo.entries(first["world_id"], branch_id=result["branch_id"])
+        ] == [first["event_id"], result["event_id"]]
 
 
 def test_missing_committed_prefix_and_illegal_target_never_roll(tmp_path):
@@ -251,8 +465,6 @@ def test_exported_request_schema_matches_current_contract():
     import json
     from pathlib import Path
 
-    from saga_trpg.adapters.risu.openai_proxy import CompletionRequest
-
     schema = json.loads(
         (Path(__file__).parents[1] / "schemas/risu-completion.schema.json").read_text()
     )
@@ -278,7 +490,7 @@ def test_cosmetic_commands_keep_one_record_without_reinterpreting(tmp_path, vari
     assert all(response.json()["saga"]["event_id"] == saved["event_id"] for response in responses)
     assert all(response.json()["saga"]["state"] == saved["state"] for response in responses)
     assert dice.calls == len(saved["rolls"]) and intent.calls == 1
-    assert len(repo.branches(saved["world_id"])) == 2
+    assert len(repo.branches(saved["world_id"])) == 1
 
 
 def test_context_hidden_committed_prefix_keeps_state_and_drafts_reject(tmp_path):
@@ -387,7 +599,7 @@ def test_concurrent_cosmetic_first_submissions_converge_and_reopen(tmp_path):
     assert {response.json()["saga"]["event_id"] for response in responses} == {saved["event_id"]}
     assert sum(not response.json()["saga"]["replayed"] for response in responses) == 1
     assert dice.calls == len(saved["rolls"])
-    assert len(repo.branches(saved["world_id"])) == 2
+    assert len(repo.branches(saved["world_id"])) == 1
 
     class NeverInterpret:
         async def interpret(self, **kwargs):

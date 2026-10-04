@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from saga_trpg.adapters.narrator.fallback import FallbackNarrator
 from saga_trpg.adapters.narrator.vertex import VertexNarrator
 from saga_trpg.adapters.storage.sqlite import (
+    EventLocation,
     RepositoryConflict,
     RepositoryNotFound,
     SQLiteWorldRepository,
@@ -151,20 +152,70 @@ class RisuBridge:
             identities.append(parent)
         return world_id, identities
 
-    def _read_prefix(self, world_id: str, identities: list[str]) -> JournalEntry | None:
+    def _read_prefix(self, world_id: str, identities: list[str]) -> tuple[str, JournalEntry] | None:
+        """The committed latest action and its branch, verified against the whole prefix."""
         if not identities:
             return None
         try:
-            entries = self.repository.entries(world_id, branch_id=identities[-1])
+            found = self.repository.locate_event(world_id, identities[-1])
         except RepositoryNotFound:
             return None
-        saved_ids = [entry.committed.event.event_id for entry in entries]
-        # A crashed pre-dispatch fork may contain only the parent's prefix.
-        if saved_ids == identities[:-1]:
+        if not found:
             return None
-        if saved_ids != identities:
-            raise RepositoryConflict("SAGA branch history conflicts with host action identities")
-        return entries[-1]
+        # Report the branch that committed the action rather than a fork that inherited it.
+        for item in sorted(found, key=lambda item: (item.seq <= item.fork_seq, item.branch_id)):
+            entries = self._matching(world_id, item, identities)
+            if entries is not None:
+                return item.branch_id, entries[-1]
+        raise RepositoryConflict("SAGA branch history conflicts with host action identities")
+
+    def _matching(
+        self, world_id: str, item: EventLocation, identities: list[str]
+    ) -> list[JournalEntry] | None:
+        """The branch prefix through a located event, only if it is exactly these actions."""
+        if item.seq != len(identities):
+            return None
+        entries = self.repository.entries(world_id, branch_id=item.branch_id, through_seq=item.seq)
+        if [entry.committed.event.event_id for entry in entries] != identities:
+            return None
+        return entries
+
+    def _branch_for(self, world_id: str, identities: list[str]) -> str:
+        """Continue the branch whose head is the parent; fork only when history diverges.
+
+        Explicit event ids are branch scoped, so a branch merely containing the parent id is
+        not trusted: the branch written to, or forked from, must hold the exact parent prefix.
+        """
+        event_id, prefix = identities[-1], identities[:-1]
+        found = self.repository.locate_event(world_id, prefix[-1] if prefix else None)
+        heads = [
+            item
+            for item in found
+            if item.seq == item.head_seq
+            and item.pending_event_id in (None, event_id)
+            # An empty fork is reserved for the action it is named after.
+            and (
+                item.branch_id in ("main", event_id)
+                or item.head_seq > item.fork_seq
+                or item.pending_event_id == event_id
+            )
+        ]
+        heads.sort(key=lambda item: (item.pending_event_id != event_id, item.branch_id))
+        for item in heads:
+            if self._matching(world_id, item, prefix) is not None:
+                return item.branch_id
+        for item in found:
+            if self._matching(world_id, item, prefix) is not None:
+                self.repository.fork(
+                    world_id,
+                    branch_id=event_id,
+                    source_branch_id=item.branch_id,
+                    at_event_id=prefix[-1] if prefix else None,
+                    # A racing identical request may have committed since this request read.
+                    unless_committed=event_id,
+                )
+                return event_id
+        raise RepositoryConflict("SAGA branch history conflicts with host action identities")
 
     async def complete(
         self, request: CompletionRequest, *, vertex_credentials: SecretStr | None = None
@@ -177,6 +228,7 @@ class RisuBridge:
             VertexNarrator(vertex_credentials) if vertex_credentials is not None else self.narrator
         )
         turn = request.saga
+        replayed = True
         legacy_world, legacy_ids = self.identities(turn, version=1)
         try:
             self.repository.ruleset_for_world(legacy_world)
@@ -210,8 +262,7 @@ class RisuBridge:
                         "No hidden action was executed and no campaign was reset."
                     )
             saved = self._read_prefix(world_id, identities)
-        event_id = branch_id = identities[-1]
-        replayed = saved is not None
+        event_id = identities[-1]
         if saved is None:
             if len(identities) > 1 and self._read_prefix(world_id, identities[:-1]) is None:
                 raise RepositoryConflict(
@@ -247,32 +298,28 @@ class RisuBridge:
             selection = self.repository.ruleset_for_world(world_id)
             if (selection.ruleset_id, selection.ruleset_version) != ("srd-5.2.1", "0.1.0"):
                 raise RepositoryConflict("host world has an incompatible ruleset")
-            source = identities[-2] if len(identities) > 1 else "main"
-            try:
-                self.repository.fork(
-                    world_id,
-                    branch_id=branch_id,
-                    source_branch_id=source,
-                    at_event_id=event.parent_event_id,
-                )
-            except RepositoryConflict:
-                branch = next(
-                    (b for b in self.repository.branches(world_id) if b.branch_id == branch_id),
-                    None,
-                )
-                if (
-                    branch is None
-                    or branch.parent_branch_id != source
-                    or branch.fork_event_id != event.parent_event_id
-                ):
-                    raise
-            # Verify an existing/crash-recovered fork before any dispatch.
-            saved = self._read_prefix(world_id, identities)
-            if saved is None:
-                outcome = self.repository.dispatch(world_id, event, branch_id=branch_id)
-                saved, replayed = outcome.entry, outcome.replayed
-            else:
-                replayed = True
+            # Racing requests may move a head, create the fork or commit this action first.
+            # Every commit is guarded in its own transaction, so reselect instead of guessing.
+            for attempt in range(3):
+                saved = self._read_prefix(world_id, identities)
+                if saved is not None:
+                    break
+                try:
+                    branch_id = self._branch_for(world_id, identities)
+                    outcome = self.repository.dispatch(
+                        world_id,
+                        event,
+                        branch_id=branch_id,
+                        expected_seq=len(identities) - 1,
+                        unique_in_world=True,
+                    )
+                except RepositoryConflict:
+                    if attempt == 2:
+                        raise
+                    continue
+                saved, replayed = (branch_id, outcome.entry), outcome.replayed
+                break
+        branch_id, saved = saved
 
         narration = NarrationRequest(
             world_id=world_id,

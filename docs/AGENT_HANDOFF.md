@@ -19,7 +19,9 @@ and narration references, and differences from SAGA's journal/tool guarantees.
 The no-memory PocketRisu command slice is now implemented. Read
 [the integration contract](RISUAI_INTEGRATION.md), [starter guide](../packs/risu-starter/README.md)
 and [verification report](progress/risu-command-demo.md). Stable host/chat/message identities
-derive immutable branches, and regeneration reads committed results before intent or dice.
+derive chained event ids, and regeneration reads committed results before intent or dice.
+A chat appends to one branch and forks only on a divergent edit; the earlier per-turn copied
+branches remain readable and continue in place. Storage v2 is unchanged.
 The demo supports SRD attack/check/save commands with fallback narration; it is not an LLM
 interpreter, full ruleset, or general card/lore adapter. Storage v2 and runtime semantics are
 unchanged. The starter can proceed independently while NMOS remains unavailable.
@@ -82,7 +84,7 @@ The plugin was not run; backend transport and live host compatibility remain unv
 
 > The command/provider slice is implemented. First read its integration contract and current-host evidence. Preserve one stable runtime event per unchanged user action and immutable edit branches. A regenerated assistant reply must reuse the committed result and must not reinterpret intent or call dice/tools again.
 >
-> Opt-in Vertex narration is implemented; check its current host/provider verification in the narration report. An LLM intent binding remains separate work and must produce a validated closed GameEvent. Keep deterministic commands and fallback narration usable without credentials or NMOS. Preserve pre-narration commit and rerender tests. Address bounded history/branch storage before claiming long-horizon host operation. General card/lore compatibility and continuation remain separate work.
+> Opt-in Vertex narration is implemented; check its current host/provider verification in the narration report. An LLM intent binding remains separate work and must produce a validated closed GameEvent. Keep deterministic commands and fallback narration usable without credentials or NMOS. Preserve pre-narration commit and rerender tests. Journal storage is now linear per chat; address full-history requests and per-request prefix verification before claiming long-horizon host operation. General card/lore compatibility and continuation remain separate work.
 
 ## Fourth prompt: RuleCheeseBench
 

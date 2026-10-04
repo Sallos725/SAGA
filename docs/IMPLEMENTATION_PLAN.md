@@ -66,9 +66,9 @@ Exit criterion: regenerate the same assistant turn 10 times; journal length, HP,
 
 The no-memory command slice is independent of Phase 2. See
 [the integration contract](RISUAI_INTEGRATION.md) and
-[verification report](progress/risu-command-demo.md). Streaming, natural-language/card/lore
-integration and efficient long-history branch storage remain open; the demo caps active
-history at 256 user actions.
+[verification report](progress/risu-command-demo.md). Streaming and natural-language/card/lore
+integration remain open. Consecutive turns append to one branch, so journal storage is linear;
+requests still submit and verify the full history, capped at 256 user actions.
 
 Plugin 0.3.0 optionally narrates through Vertex using one user-pasted service-account JSON
 input. SAGA derives the project/global endpoint and uses Gemini 3.8 Flash after commit.
