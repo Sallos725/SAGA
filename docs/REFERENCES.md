@@ -61,6 +61,15 @@ and injecting current actor knowledge before generation. See
 Use this host boundary when implementing SAGA's turn mapping; its full-snapshot revision
 and assistant-derived memory projection are not SAGA's action/event semantics.
 
+## Local RisuAI dice module and plugin
+
+The owner supplied `D&D Dice v2.0.0.risum` and `dnd-dice-mcp-v3_2.1.0.js` under
+`~/saga-ref/dice/`. See [the local dice reference review](LOCAL_DICE_REFERENCE.md)
+for source hashes, decoded module contents, tool contracts, presentation references,
+and the proposed SAGA mapping. The files were inspected without executing the plugin.
+The host-local MCP registration does not establish a backend transport; any live
+binding must use SAGA's durable result tape and preserve ruleset-owned adjudication.
+
 ## NMOS
 
 Repository: https://github.com/Sallos725/NMOS
