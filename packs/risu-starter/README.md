@@ -2,9 +2,13 @@
 
 An API-key-free command demo for PocketRisu **1.13.0**, plugin API **3.0**.
 It uses the existing SRD 5.2.1 subset, deterministic local dice, committed facts as default
-narration, and no semantic memory. Optional Vertex narration needs service-account JSON;
+narration, and no semantic memory. Optional Vertex intent and narration need service-account JSON;
 the default remains API-key-free. NMOS is not connected.
-Plugin **0.3.0** uses unchanged bridge protocol/identity **v2**.
+Plugin **0.4.0** uses protocol **3** while preserving v2 worlds and command identities.
+Natural actions use a distinct raw-text identity; existing v2 chats continue without a reset.
+Backend/plugin 0.4.0 are deployed to 6011. One natural attack and one regeneration passed
+live with unchanged authoritative results; the existing host card was retained. The new
+0.4.0 starter card was not imported. See the [live report](../../docs/progress/risu-natural-intent-live.md).
 
 ## Install
 
@@ -49,8 +53,8 @@ region, auxiliary-model or preset configuration is needed. Leave the field empty
 existing deterministic fallback.
 
 The input is `vertex_service_account_json`; expand the plugin's parameters if it is hidden.
-A malformed JSON/key is rejected before any game action. A valid key with failed authentication,
-permissions, model output or timeout falls back to recorded facts after the action commits,
+A malformed JSON/key is rejected before any game action. After a command or accepted natural
+action commits, failed narration falls back to recorded facts,
 with a short visible notice. Regenerate the same message to retry narration; the event, HP and
 rolls remain unchanged. Two approved live Gemini calls on 6011 succeeded with unchanged
 authoritative results. Actual billed cost was not observed; see the
@@ -58,7 +62,7 @@ authoritative results. Actual billed cost was not observed; see the
 
 The backend fixes the model to `gemini-3.8-flash`, thinking to `LOW` and output to 2,048 tokens.
 [Google's model guide](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-3-8-flash)
-documents the model and supported thinking levels. No natural-language intent or NMOS is added.
+documents the model and supported thinking levels. Natural-language intent uses the same field and a separate 1,024-token structured call. NMOS is not connected.
 
 ### Credential and narration boundaries
 
@@ -77,7 +81,8 @@ receives committed facts, state, rolls and event id. Its prose is not parsed int
 the separately appended **SAGA 확정 판정** block remains authoritative.
 
 The backend has a 25-second narration budget, with bounded OAuth and Vertex HTTP calls. The
-plugin waits up to 35 seconds for the whole response. Cancellation or changed chat/settings
+plugin uses a 65-second proxy timeout and waits up to 67 seconds, covering a new natural
+action's bounded 27-second interpretation stage plus narration. Cancellation or changed chat/settings
 suppresses stale output but cannot undo a committed action or guarantee cancellation at Google.
 Regeneration can incur another narration request. Streaming, multimodal context, model tools
 and general card/lore compatibility are not supported.
@@ -96,7 +101,7 @@ Abilities: `strength`, `dexterity`, `constitution`, `intelligence`, `wisdom`, `c
 DC range: 1–100. Commands are case-insensitive; no slash prefix. One command per user message.
 The player starts at HP 20, the opponent at HP 30/AC 13. See the
 [ruleset scope and attribution](../../docs/RULESET_LICENSES.md) for the supported SRD subset.
-There is no automatic enemy turn, natural-language interpretation, encounter reset command,
+There is no automatic enemy turn, encounter reset command,
 or complete combat simulation. A new host chat starts a new world.
 
 The response shows recorded facts, authoritative HP, exact rolls and the event id.
@@ -111,6 +116,47 @@ required `useSayNothing=false` setting is applied. PocketRisu defaults this sett
 when enabled, an empty Continue inserts a synthetic `*says nothing*` user turn instead.
 That placeholder reaches SAGA and is rejected with 422 before dice or state mutation, including
 host retries. Remove the placeholder before the next command and disable the setting.
+
+## Natural-language actions
+
+With the same Vertex JSON field configured, send one clear action, for example:
+
+- `상대를 공격한다` or `I attack the opponent with my sword`.
+- `힘으로 난이도 10 판정을 한다`.
+- `민첩 내성 DC 12를 굴린다` or `Make a dexterity saving throw, DC 12`.
+
+Use `opponent`, `상대`, `상대방` or `적` for the known target. Card/lore names such as
+`goblin` do not create or rename actors. Checks/saves require one explicit DC/난이도 number
+and an ability. Decimal, exponent or mixed tokens are refused; `DC 10.` and `난이도 10으로`
+are valid. Abilities: strength/힘, dexterity/민첩, constitution/건강/체질, intelligence/지능,
+wisdom/지혜 or charisma/매력. Use advantage/유리 or disadvantage/불리 explicitly when needed.
+The strict command-leading words `attack`, `check`, `save` retain their existing syntax;
+malformed commands are rejected locally instead of being repaired by a paid model call.
+
+The model proposes a closed action; SAGA validates it before rules or dice. Multiple,
+ambiguous or unsupported actions must be clarified. No default target/DC, proficiency,
+modifier, damage, state mutation or invented actor is accepted from the model. Actual
+Gemini verification covers only `상대를 공격한다` and one regeneration; checks/saves and
+broader language quality remain live-unverified.
+
+A new accepted natural action can make **two generation calls**: one interpretation and one
+postcommit narration. Regeneration makes **zero interpretation calls** and at most one
+narration call. Commands use zero interpretation calls. A definite refusal is saved, so
+repeating the unchanged refused message does not call interpretation again. Edit the message
+to clarify it. A changed natural-language text, including whitespace, intentionally receives
+a new action identity; deterministic command cosmetic normalization remains unchanged.
+
+Saved interpretation survives restart or a crash before game commit. An uncertain timeout
+or transport/authentication failure leaves a pending claim and returns 503; it never blindly
+reissues interpretation. A result may finish and become recoverable after local cancellation.
+Unresolved claims need reconciliation, which is not implemented yet. A first refusal may
+leave an empty world and refusal tape record, with no event, HP change or dice.
+
+Raw natural action text and safe proposals/refusals are retained in the backend's existing
+tool tape, alongside the parent-state hash. Credentials, tokens, dynamic narration context
+and rejected provider output are not recorded there. Committed natural actions can be
+replayed with fallback after clearing the JSON field. See the
+[implementation and reference report](../../docs/progress/risu-natural-intent.md).
 
 ## Editing and recovery
 

@@ -10,11 +10,12 @@ SRD 5.2.1 and Fate Condensed are licensed, partial ruleset examples; see
 Still intentionally unselected or unimplemented:
 
 - a concrete MCP server/client and provider-specific execution reconciliation;
-- an LLM intent interpreter (the PocketRisu demo accepts closed SRD commands only);
 - the live NMOS API binding (semantic memory remains optional);
 - narration streaming, general RisuAI card/lore compatibility, and the full benchmark runner.
 
-The PocketRisu command bridge and opt-in Vertex narration after commit are implemented; see
+The PocketRisu bridge supports deterministic commands and opt-in Vertex natural-language
+attack/check/save proposals via the existing durable tool tape, with narration after commit.
+The new natural-language path is offline verified, not yet live-tested or deployed; see
 [the integration contract](docs/RISUAI_INTEGRATION.md).
 
 The filename is retained as a pointer from early checkouts. These notes describe the current

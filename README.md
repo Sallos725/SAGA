@@ -22,8 +22,8 @@ The design goal is not to build another prompt-heavy chatbot. It is to split res
 
 SAGA provides persistent state, replay, branching, and durable external tool results.
 The PocketRisu command demo connects stable user turns to that runtime without NMOS,
-with optional Vertex narration after commit. Production NMOS, MCP, and LLM intent
-bindings remain separate integration work.
+with optional bounded Vertex natural-language attack/check/save proposals and narration after
+commit. Production NMOS, MCP, and general card/lore bindings remain separate integration work.
 
 ## Why this shape
 
@@ -46,22 +46,33 @@ adapter; SAGA does not embed a second memory system into the game engine.
 For the API-key-free PocketRisu **6011** playtest, use the
 [isolated deployment](deploy/README.md) and [starter card/provider](packs/risu-starter/README.md).
 Send `attack opponent`, `check strength 10`, or `save dexterity 12`; regeneration reuses the
-committed event and dice. This is a command-driven SRD subset; natural-language intent is
-not supported. Fallback narration needs no key. For optional Gemini narration, open
+committed event and dice. This is a limited SRD subset. Fallback narration needs no key.
+For optional Gemini natural-language intent and narration, open
 **Settings → Plugins → SAGA SRD Demo → Vertex 서비스 계정 JSON** and paste the entire
 service-account JSON. Keep **SAGA SRD Demo** as main; SAGA derives the project/global endpoint
 and uses **Gemini 3.8 Flash** automatically. No other model settings are needed. Blank input
-keeps fallback; model failure/timeout preserves committed facts and status. See the
+keeps command fallback. Narration failure preserves committed facts; uncertain interpretation
+returns a pending error without automatic retry. See the
 [setup and credential boundaries](packs/risu-starter/README.md#optional-vertex-narration).
-Two approved live Gemini calls on 6011 passed with unchanged authoritative results; see the
-[verification report](docs/progress/risu-vertex-narration.md) for scope and cost uncertainty.
+With plugin/card 0.4.0 and backend protocol 3, examples include `상대를 공격한다` and
+`힘으로 난이도 10 판정을 한다`. Targets and check/save DCs must be explicit. New accepted
+natural actions can make two model calls; regeneration makes zero interpretation calls and
+at most one narration call. Natural text edits intentionally create a new action. The new
+slice passed offline tests and an independent plugin/API/SQLite harness. Backend/plugin 0.4.0
+are now deployed on 6011: `상대를 공격한다` and one regeneration passed with fresh prose and
+unchanged state, rolls, journal and tape. The existing host card was retained; the new starter
+card was not imported. Checks/saves and broader language quality remain live-unverified. See
+the [bounded live report](docs/progress/risu-natural-intent-live.md); actual billed cost was not observed.
+The earlier narration-only version had two approved live calls on 6011; that evidence does
+not verify the new intent behavior or actual billed costs.
 
 Set `useSayNothing=false` in host settings for this demo. Full non-comment history, including
 hidden context, is limited to 256 user turns; semantic latest-action edits fork safely, while
 changed earlier history must be resumed
 from its first uncommitted turn. Disable the demo plugin when selecting another main provider.
 
-Bridge v2 keeps the same event for cosmetic command edits and preserves committed hidden turns.
+Protocol 3 retains v2 world/command identities, cosmetic command normalization and committed
+hidden turns; existing v2 chats continue without a reset.
 Existing v1 chats remain read-only for exact original-history replay; start a new chat for v2
 actions. Client-controlled message ids and the known seed still make this a trusted demo, not adversarial
 benchmark isolation. See the [identity fix report](docs/progress/risu-identity-context-fix.md).
@@ -156,7 +167,8 @@ Implemented:
 - FastAPI debug endpoints
 - a versioned OpenAI-shaped Risu completion adapter with immutable host-turn mapping
 - PocketRisu v3 provider and starter card for no-memory SRD commands and authoritative status
-- opt-in Vertex narration from one service-account JSON input, after commit with bounded fallback
+- opt-in Vertex natural-language attack/check/save proposals on the existing durable tape
+- Vertex narration from the same service-account JSON input, after commit with bounded fallback
 - NMOS and MCP Dice ports/adapters with explicit TODO contracts
 - benchmark result models and scenario shape
 - tests for the most important invariants
@@ -165,7 +177,7 @@ Not implemented yet:
 
 - production NMOS API binding
 - production MCP client binding
-- LLM intent interpreter
+- live checks/saves and broader language quality/scope for the limited intent adapter
 - general RisuAI card/lore compatibility and streaming (narration copies only bounded text context)
 - legacy JSONL import and future state/event semantic migrations
 - complete TRPG rulesets
@@ -182,7 +194,7 @@ included. Supply configuration at runtime; it is not baked into the image.
 
 The debug HTTP host has no production authentication or multi-tenant isolation yet. Bind it to localhost/private networking until the outer API/auth layer is implemented and reviewed.
 
-The command-demo bundle lives under `packs/risu-starter/`. Its v2 card and v3 provider target
+The action-demo bundle lives under `packs/risu-starter/`. Its v2 card and v3 provider target
 the pinned PocketRisu 1.13.0 host. See the starter guide for supported commands, edit/retry
 behavior and capacity limits.
 

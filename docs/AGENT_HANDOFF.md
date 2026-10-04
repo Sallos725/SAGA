@@ -22,8 +22,9 @@ and [verification report](progress/risu-command-demo.md). Stable host/chat/messa
 derive chained event ids, and regeneration reads committed results before intent or dice.
 A chat appends to one branch and forks only on a divergent edit; the earlier per-turn copied
 branches remain readable and continue in place. Storage v2 is unchanged.
-The demo supports SRD attack/check/save commands with fallback narration; it is not an LLM
-interpreter, full ruleset, or general card/lore adapter. Storage v2 and runtime semantics are
+The initial demo supported SRD attack/check/save commands with fallback narration; the
+limited natural-language extension is described below. It is not a full ruleset or general
+card/lore adapter. Storage v2 and runtime semantics are
 unchanged. The starter can proceed independently while NMOS remains unavailable.
 
 Bridge identity v2 subsequently fixes cosmetic command rerolls and context-hiding resets;
@@ -42,7 +43,15 @@ Read the [narration report](progress/risu-vertex-narration.md) and starter guide
 credential handling and evidence. No PocketRisu modification or auxiliary-model configuration
 is required. Installation, JSON input rejection, fallback regeneration and two approved live
 Gemini calls are verified on 6011; authoritative results stayed unchanged. Exact billed cost
-was not observed. Natural-language intent and NMOS remain deferred.
+was not observed. Plugin/card 0.4.0 now adds natural-language attack/check/save through the same Vertex JSON
+field. Read [the natural-intent report](progress/risu-natural-intent.md) for the closed proposal,
+explicit target/DC requirements, protocol 3, preserved v2 world/command identity and v1
+read-only compatibility. Existing committed-event replay is unchanged; new precommit
+interpretation reuses the existing durable tool tape on main with event id and parent-state
+hash. No new cache/schema or PocketRisu changes were made. Pending interpretation never
+reissues automatically. 255 Python and 22 Node tests and an independent shipped-plugin →
+actual API/SQLite/SDK harness passed with simulated Google boundaries. No new live calls or
+6011 upgrade occurred; actual semantic quality and host UI remain unverified. NMOS remains deferred.
 
 Owner rule for billable provider tests: before every future test, disclose its scope, maximum
 call count, estimated cost and assumptions/uncertainty, then obtain explicit approval. Stop
@@ -84,7 +93,8 @@ The plugin was not run; backend transport and live host compatibility remain unv
 
 > The command/provider slice is implemented. First read its integration contract and current-host evidence. Preserve one stable runtime event per unchanged user action and immutable edit branches. A regenerated assistant reply must reuse the committed result and must not reinterpret intent or call dice/tools again.
 >
-> Opt-in Vertex narration is implemented; check its current host/provider verification in the narration report. An LLM intent binding remains separate work and must produce a validated closed GameEvent. Keep deterministic commands and fallback narration usable without credentials or NMOS. Preserve pre-narration commit and rerender tests. Journal storage is now linear per chat; address full-history requests and per-request prefix verification before claiming long-horizon host operation. General card/lore compatibility and continuation remain separate work.
+> Opt-in Vertex narration is implemented; check its current host/provider verification in the narration report. The bounded Vertex intent binding now produces validated closed attack/check/save proposals
+> through the existing durable tape; preserve its precommit claim/result and pending no-retry contract. Keep deterministic commands and fallback narration usable without credentials or NMOS. Preserve pre-narration commit and rerender tests. Journal storage is now linear per chat; address full-history requests and per-request prefix verification before claiming long-horizon host operation. General card/lore compatibility and continuation remain separate work.
 
 ## Fourth prompt: RuleCheeseBench
 

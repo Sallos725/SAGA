@@ -549,7 +549,7 @@ def test_legacy_exact_records_remain_read_only_across_upgrade_and_restart(tmp_pa
     before = repo.branches(world_id)
     for _ in range(2):
         reopened, dice, intent, client = setup(tmp_path)
-        for version in (1, 2):
+        for version in (1, 2, 3):
             response = client.post(
                 "/v1/chat/completions", json=request(("u1", text), version=version)
             )

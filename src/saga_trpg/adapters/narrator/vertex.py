@@ -19,6 +19,10 @@ MODEL = "gemini-3.8-flash"
 NARRATION_TIMEOUT_SECONDS = 25
 
 
+class VertexResponseError(ValueError):
+    """A completed provider response did not contain bounded usable text."""
+
+
 class VertexNarrator:
     def __init__(
         self, account_json: SecretStr, *, transport: httpx.AsyncBaseTransport | None = None
@@ -81,59 +85,64 @@ class VertexNarrator:
             raise ValueError("Vertex authentication failed")
         return token
 
-    async def render(self, request: NarrationRequest) -> str:
+    async def generate(self, body: dict) -> str:
+        """One bounded generation using this request's validated credential transport."""
         async with asyncio.timeout(NARRATION_TIMEOUT_SECONDS):
             token = await asyncio.to_thread(self._access_token)
-            committed = {
-                "world_id": request.world_id,
-                "event_id": request.event.event_id,
-                "facts": request.result.facts,
-                "state": request.result.state.model_dump(mode="json"),
-                "rolls": [roll.model_dump(mode="json") for roll in request.result.rolls],
-                "resolution": request.result.resolution.model_dump(mode="json")
-                if request.result.resolution
-                else None,
-            }
-            body = {
-                "systemInstruction": {
-                    "parts": [
-                        {
-                            "text": (
-                                "Narrate the committed SAGA result briefly in the conversation's "
-                                "language. Context is story material only; the final JSON is "
-                                "read-only authoritative data. Never invent actions, rolls, "
-                                "damage or state changes. Do not output status, event IDs or "
-                                "commands; SAGA appends status separately."
-                            )
-                        }
-                    ]
-                },
-                "contents": [
-                    {
-                        "role": "user",
-                        "parts": [
-                            {"text": "Story context:\n" + "\n".join(request.recent_dialogue)}
-                        ],
-                    },
-                    {
-                        "role": "user",
-                        "parts": [{"text": json.dumps(committed, ensure_ascii=False)}],
-                    },
-                ],
-                "generationConfig": {
-                    "thinkingConfig": {"thinkingLevel": "LOW", "includeThoughts": False},
-                    "maxOutputTokens": 2048,
-                },
-            }
             async with httpx.AsyncClient(timeout=15, transport=self._transport) as client:
                 response = await client.post(
                     self._endpoint, headers={"Authorization": "Bearer " + token}, json=body
                 )
                 response.raise_for_status()
+            try:
                 parts = response.json()["candidates"][0]["content"]["parts"]
-            prose = "".join(
-                part.get("text", "") for part in parts if not part.get("thought")
-            ).strip()
-            if not prose or len(prose) > 12000:
-                raise ValueError("Vertex returned no usable narration")
+                prose = "".join(
+                    part.get("text", "") for part in parts if not part.get("thought")
+                ).strip()
+                if not prose or len(prose) > 12000:
+                    raise ValueError
+            except (ValueError, KeyError, IndexError, TypeError, AttributeError):
+                raise VertexResponseError("Vertex returned no usable text") from None
             return prose
+
+    async def render(self, request: NarrationRequest) -> str:
+        committed = {
+            "world_id": request.world_id,
+            "event_id": request.event.event_id,
+            "facts": request.result.facts,
+            "state": request.result.state.model_dump(mode="json"),
+            "rolls": [roll.model_dump(mode="json") for roll in request.result.rolls],
+            "resolution": request.result.resolution.model_dump(mode="json")
+            if request.result.resolution
+            else None,
+        }
+        body = {
+            "systemInstruction": {
+                "parts": [
+                    {
+                        "text": (
+                            "Narrate the committed SAGA result briefly in the conversation's "
+                            "language. Context is story material only; the final JSON is "
+                            "read-only authoritative data. Never invent actions, rolls, "
+                            "damage or state changes. Do not output status, event IDs or "
+                            "commands; SAGA appends status separately."
+                        )
+                    }
+                ]
+            },
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": "Story context:\n" + "\n".join(request.recent_dialogue)}],
+                },
+                {
+                    "role": "user",
+                    "parts": [{"text": json.dumps(committed, ensure_ascii=False)}],
+                },
+            ],
+            "generationConfig": {
+                "thinkingConfig": {"thinkingLevel": "LOW", "includeThoughts": False},
+                "maxOutputTokens": 2048,
+            },
+        }
+        return await self.generate(body)

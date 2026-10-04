@@ -20,7 +20,7 @@ function fixture() {
   };
   state.reply = async () => ({ ok: true, status: 200, json: async () => ({
     choices: [{ message: { content: "Resolved attack." } }],
-    saga: { schema_version: 2, identity_version: 2, legacy_read_only: false,
+    saga: { schema_version: 3, identity_version: 2, legacy_read_only: false,
       event_id: "event-1", seq: 1, replayed: false,
       rolls: [{ expression: "1d20", raw: [12], total: 12 }],
       state: { actors: { player: { actor_id: "player", hp: 20, max_hp: 20 },
@@ -53,7 +53,7 @@ test("provider forwards stable identity out of band and renders authoritative st
   assert.equal(f.calls.length, 1);
   assert.equal(f.calls[0].networkRoute, "local_network");
   assert.equal(f.calls[0].url, "http://saga-runtime:4850/v1/chat/completions");
-  assert.deepEqual(f.calls[0].body.saga, { schema_version: 2, host_instance_id: "pocketrisu-test-uuid-1",
+  assert.deepEqual(f.calls[0].body.saga, { schema_version: 3, host_instance_id: "pocketrisu-test-uuid-1",
     chat_id: "chat-1", actor_id: "player", purpose: "action", actions: [{ message_id: "u1", text: "attack opponent", context_hidden: false }] });
   assert.deepEqual(f.calls[0].body.messages, [{ role: "user", content: "attack opponent" }]);
 });
@@ -218,7 +218,7 @@ test("hidden latest user turn cannot dispatch an earlier active turn", async () 
   assert.equal(f.calls.length, 0);
 });
 
-test("v2 plugin preserves raw legacy text and shows read-only legacy response", async () => {
+test("protocol 3 plugin preserves raw legacy text and shows read-only legacy response", async () => {
   const f = fixture();
   f.character.chats[0].message[0].data = "Attack  opponent";
   f.prompt[0].content = "Attack  opponent";
@@ -258,7 +258,7 @@ test("one JSON input travels only in the masked header with clean context", asyn
   assert.equal(result.success, true);
   assert.equal(f.calls.length, 1);
   assert.equal(Buffer.from(f.calls[0].headers["x-saga-vertex-secret"], "base64").toString("utf8"), secret);
-  assert.equal(f.calls[0].requestTimeoutMs, 33000);
+  assert.equal(f.calls[0].requestTimeoutMs, 65000);
   assert.equal(f.calls[0].body.narration.schema_version, 1);
   assert.equal(f.calls[0].body.narration.provider, "vertex");
   const context = JSON.stringify(f.calls[0].body.narration.context);
@@ -337,4 +337,22 @@ test("unload during asynchronous final config check suppresses the committed rep
   const reply = f.reply;
   f.reply = async () => { unload = true; return reply(); };
   assert.equal((await f.send(await f.prepare())).success, false);
+});
+
+
+test("natural language keeps raw action identity and accepts protocol 3 results", async () => {
+  const f = fixture();
+  f.args.vertex_service_account_json = "{}";
+  f.character.chats[0].message[0].data = "상대를 공격한다";
+  f.prompt[0].content = "상대를 공격한다";
+  const response = await f.reply();
+  const data = await response.json();
+  data.saga.identity_version = 3;
+  f.reply = async () => ({ ...response, json: async () => data });
+  const result = await f.send(await f.prepare());
+  assert.equal(result.success, true);
+  assert.deepEqual(f.calls[0].body.saga.actions, [{ message_id: "u1", text: "상대를 공격한다", context_hidden: false }]);
+  assert.equal(f.calls[0].body.saga.schema_version, 3);
+  assert.equal(f.calls[0].requestTimeoutMs, 65000);
+  assert.equal(f.calls.length, 1);
 });

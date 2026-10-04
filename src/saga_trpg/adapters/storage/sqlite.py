@@ -282,6 +282,13 @@ class SQLiteWorldRepository:
         except ValueError as exc:
             raise ReplayError("invalid stored state or transition history") from exc
 
+    def get_initial_state(self, world_id: str) -> WorldState:
+        """Read persisted genesis independently of moving branch heads or snapshots."""
+        with self._transaction() as connection:
+            return self._load_state(
+                connection, world_id, "main", through_seq=0, use_snapshots=False
+            )
+
     def get_state(self, world_id: str, *, branch_id: str = "main") -> WorldState:
         with self._transaction() as connection:
             return self._load_state(connection, world_id, branch_id)
