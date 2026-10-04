@@ -52,16 +52,22 @@ Exit criterion: a 100+ turn synthetic campaign can retrieve an early clue withou
 
 ## Phase 3 — RisuAI adapter
 
-- [ ] Document exact RisuAI custom API request shape observed in current version.
-- [ ] Add session/world identity mapping.
-- [ ] Add stable mapping from user turn to runtime event id.
-- [ ] Detect regeneration/rerender without redispatch.
-- [ ] Add closed-schema intent interpretation.
+- [x] Document pinned PocketRisu 1.13.0 provider/hook behavior and completion subset.
+- [x] Add session/world identity mapping.
+- [x] Add stable mapping from user turn to runtime event id.
+- [x] Detect regeneration/rerender without redispatch.
+- [x] Add closed-schema deterministic command interpretation (LLM interpretation deferred).
 - [ ] Stream narration if practical, after the state commit.
 - [ ] Preserve normal card prompt/lore behavior where compatible.
-- [ ] Add status/trace injection that does not rely on model self-reporting.
+- [x] Render authoritative HP, rolls and event id from the committed response.
 
 Exit criterion: regenerate the same assistant turn 10 times; journal length, HP, and dice remain unchanged.
+
+The no-memory command slice is independent of Phase 2. See
+[the integration contract](RISUAI_INTEGRATION.md) and
+[verification report](progress/risu-command-demo.md). Streaming, natural-language/card/lore
+integration and efficient long-history branch storage remain open; the demo caps active
+history at 256 user actions.
 
 ## Phase 4 — MCP/tool layer
 

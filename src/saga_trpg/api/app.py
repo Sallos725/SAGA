@@ -8,6 +8,8 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
+from saga_trpg.adapters.risu.openai_proxy import RisuBridge
+from saga_trpg.adapters.risu.openai_proxy import router as risu_router
 from saga_trpg.adapters.storage.sqlite import (
     RepositoryConflict,
     RepositoryNotFound,
@@ -27,7 +29,9 @@ from saga_trpg.runtime.replay import ReplayError
 logger = logging.getLogger(__name__)
 
 
-def create_app(*, repository: SQLiteWorldRepository | None = None) -> FastAPI:
+def create_app(
+    *, repository: SQLiteWorldRepository | None = None, risu_bridge: RisuBridge | None = None
+) -> FastAPI:
     app = FastAPI(title="SAGA — Stateful Agentic Game Architecture", version="0.2.0")
     worlds = (
         repository
@@ -165,4 +169,5 @@ def create_app(*, repository: SQLiteWorldRepository | None = None) -> FastAPI:
     def fork(world_id: str, request: ForkRequest) -> BranchInfo:
         return worlds.fork(world_id, **request.model_dump())
 
+    app.include_router(risu_router(risu_bridge or RisuBridge(worlds)))
     return app

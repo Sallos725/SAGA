@@ -21,7 +21,8 @@ The design goal is not to build another prompt-heavy chatbot. It is to split res
 - **RuleCheeseBench** reuses the exact same runtime to compare models under replayable scenarios.
 
 SAGA provides persistent state, replay, branching, and durable external tool results.
-Product-specific NMOS, MCP, and RisuAI bindings remain separate integration work.
+The PocketRisu command demo now connects stable user turns to that runtime without NMOS.
+Production NMOS, MCP, and LLM bindings remain separate integration work.
 
 ## Why this shape
 
@@ -40,6 +41,16 @@ adapter; SAGA does not embed a second memory system into the game engine.
 7. **Benchmark runs are reproducible.** Scenario, rule version, seed, model config, and event journal are captured.
 
 ## Quick start
+
+For the API-key-free PocketRisu **6011** playtest, use the
+[isolated deployment](deploy/README.md) and [starter card/provider](packs/risu-starter/README.md).
+Send `attack opponent`, `check strength 10`, or `save dexterity 12`; regeneration reuses the
+committed event and dice. This is a command-driven SRD subset with fallback narration, not
+natural-language TRPG orchestration.
+
+Set `useSayNothing=false` in host settings for this demo. Active history is limited to 256
+user turns; latest-action edits fork safely, while changed earlier history must be resumed
+from its first uncommitted turn. Disable the demo plugin when selecting another main provider.
 
 ```bash
 python -m venv .venv
@@ -128,6 +139,8 @@ Implemented:
 - selectable, versioned SRD 5.2.1 and Fate Condensed example modules with closed action schemas
 - replayable generic-fantasy attack rule
 - FastAPI debug endpoints
+- a versioned OpenAI-shaped Risu completion adapter with immutable host-turn mapping
+- PocketRisu v3 provider and starter card for no-memory SRD commands and authoritative status
 - NMOS and MCP Dice ports/adapters with explicit TODO contracts
 - benchmark result models and scenario shape
 - tests for the most important invariants
@@ -137,7 +150,7 @@ Not implemented yet:
 - production NMOS API binding
 - production MCP client binding
 - LLM intent interpreter
-- RisuAI `/v1/chat/completions` orchestration
+- general RisuAI card/lore compatibility, LLM narration and streaming
 - legacy JSONL import and future state/event semantic migrations
 - complete TRPG rulesets
 - full RuleCheeseBench runner and judges
@@ -153,7 +166,9 @@ included. Supply configuration at runtime; it is not baked into the image.
 
 The debug HTTP host has no production authentication or multi-tenant isolation yet. Bind it to localhost/private networking until the outer API/auth layer is implemented and reviewed.
 
-The future user-facing RisuAI bundle lives under `packs/risu-starter/`; its exported card/lore artifacts are intentionally not fabricated until the current RisuAI format is verified.
+The command-demo bundle lives under `packs/risu-starter/`. Its v2 card and v3 provider target
+the pinned PocketRisu 1.13.0 host. See the starter guide for supported commands, edit/retry
+behavior and capacity limits.
 
 When changing setup instructions, supported features, or limitations, update both
 `README.md` and `README.ko.md` in the same change.

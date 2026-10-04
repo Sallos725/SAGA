@@ -1,0 +1,51 @@
+name: saga-playtest
+services:
+  saga-runtime:
+    build:
+      context: ..
+    image: saga-runtime:risu-6011
+    container_name: saga-runtime
+    restart: unless-stopped
+    environment:
+      TRPG_DATA_DIR: /app/data
+      TRPG_DEFAULT_SEED: saga-risu-playtest-v1
+    volumes:
+      - saga-runtime-data:/app/data
+    ports:
+      - "127.0.0.1:4851:4850"
+    networks:
+      - saga-playtest
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4850/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  pocketrisu:
+    image: ghcr.io/pocketrisu/pocketrisu@sha256:409a5243295f54f1f99a552dc04659fa2ac69bd7c1ab6ee99132b5744ed893bd
+    container_name: saga-pocketrisu
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6011:6001"
+      - "100.96.204.101:6011:6001"
+      - "192.168.219.103:6011:6001"
+    volumes:
+      - saga-pocketrisu-save:/app/save
+      - saga-pocketrisu-backups:/app/backups
+    networks:
+      - saga-playtest
+    depends_on:
+      saga-runtime:
+        condition: service_healthy
+networks:
+  saga-playtest:
+    external: true
+    name: saga-playtest
+volumes:
+  saga-runtime-data:
+    name: saga-runtime-data
+  saga-pocketrisu-save:
+    external: true
+    name: saga-pocketrisu-save
+  saga-pocketrisu-backups:
+    external: true
+    name: saga-pocketrisu-backups

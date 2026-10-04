@@ -16,10 +16,19 @@ System-sized, openly licensed ruleset examples were subsequently added. Read
 The owner confirmed Aethrion as an original inspiration. Its source was reviewed at a
 pinned revision; see [REFERENCES.md](REFERENCES.md) for the MIT license, RisuAI bridge
 and narration references, and differences from SAGA's journal/tool guarantees.
+The no-memory PocketRisu command slice is now implemented. Read
+[the integration contract](RISUAI_INTEGRATION.md), [starter guide](../packs/risu-starter/README.md)
+and [verification report](progress/risu-command-demo.md). Stable host/chat/message identities
+derive immutable branches, and regeneration reads committed results before intent or dice.
+The demo supports SRD attack/check/save commands with fallback narration; it is not an LLM
+interpreter, full ruleset, or general card/lore adapter. Storage v2 and runtime semantics are
+unchanged. The starter can proceed independently while NMOS remains unavailable.
+
 The owner's oneuldo memory-pilot branch provides a concrete PocketRisu plugin route to
 chat/message ids. Read [the integration review](RISUAI_INTEGRATION.md#host-identity-reference-oneuldo-memory-pilot)
-before treating turn identity as unavailable: its five focused tests were reproduced,
-but the plugin-to-SAGA mapping and current-host end-to-end test remain to be implemented.
+before treating turn identity as unavailable: its five focused tests were reproduced.
+The SAGA binding uses the current host's `getCharacter()` snapshot instead of the pilot's
+numeric `getChatFromIndex()` path; see the integration contract for that compatibility detail.
 The owner's local `~/saga-ref/dice/` module and plugin were also inspected as source.
 Read [the dice reference review](LOCAL_DICE_REFERENCE.md) for file hashes, tool/display
 contracts, compatibility details, and the required durable-tape integration boundary.
@@ -46,11 +55,11 @@ The plugin was not run; backend transport and live host compatibility remain unv
 >
 > Add integration tests using a fake transport and, if practical, an opt-in live NMOS test. Exact HP/inventory/quest values must remain authoritative runtime state. Memory failure must not corrupt a valid committed game event.
 
-## Third prompt: RisuAI vertical slice
+## Third prompt: extend the RisuAI command slice
 
-> Implement the RisuAI/OpenAI-compatible outer adapter. First verify the CURRENT request/regeneration behavior of RisuAI's Custom API. Map one user action to one stable runtime event. A regenerated assistant reply must reuse the existing committed event/result and must not call dice/tools again.
+> The command/provider slice is implemented. First read its integration contract and current-host evidence. Preserve one stable runtime event per unchanged user action and immutable edit branches. A regenerated assistant reply must reuse the committed result and must not reinterpret intent or call dice/tools again.
 >
-> Add a closed-schema intent interpreter boundary; it may initially be a deterministic fake for tests. Commit state before narration. Support a fallback narrator. Add an end-to-end test where the same RisuAI-style turn is regenerated repeatedly and journal length, HP, and roll records remain unchanged.
+> Add an opt-in LLM intent/narrator binding only when a provider is selected. Keep deterministic commands and fallback narration usable without credentials or NMOS. Preserve pre-narration commit and rerender tests. Address bounded history/branch storage before claiming long-horizon host operation. General card/lore compatibility and continuation remain separate work.
 
 ## Fourth prompt: RuleCheeseBench
 
