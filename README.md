@@ -1,5 +1,7 @@
 # SAGA — Stateful Agentic Game Architecture
 
+[한국어](README.ko.md) | **English**
+
 A deterministic, replayable TRPG runtime for long-horizon agent-driven games and RisuAI.
 
 The design goal is not to build another prompt-heavy chatbot. It is to split responsibilities cleanly:
@@ -146,3 +148,6 @@ included. Supply configuration at runtime; it is not baked into the image.
 The debug HTTP host has no production authentication or multi-tenant isolation yet. Bind it to localhost/private networking until the outer API/auth layer is implemented and reviewed.
 
 The future user-facing RisuAI bundle lives under `packs/risu-starter/`; its exported card/lore artifacts are intentionally not fabricated until the current RisuAI format is verified.
+
+When changing setup instructions, supported features, or limitations, update both
+`README.md` and `README.ko.md` in the same change.
