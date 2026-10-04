@@ -11,3 +11,7 @@ Each note should capture completed work, tests, architectural deviations, unreso
 
 Current checkpoint: [SAGA foundation hardening](saga-foundation-hardening.md).
 Earlier reports describe their recorded revisions and may list work completed in later reports.
+
+Optional parallel investigation: [performance foundation](performance-foundation.md), with
+[design and integration phases](../PERFORMANCE_LAYER.md). This is a local presentation
+primitive, not completed RisuAI/TTS/visual integration.

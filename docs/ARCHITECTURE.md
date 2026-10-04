@@ -134,3 +134,13 @@ The common bot description holds only shared GM/runtime behavior. Module descrip
 prompt context, while the selected handler owns actual mechanics. The persistent world row
 pins selection; neither chat text nor event payloads replace it. These examples implement
 declared subsets, not entire rulebooks. See [the module packs](../packs/rulesets/README.md).
+
+## Optional narrative performance
+
+The local `presentation/` foundation projects completed narrative text and optional validated
+dialogue spans into versioned performance events. Canonical speaker ids come from the
+committed snapshot's approved actor roster. It is disabled by default, has no provider calls
+or persistence, and is not wired into the debug HTTP host. Consumer failures preserve text.
+See [the investigation](PERFORMANCE_LAYER.md) and
+[ADR 0004](adr/0004-optional-performance-projection.md) before adding inference, TTS, visuals,
+streaming or an archive. Presentation never becomes a game event or a replay prerequisite.

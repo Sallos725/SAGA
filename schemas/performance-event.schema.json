@@ -1,0 +1,141 @@
+{
+  "$defs": {
+    "NarrativeSource": {
+      "additionalProperties": false,
+      "properties": {
+        "branch_id": {
+          "minLength": 1,
+          "title": "Branch Id",
+          "type": "string"
+        },
+        "game_event_id": {
+          "minLength": 1,
+          "title": "Game Event Id",
+          "type": "string"
+        },
+        "narration_id": {
+          "minLength": 1,
+          "title": "Narration Id",
+          "type": "string"
+        },
+        "world_id": {
+          "minLength": 1,
+          "title": "World Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "world_id",
+        "branch_id",
+        "game_event_id",
+        "narration_id"
+      ],
+      "title": "NarrativeSource",
+      "type": "object"
+    },
+    "SpeakerRef": {
+      "additionalProperties": false,
+      "properties": {
+        "actor_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Actor Id"
+        },
+        "kind": {
+          "default": "unresolved",
+          "enum": [
+            "actor",
+            "narrator",
+            "unresolved"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "SpeakerRef",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Derived presentation only; never dispatch this as a GameEvent.",
+  "properties": {
+    "end": {
+      "exclusiveMinimum": 0,
+      "title": "End",
+      "type": "integer"
+    },
+    "event_id": {
+      "pattern": "^performance:[0-9a-f]{64}$",
+      "title": "Event Id",
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "text",
+        "dialogue"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "producer_version": {
+      "const": "segments-v1",
+      "default": "segments-v1",
+      "title": "Producer Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "segment_index": {
+      "minimum": 0,
+      "title": "Segment Index",
+      "type": "integer"
+    },
+    "source": {
+      "$ref": "#/$defs/NarrativeSource"
+    },
+    "speaker": {
+      "$ref": "#/$defs/SpeakerRef"
+    },
+    "start": {
+      "minimum": 0,
+      "title": "Start",
+      "type": "integer"
+    },
+    "text": {
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+    },
+    "text_hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Text Hash",
+      "type": "string"
+    }
+  },
+  "required": [
+    "event_id",
+    "source",
+    "text_hash",
+    "segment_index",
+    "start",
+    "end",
+    "kind",
+    "text",
+    "speaker"
+  ],
+  "title": "PerformanceEvent",
+  "type": "object"
+}
