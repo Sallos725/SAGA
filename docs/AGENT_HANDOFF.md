@@ -2,6 +2,37 @@
 
 Copy the prompt below into Codex or Claude Code from the repository root.
 
+## Resume the multiplayer research experiment
+
+The multiplayer spike is preserved on `codex/experiment-multiplayer-rulecheese`, with
+performance prerequisites in `8a75f46` and the experiment in `6146f2d`. It is separate from
+the foundation/P1 work described below. Use a separate checkout/worktree if another session
+is using the current directory; do not switch or overwrite that session's active branch.
+
+Read [the experiment report](experiments/multiplayer-rulecheese.md) first for architecture,
+constraints, measured results, failure behavior, limitations and production follow-up. The
+[benchmark guide](../benchmarks/multiagent/README.md) contains reproduction commands; scenario
+definitions, `comparison.json` and the five complete `runs.json` artifacts are in that directory.
+The artifacts contain synthetic private state and hidden validators and are judge-only inputs.
+
+Copy this continuation prompt into the next session:
+
+> Continue Sallos725/SAGA's multiplayer research on `codex/experiment-multiplayer-rulecheese`.
+> Read `AGENTS.md`, `CLAUDE.md`, `docs/ARCHITECTURE.md`, `docs/PERSISTENCE.md`,
+> `docs/experiments/multiplayer-rulecheese.md` and `benchmarks/multiagent/README.md` before editing.
+> Inspect `src/saga_trpg/experimental/multiplayer/`, `src/saga_trpg/benchmark/multiagent/` and
+> `tests/test_multiplayer.py` / `tests/test_multiagent_benchmark.py`. The published source checkpoint
+> passed 177 tests (28 multiplayer/benchmark tests), including verification from committed files only.
+> Preserve deterministic replay, branch isolation, idempotency, durable tool results and actor-scoped
+> views. This is a local scripted prototype: fixed roster/order, one commit per turn, in-memory party
+> messages, and no live model/MCP/RisuAI/NMOS integration. The recommended next investigation is
+> durable session/message identity and a shared admission/visibility boundary; first identify the
+> smallest experimental increment consistent with the user's current request and repository rules.
+> Keep work isolated on the experimental branch. Do not merge to main, deploy, enable paid services,
+> expose judge artifacts to players or change stable production semantics for convenience.
+
+## Foundation and P1 handoff
+
 Current checkpoint (2026-10-04): SAGA foundation hardening is implemented on
 `codex/saga-foundation-hardening`. Read [the hardening report](progress/saga-foundation-hardening.md),
 [the persistence contract](PERSISTENCE.md), and [ADR 0005](adr/0005-durable-tool-results.md)
