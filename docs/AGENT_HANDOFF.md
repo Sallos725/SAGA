@@ -20,6 +20,10 @@ The owner's oneuldo memory-pilot branch provides a concrete PocketRisu plugin ro
 chat/message ids. Read [the integration review](RISUAI_INTEGRATION.md#host-identity-reference-oneuldo-memory-pilot)
 before treating turn identity as unavailable: its five focused tests were reproduced,
 but the plugin-to-SAGA mapping and current-host end-to-end test remain to be implemented.
+The owner's local `~/saga-ref/dice/` module and plugin were also inspected as source.
+Read [the dice reference review](LOCAL_DICE_REFERENCE.md) for file hashes, tool/display
+contracts, compatibility details, and the required durable-tape integration boundary.
+The plugin was not run; backend transport and live host compatibility remain unverified.
 
 ## Recommended next task: NMOS boundary audit
 
