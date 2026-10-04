@@ -23,7 +23,7 @@ reroll, and hiding earlier prompt context could silently start a new genesis bra
   [the official setup-node action](https://github.com/actions/setup-node), alongside Python CI.
 
 No domain/runtime/database schema or authentication changes, state metadata flags, new
-dependencies, migration, or commits were made by the implementation worker. See
+dependencies or migrations were introduced. See
 [the current integration contract](../RISUAI_INTEGRATION.md) and
 [upgrade instructions](../../packs/risu-starter/README.md).
 
@@ -61,11 +61,41 @@ the original backup SHA-256 stayed unchanged. Unknown placeholder/cosmetic prefi
 Independent supervisor verification also preserved the original worlds, branches, entries and
 snapshots. This demonstrates exact legacy reading, not reconstruction of absent raw metadata.
 
+### Live PocketRisu 6011 verification
+
+Implementation commit `dc4efcbce32f58bb1b06b1cc92557c524b947ce5` was built from a clean
+export and deployed as image
+`sha256:1f37470cc68b89de2d8df82c6ba39f9f57293d3930e86acf036836edca604a91`.
+All **41 Python source files** in the image matched the implementation commit. Plugin 0.2.0
+was installed through the host's official import/update path with its existing arguments
+preserved; its source hash remained
+`692033aa46f767749fc07854b020bdf0f1b7803164c46ea5010382f973507ebd`.
+The owned starter card greeting and version were updated to 0.2.0.
+
+- Actual send, user-message edits to `Attack opponent` and `attack  opponent`, and regeneration
+  buttons retained the same event, state, rolls and journal. The attack die stayed **18**;
+  the damage die stayed **5**, for **8** damage after the +3 modifier.
+- The actual assistant menu/scissors control applied `allBefore`. After six attacks at
+  **seq 6 / opponent HP 0**, the seventh check continued at **seq 7 / HP 0**. The original
+  seq 6 journal remained unchanged.
+- Runtime restart, host reload and another actual UI regeneration preserved the seq 7 event,
+  state, rolls and journal. The hidden-context screenshot was visually inspected.
+- Six live exact legacy reads (three histories through each protocol version) returned 200;
+  two unknown placeholder prefixes returned 409. The original two legacy worlds, six entries,
+  all branches and snapshots matched the pre-upgrade backup.
+- All original host messages in three chats (0/2/5 messages) and the plugin arguments were
+  preserved exactly. The live test chat was retained, and a new blank **New Chat 5** was
+  selected for the user.
+
+These live checks demonstrate stored-result/history preservation. Zero additional dice and
+intent calls are established by the instrumented API tests above, not by live process counters.
+
 Local evidence is in `/tmp/saga-risu-identity-fix-evidence/`: `regression-red.txt`,
 `worker-pytest.txt`, `worker-node.txt`, `worker-compatibility-results.json`,
-`worker-verify.py`, `worker-verify.cjs`, `supervisor-probe.json` and the worker contract ledger.
-Frozen-source hashes identify what was tested. Final deployed-browser verification belongs to
-the supervisor; no new live-host behavior is claimed by these worker checks.
+`worker-verify.py`, `worker-verify.cjs`, `supervisor-probe.json`, `ui-cosmetic.json`,
+`ui-hide.json`, `ui-restart.json`, `live-preservation.json`, `host-preservation-ready.json`,
+`6011-v2-hidden-context.png`
+and the worker contract ledger. Frozen-source hashes identify what was tested and deployed.
 
 ## Remaining limits
 
