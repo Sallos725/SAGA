@@ -31,7 +31,7 @@ does not execute this backend or make model-written state authoritative.
 Use the project environment with `pip install -e '.[dev,api]'`, then start:
 
 ```bash
-uvicorn nmos_trpg.api.app:create_app --factory --port 4850
+uvicorn saga_trpg.api.app:create_app --factory --port 4850
 ```
 
 List the available modules and create a fantasy example:

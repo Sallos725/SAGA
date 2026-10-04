@@ -2,7 +2,7 @@ import sqlite3
 
 from fastapi.testclient import TestClient
 
-from nmos_trpg.api.app import create_app
+from saga_trpg.api.app import create_app
 
 
 def test_world_selects_one_ruleset_and_keeps_it_on_restart(tmp_path, monkeypatch):

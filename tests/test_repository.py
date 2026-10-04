@@ -6,10 +6,10 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from nmos_trpg.adapters.storage.sqlite import SQLiteWorldRepository
-from nmos_trpg.domain.events import GameEvent
-from nmos_trpg.domain.models import ActorState, WorldState
-from nmos_trpg.runtime.rng import DeterministicDice
+from saga_trpg.adapters.storage.sqlite import SQLiteWorldRepository
+from saga_trpg.domain.events import GameEvent
+from saga_trpg.domain.models import ActorState, WorldState
+from saga_trpg.runtime.rng import DeterministicDice
 
 
 class CountingDice(DeterministicDice):
@@ -160,9 +160,9 @@ def test_process_exit_mid_transaction_recovers_committed_prefix(repository):
     before = repository.get_state("test")
     code = """
 import os, sqlite3, sys
-from nmos_trpg.adapters.storage.sqlite import SQLiteWorldRepository
-from nmos_trpg.domain.events import GameEvent
-from nmos_trpg.modules.generic_fantasy.rules import GenericFantasyRules
+from saga_trpg.adapters.storage.sqlite import SQLiteWorldRepository
+from saga_trpg.domain.events import GameEvent
+from saga_trpg.modules.generic_fantasy.rules import GenericFantasyRules
 class CrashRules(GenericFantasyRules):
     def apply(self, **kwargs):
         os._exit(73)
@@ -180,8 +180,8 @@ def test_process_exit_after_insert_before_commit_recovers_prefix(repository):
     before = repository.get_state("test")
     code = """
 import os, sys
-from nmos_trpg.adapters.storage.sqlite import SQLiteJournal, SQLiteWorldRepository
-from nmos_trpg.domain.events import GameEvent
+from saga_trpg.adapters.storage.sqlite import SQLiteJournal, SQLiteWorldRepository
+from saga_trpg.domain.events import GameEvent
 original_append = SQLiteJournal.append
 def crash_after_insert(self, entry):
     original_append(self, entry)
@@ -202,8 +202,8 @@ repo.dispatch('test', GameEvent(event_id='uncommitted', kind='time_advance', act
 def test_exit_after_commit_before_response_retry_reuses_tools(repository):
     code = """
 import os, sys
-from nmos_trpg.adapters.storage.sqlite import SQLiteWorldRepository
-from nmos_trpg.domain.events import GameEvent
+from saga_trpg.adapters.storage.sqlite import SQLiteWorldRepository
+from saga_trpg.domain.events import GameEvent
 repo = SQLiteWorldRepository(sys.argv[1])
 repo.dispatch('test', GameEvent(kind='attack', actor_id='player', idempotency_key='lost-response',
     payload={'target_id':'goblin', 'attack_bonus':20, 'target_ac':10, 'damage':'1d6+2'}))
@@ -220,8 +220,8 @@ os._exit(74)
 
 @pytest.mark.asyncio
 async def test_rerender_reads_recorded_result_without_mutation(repository):
-    from nmos_trpg.adapters.narrator.fallback import FallbackNarrator
-    from nmos_trpg.ports.narrator import NarrationRequest
+    from saga_trpg.adapters.narrator.fallback import FallbackNarrator
+    from saga_trpg.ports.narrator import NarrationRequest
 
     dice = CountingDice()
     repository.dice = dice
@@ -306,9 +306,9 @@ def test_concurrent_processes_do_not_repeat_committed_dice(repository, tmp_path)
     code = """
 import sys
 from pathlib import Path
-from nmos_trpg.adapters.storage.sqlite import SQLiteWorldRepository
-from nmos_trpg.runtime.rng import DeterministicDice
-from nmos_trpg.domain.events import GameEvent
+from saga_trpg.adapters.storage.sqlite import SQLiteWorldRepository
+from saga_trpg.runtime.rng import DeterministicDice
+from saga_trpg.domain.events import GameEvent
 class LoggedDice(DeterministicDice):
     def roll(self, **kwargs):
         with Path(sys.argv[2]).open('a') as stream:
@@ -335,7 +335,7 @@ def test_recovery_in_fresh_process_with_different_hash_seed(repository):
     repository.dispatch("conditions", attack())
     code = """
 import sys
-from nmos_trpg.adapters.storage.sqlite import SQLiteWorldRepository
+from saga_trpg.adapters.storage.sqlite import SQLiteWorldRepository
 repo = SQLiteWorldRepository(sys.argv[1])
 assert repo.get_state('conditions') == repo.replay('conditions')
 assert repo.get_state('conditions').seq == 1

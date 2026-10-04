@@ -11,7 +11,7 @@ Contains runtime, adapters, rulesets, tests, benchmark scenarios, and source man
 Suggested release shape:
 
 ```text
-nmos-trpg-pack-vX.Y.Z/
+saga-trpg-pack-vX.Y.Z/
   README.md
   docker-compose.yml
   .env.example

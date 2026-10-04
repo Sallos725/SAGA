@@ -8,7 +8,8 @@
 - [x] branch/fork support
 - [x] event schema registry for the new SRD/Fate example modules
 - [x] crash consistency
-- [ ] state migrations
+- [x] minimal migration framework: explicit storage v1 → v2, backup, atomic rollback, replay checks
+- [x] SAGA identity/package rename and Python 3.11–3.13 CI
 
 ## P1 — NMOS + RisuAI
 
@@ -24,7 +25,8 @@
 ## P2 — Tools + rules
 
 - [ ] MCP dice adapter
-- [ ] tool-result replay tape
+- [x] durable generic tool-result tape, external dice integration seam, restart/concurrency tests
+- [ ] provider-specific reconciliation of ambiguous executions before enabling live MCP tools
 - [ ] inventory module
 - [ ] checks/saves module
 - [ ] conditions module

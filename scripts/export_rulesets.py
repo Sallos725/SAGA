@@ -4,8 +4,8 @@ import argparse
 import json
 from pathlib import Path
 
-from nmos_trpg.domain.events import GameEvent
-from nmos_trpg.modules.catalog import COMMON_BOT_DESCRIPTION, RulesetRegistry
+from saga_trpg.domain.events import GameEvent
+from saga_trpg.modules.catalog import COMMON_BOT_DESCRIPTION, RulesetRegistry
 
 
 def json_text(value: object) -> str:

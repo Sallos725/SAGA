@@ -1,11 +1,11 @@
 import pytest
 
-from nmos_trpg.domain.events import GameEvent
-from nmos_trpg.domain.models import RollRecord
-from nmos_trpg.modules.catalog import RulesetRegistry
-from nmos_trpg.runtime.engine import RuntimeEngine
-from nmos_trpg.runtime.journal import InMemoryJournal
-from nmos_trpg.runtime.replay import replay_recorded_results
+from saga_trpg.domain.events import GameEvent
+from saga_trpg.domain.models import RollRecord
+from saga_trpg.modules.catalog import RulesetRegistry
+from saga_trpg.runtime.engine import RuntimeEngine
+from saga_trpg.runtime.journal import InMemoryJournal
+from saga_trpg.runtime.replay import replay_recorded_results
 
 
 class ScriptedDice:

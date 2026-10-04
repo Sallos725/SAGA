@@ -1,4 +1,4 @@
-from nmos_trpg.runtime.rng import DeterministicDice
+from saga_trpg.runtime.rng import DeterministicDice
 
 
 def test_deterministic_dice_keying() -> None:

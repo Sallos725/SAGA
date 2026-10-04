@@ -1,6 +1,6 @@
 # Persistent runtime contract
 
-The first implementation slice uses `SQLiteWorldRepository`, an outer I/O adapter around
+SAGA uses `SQLiteWorldRepository`, an outer I/O adapter around
 the same deterministic `RuntimeEngine`. SQLite is in Python's standard library. No service,
 new package dependency, NMOS binding, or external tool client is required.
 
@@ -10,23 +10,30 @@ The debug HTTP host stores worlds at `$TRPG_DATA_DIR/worlds.sqlite3`; the defaul
 is `./data`. `TRPG_DEFAULT_SEED` applies when a world is created. Each world stores its seed,
 initial state, ruleset name/version, and runtime version; changing the environment seed does
 not change an existing world's future rolls. An explicitly injected `DicePort` overrides the
-reference dice for that repository instance and is the caller's reproducibility responsibility.
+reference dice for that repository instance and must be pure/reproducible. Non-pure external
+dice must use `external_dice=ToolBinding(...)`, described below; injecting a raw remote
+`DicePort` bypasses the tape and is unsupported.
 
 The default repository resolves each world's stored ruleset id/version through the built-in
 registry; different campaigns can use different systems in the same database. Explicitly
 injected rule implementations remain restricted to their exact name/version for tests or hosts
-that need them. The database schema is unchanged. `POST /worlds/{world_id}` selects a registered
+that need them. `POST /worlds/{world_id}` selects a registered
 system and creates its example world; existing implicit demo creation still uses generic-fantasy.
 See [the ruleset examples](../packs/rulesets/README.md) for the public catalog and context routes.
 
 Each dispatch opens a connection, starts `BEGIN IMMEDIATE`, loads the current branch state,
 checks event identity, executes rules through the runtime, inserts the journal entry and any
 due snapshot, and commits. The adapter returns the result only after commit. SQLite serializes
-writes across threads and processes, including the idempotency check and tool execution.
+writes across threads and processes, including the idempotency check and local dice execution.
+For taped external dice, a missing result suspends speculative rule evaluation. The transaction
+persists an event reservation, then the outer adapter executes through the tape outside that
+transaction and evaluates the same rules again using recorded results. Partial rule state is
+discarded. Rule implementations must be deterministic and stateless apart from their explicit
+input/output state. All current modules satisfy that contract.
 The connection uses foreign keys, `synchronous=FULL`, and a five-second lock timeout. Database
 initialization is also transactional. Use a local filesystem with SQLite-compatible locking.
 
-The database contains four tables:
+Storage v2 contains six tables:
 
 | Table | Stored data |
 | --- | --- |
@@ -34,6 +41,8 @@ The database contains four tables:
 | `branches` | Branch id, parent branch, fork event id and sequence |
 | `entries` | Committed event/result, trace, roll records, before/after state hashes |
 | `snapshots` | World state and hash at a committed sequence |
+| `tool_events` | Pending/committed event reservation, proposal, identities, input state hash |
+| `tool_executions` | Stable call identity, argument/request hashes, versions, status, result |
 
 Application code only inserts history and snapshots; it does not rewrite or truncate them.
 The initial branch is `main`. A snapshot is saved at genesis and every 50 new committed events
@@ -104,32 +113,126 @@ exposing a new uncommitted result. Storage details are logged server-side. The l
 generic-fantasy module retains its traced no-op for unknown actions. New registered example
 modules reject unsupported kinds and use closed payload schemas before rolling. The closed
 free-text intent interpreter is still future work. These remain private/debug endpoints with
-the scaffold's existing deployment boundary.
+the existing private deployment boundary. Tool identity conflicts return 409; unresolved
+executions return 503 without dispatching another remote call. Tool configuration is injected
+by the host, not selected through untrusted HTTP event payloads.
+
+## Durable external tool-result tape
+
+`ToolResultTapePort` accepts a versioned `ToolCall` and a `ToolPort`. Its SQLite implementation
+works with any JSON-valued result; it has no MCP dependency. `RecordedDice` adapts those results
+to `RollRecord` for existing rules. A host can configure the repository with:
+
+```python
+from saga_trpg.adapters.storage.sqlite import SQLiteWorldRepository
+from saga_trpg.ports.tools import ToolBinding
+
+# remote_tool implements execute(ToolCall, *, idempotency_key) -> JsonValue.
+repo = SQLiteWorldRepository(
+    "data/worlds.sqlite3",
+    external_dice=ToolBinding("dice", "1", "provider-protocol-1", remote_tool),
+)
+```
+
+No remote implementation is supplied yet. Dice arguments are `roll_key` and `expression`;
+the result must validate as a matching `RollRecord`. The tool receives a detached call,
+never a mutable `WorldState`. Pure local dice continue using the original path.
+
+Identity is `(world_id, branch_id, event_id, tool_call_key)`. Canonical JSON SHA-256 hashes
+normalize dictionary order while preserving array order and distinguishing booleans/numbers.
+Nonfinite numbers are rejected. A different argument hash, tool name/version, protocol version,
+or invocation context under that identity raises `ToolIdentityConflict`. The repository binds
+context to the complete action, input state hash, runtime version, and ruleset version.
+This also detects changed targets or other action inputs even if dice arguments are identical.
+
+Execution phases:
+
+1. Persist an event reservation, including its generated event id if only an idempotency key
+   was supplied. External dispatch requires at least one explicit retry identity.
+2. Under `BEGIN IMMEDIATE`, check the tape and insert a unique `pending` claim; commit it
+   **before** calling the remote tool. A competing process returns the completed result or
+   receives `ToolExecutionPending`. It never steals or expires the claim.
+3. Invoke the tool outside the transaction, passing `saga-tool-<canonical request hash>` as
+   the remote idempotency key. Adapters should forward it when their remote supports it.
+4. Persist the JSON result as `completed` in a separate transaction before returning it.
+5. Reevaluate the event from its reserved state using recorded results. Additional missing
+   calls repeat phases 2–4. Commit journal, snapshot, and `committed` tape/reservation status
+   in the same final world transaction.
+
+An unresolved event reserves its branch: a different event cannot mutate that branch, even
+through a host configured for local dice. Reads, committed duplicate requests, replay, and
+forking a committed prefix remain available. Identical retries reuse the reservation and
+completed results. Changing the pending proposal fails; omitting an optional identity is
+allowed only when another supplied identity matches. Forks copy committed journal results,
+not pending claims; new branch calls have independent identities.
+
+Rerender reads a detached committed event. Recovery/replay/fork consume recorded states and
+rolls without running rule code or tools. Their operation does not require a configured
+remote tool or process-local cache.
 
 ## Failure and compatibility policy
 
 - SQLite rolls back a failed event/snapshot transaction. A process exiting after inserting an
   entry but before commit leaves the previously committed prefix recoverable. A process exiting
   after commit but before responding is handled by retrying the same stable identity.
-- Dice/tools may execute before a transaction fails. Committed retries never reroll, but this
-  design does not guarantee exactly-once external side effects in the pre-commit failure window.
-  Future external tools need their own durable idempotency or result-tape design.
+- A failure before the tool claim commits cannot execute that tool. A failure after result
+  persistence but before event commit retains the result for retry, even across process exit.
+  A failure after the pending claim commits but before its result is saved is **ambiguous**:
+  the remote may or may not have executed. This includes timeouts, invalid/non-JSON results,
+  disk failure while saving a result, and a crash just before sending the request.
+- Generic exactly-once remote execution is impossible without remote cooperation. SAGA
+  provides durable local claim ownership and result reuse, not a distributed transaction.
+  `pending` means in-flight **or** ambiguous; there are no wall-clock leases or automatic
+  retries. A provider-specific, audited reconciliation path must be implemented before live
+  MCP enablement. This slice deliberately has no reset/delete/retry-pending endpoint.
+  A malformed but persisted dice response also fails closed on every retry.
+- The tape and event history live in the same SQLite file and must be backed up/restored
+  together. Restoring an older backup can lose knowledge of later remote side effects;
+  do not resume such operations without reconciling with the remote service.
 - A database lock timeout is an error, not permission to execute outside the transaction.
   Retry with the original identity. Read-only replay and rerender do not execute tools.
-- Storage format is `PRAGMA user_version = 1`; journal/state/event schema version is 1 and the
+- Storage format is `PRAGMA user_version = 2`; journal/state/event schema version is 1 and the
   runtime compatibility version is `0.2.0`. Stored ruleset/runtime versions must match the active
-  registry (or an explicitly injected rule implementation). Unknown versions and nonempty unversioned databases are rejected. No automatic
-  migration, hash rewrite, or history repair is performed.
-- Future migrations must preserve the original artifact, explicitly map old versions, and
-  verify replay equivalence before adoption. Replay incompatibility requires a runtime version
-  change. The generic-fantasy ruleset keeps its existing `0.1.0` rule semantics.
+  registry (or an explicitly injected rule implementation). Unknown versions and nonempty
+  unversioned databases are rejected. Opening v1 requires the explicit migration below.
+  No automatic migration, hash rewrite, or history repair is performed.
 - The older standalone `JsonlJournal` remains a single-writer scaffold. It now flushes/fsyncs
   before publishing its cache but cannot provide SQLite's atomicity or concurrency guarantees.
   A partial write/fsync failure requires inspection and reopening before retry; there is no
   automatic torn-tail repair. Unversioned JSONL records receive model defaults, but old hashes
   involving unordered sets may fail current verification. There is no automatic JSONL import.
 
+## Migration contract
+
+Stop the host and run, with a new backup path:
+
+```bash
+python -m saga_trpg.adapters.storage.migrations data/worlds.sqlite3 \
+  --backup data/worlds.pre-v2.sqlite3
+```
+
+`migration_path` is a pure ordered version plan. The only supported step is actual storage
+v1 → v2: add the event-reservation and tool-execution tables/index. There is no invented old
+state format. World/event/journal JSON and runtime/ruleset semantics remain exactly unchanged.
+An already-current database returns without a backup or rewrite. Unknown/future versions fail
+closed; a backup file is never overwritten.
+
+The migration holds a SQLite writer reservation, uses SQLite's backup API through a separate
+read connection to preserve the committed source (including WAL content), checks database
+integrity, replays every branch, and validates every snapshot. It applies ordered DDL and
+version changes in one transaction, then repeats replay and checks both final state hashes
+and the byte content of original stored row values. Any error rolls back DDL/data/version
+together. A successful backup remains available even when subsequent validation fails.
+Restore it only with the host stopped; retain the failed source for investigation.
+
+Custom rule implementations absent from the built-in registry cannot currently be migrated
+by this CLI. A future semantic state migration must define an explicit schema/runtime
+transition and its replay contract; it cannot be slipped into this storage-only step.
+Legacy JSONL import remains deferred. Tests use a fixture exported by the actual prior v1
+implementation, including a committed attack, snapshots, a branch, and fixed expected hashes.
+
 Public JSON schemas are generated from the Python models in `schemas/`. Regenerate them with
 `python scripts/export_schemas.py` using the project environment. `JournalPort` now requires
-`find_by_idempotency_key`; `MemoryPort`, `DicePort`, and `NarratorPort` are unchanged. Narrators
+`find_by_idempotency_key`; `MemoryPort`, `DicePort`, and `NarratorPort` are unchanged. New
+`ToolCall`/`ToolExecution` models and `ToolPort`/`ToolResultTapePort` describe the tape. Narrators
 receive detached committed records and cannot mutate the authoritative repository through them.

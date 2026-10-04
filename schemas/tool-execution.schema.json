@@ -1,0 +1,113 @@
+{
+  "$defs": {
+    "JsonValue": {},
+    "ToolCall": {
+      "additionalProperties": false,
+      "description": "A logical invocation. Context binds a result to its rule/event/state inputs.",
+      "properties": {
+        "arguments": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Arguments",
+          "type": "object"
+        },
+        "branch_id": {
+          "minLength": 1,
+          "title": "Branch Id",
+          "type": "string"
+        },
+        "context_hash": {
+          "default": "",
+          "title": "Context Hash",
+          "type": "string"
+        },
+        "event_id": {
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "protocol_version": {
+          "minLength": 1,
+          "title": "Protocol Version",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "tool_call_key": {
+          "minLength": 1,
+          "title": "Tool Call Key",
+          "type": "string"
+        },
+        "tool_name": {
+          "minLength": 1,
+          "title": "Tool Name",
+          "type": "string"
+        },
+        "tool_version": {
+          "minLength": 1,
+          "title": "Tool Version",
+          "type": "string"
+        },
+        "world_id": {
+          "minLength": 1,
+          "title": "World Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "world_id",
+        "branch_id",
+        "event_id",
+        "tool_call_key",
+        "tool_name",
+        "tool_version",
+        "protocol_version",
+        "arguments"
+      ],
+      "title": "ToolCall",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "arguments_hash": {
+      "title": "Arguments Hash",
+      "type": "string"
+    },
+    "call": {
+      "$ref": "#/$defs/ToolCall"
+    },
+    "result": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "status": {
+      "enum": [
+        "pending",
+        "completed",
+        "committed"
+      ],
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "call",
+    "arguments_hash",
+    "status"
+  ],
+  "title": "ToolExecution",
+  "type": "object"
+}
