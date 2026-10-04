@@ -1,0 +1,82 @@
+{
+  "$defs": {
+    "DialogueSpan": {
+      "additionalProperties": false,
+      "description": "End-exclusive Unicode code point offsets in the original narrative string.",
+      "properties": {
+        "end": {
+          "exclusiveMinimum": 0,
+          "title": "End",
+          "type": "integer"
+        },
+        "speaker": {
+          "$ref": "#/$defs/SpeakerRef"
+        },
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "DialogueSpan",
+      "type": "object"
+    },
+    "SpeakerRef": {
+      "additionalProperties": false,
+      "properties": {
+        "actor_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Actor Id"
+        },
+        "kind": {
+          "default": "unresolved",
+          "enum": [
+            "actor",
+            "narrator",
+            "unresolved"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "SpeakerRef",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "spans": {
+      "items": {
+        "$ref": "#/$defs/DialogueSpan"
+      },
+      "maxItems": 1024,
+      "title": "Spans",
+      "type": "array"
+    }
+  },
+  "required": [
+    "spans"
+  ],
+  "title": "DialogueMetadata",
+  "type": "object"
+}
