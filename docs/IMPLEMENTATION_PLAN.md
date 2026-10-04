@@ -20,6 +20,8 @@ Exit criterion: state can be reconstructed from committed records without rerunn
 - [x] Add branch metadata and rewind/branch API.
 - [x] Add event validation registry for new example rulesets (legacy scaffold remains unchanged).
 - [x] Add built-in ruleset manifests with compatibility versions (external plugin loading deferred).
+- [x] Add explicit storage v1 → v2 migration with backup and replay validation.
+- [x] Complete SAGA package identity and CI on Python 3.11–3.13.
 - [ ] Add structured trace IDs and correlation IDs.
 
 Exit criterion: server restart preserves exact world and event history.
@@ -66,8 +68,9 @@ Exit criterion: regenerate the same assistant turn 10 times; journal length, HP,
 - [ ] Select a concrete MCP dice server.
 - [ ] Bind `MCPDiceAdapter`.
 - [ ] Define timeout/fallback policy.
-- [ ] Journal every external tool result needed for replay.
-- [ ] Distinguish pure deterministic tools from external mutable tools.
+- [x] Persist external tool claims/results before committing events; replay recorded results.
+- [x] Distinguish pure deterministic dice from taped external tools.
+- [ ] Add provider-specific reconciliation for ambiguous pending executions.
 - [ ] Add tool capability manifest.
 
 External mutable tools require extra care: replay should normally use recorded results, not query the new present-day value.

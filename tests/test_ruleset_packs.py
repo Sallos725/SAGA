@@ -3,12 +3,12 @@ from pathlib import Path
 
 import pytest
 
-from nmos_trpg.adapters.narrator.fallback import FallbackNarrator
-from nmos_trpg.adapters.storage.sqlite import SQLiteWorldRepository
-from nmos_trpg.domain.events import GameEvent
-from nmos_trpg.domain.models import WorldState
-from nmos_trpg.domain.rulesets import RulesetManifest
-from nmos_trpg.ports.narrator import NarrationRequest
+from saga_trpg.adapters.narrator.fallback import FallbackNarrator
+from saga_trpg.adapters.storage.sqlite import SQLiteWorldRepository
+from saga_trpg.domain.events import GameEvent
+from saga_trpg.domain.models import WorldState
+from saga_trpg.domain.rulesets import RulesetManifest
+from saga_trpg.ports.narrator import NarrationRequest
 
 
 @pytest.mark.parametrize("ruleset_id", ["srd-5.2.1", "fate-condensed"])

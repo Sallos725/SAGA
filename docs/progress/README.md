@@ -8,3 +8,6 @@ Agents should place phase handoff notes here, for example:
 - `phase-4-rulecheese.md`
 
 Each note should capture completed work, tests, architectural deviations, unresolved risks, and the next recommended task.
+
+Current checkpoint: [SAGA foundation hardening](saga-foundation-hardening.md).
+Earlier reports describe their recorded revisions and may list work completed in later reports.

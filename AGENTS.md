@@ -4,13 +4,17 @@ This repository is designed for agent-driven implementation. Preserve the archit
 
 ## Primary objective
 
-Build a long-horizon, replayable TRPG runtime that can sit behind RisuAI and use NMOS as semantic memory. The runtime must also serve as the execution substrate for RuleCheeseBench.
+Build SAGA, a long-horizon, replayable TRPG runtime that can sit behind RisuAI and optionally
+use NMOS or another `MemoryPort` implementation. The runtime must also serve as the execution
+substrate for RuleCheeseBench.
 
 ## Hard architecture rules
 
 - `domain/` and the deterministic parts of `runtime/` MUST NOT perform network I/O, filesystem I/O, wall-clock reads, or unseeded randomness.
 - NMOS is accessed only through `MemoryPort`.
 - Dice/tool execution is accessed only through tool ports such as `DicePort`.
+- Non-pure external tools must use the durable result tape. Never bypass it with a raw remote
+  `DicePort`, and never automatically rerun an ambiguous pending execution.
 - An LLM NEVER mutates `WorldState` directly.
 - Any LLM-derived intent must first become a validated `GameEvent`.
 - Exact game facts live in authoritative state, not NMOS.

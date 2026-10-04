@@ -3,16 +3,17 @@
 import json
 from pathlib import Path
 
-from nmos_trpg.domain.branches import BranchInfo, ForkRequest
-from nmos_trpg.domain.events import GameEvent
-from nmos_trpg.domain.models import WorldState
-from nmos_trpg.domain.rulesets import (
+from saga_trpg.domain.branches import BranchInfo, ForkRequest
+from saga_trpg.domain.events import GameEvent
+from saga_trpg.domain.models import WorldState
+from saga_trpg.domain.rulesets import (
     CreateWorldRequest,
     RulesetContext,
     RulesetManifest,
     RulesetReference,
 )
-from nmos_trpg.runtime.journal import JournalEntry
+from saga_trpg.domain.tools import ToolCall, ToolExecution
+from saga_trpg.runtime.journal import JournalEntry
 
 
 def main() -> None:
@@ -27,6 +28,8 @@ def main() -> None:
         "ruleset-manifest": RulesetManifest,
         "ruleset-reference": RulesetReference,
         "ruleset-context": RulesetContext,
+        "tool-call": ToolCall,
+        "tool-execution": ToolExecution,
     }
     for name, model in models.items():
         schema = {

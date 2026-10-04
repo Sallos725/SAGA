@@ -3,9 +3,9 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [project]
-name = "nmos-trpg-runtime"
+name = "saga-trpg"
 version = "0.0.1"
-description = "Agent-friendly scaffold for a deterministic NMOS-backed TRPG runtime and RuleCheeseBench substrate"
+description = "SAGA — Stateful Agentic Game Architecture: a replayable TRPG runtime"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -28,7 +28,7 @@ mcp = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/nmos_trpg"]
+packages = ["src/saga_trpg"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

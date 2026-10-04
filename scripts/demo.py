@@ -1,9 +1,9 @@
-from nmos_trpg.domain.events import GameEvent
-from nmos_trpg.domain.models import ActorState, WorldState
-from nmos_trpg.modules.generic_fantasy.rules import GenericFantasyRules
-from nmos_trpg.runtime.engine import RuntimeEngine
-from nmos_trpg.runtime.journal import InMemoryJournal
-from nmos_trpg.runtime.rng import DeterministicDice
+from saga_trpg.domain.events import GameEvent
+from saga_trpg.domain.models import ActorState, WorldState
+from saga_trpg.modules.generic_fantasy.rules import GenericFantasyRules
+from saga_trpg.runtime.engine import RuntimeEngine
+from saga_trpg.runtime.journal import InMemoryJournal
+from saga_trpg.runtime.rng import DeterministicDice
 
 engine = RuntimeEngine(
     initial_state=WorldState(

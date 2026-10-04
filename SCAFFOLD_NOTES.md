@@ -1,14 +1,18 @@
-# Scaffold Notes
+# Implementation boundaries
 
-This scaffold intentionally does not choose:
+The project is **SAGA — Stateful Agentic Game Architecture**, distributed as `saga-trpg`
+with Python package `saga_trpg`. SQLite provides persistent worlds, snapshots, event history,
+and the external tool-result tape. Explicit storage upgrades preserve replayable history.
 
-- a permanent project name,
-- a database beyond the reference journal shape,
-- a concrete MCP dice server,
-- a specific LLM provider,
-- a fixed NMOS endpoint contract,
-- a licensed tabletop ruleset.
+SRD 5.2.1 and Fate Condensed are licensed, partial ruleset examples; see
+[the license notes](docs/RULESET_LICENSES.md) for their scope and attribution.
 
-Those are implementation-time decisions. The boundaries are the important part.
+Still intentionally unselected or unimplemented:
 
-Suggested temporary repo name: `nmos-trpg-runtime`.
+- a concrete MCP server/client and provider-specific execution reconciliation;
+- an LLM provider, intent interpreter, and narrator integration;
+- the live NMOS API binding (semantic memory remains optional);
+- RisuAI turn orchestration and the full benchmark runner.
+
+The filename is retained as a pointer from early checkouts. These notes describe the current
+implementation; historical reports under `docs/progress/` retain their original time context.

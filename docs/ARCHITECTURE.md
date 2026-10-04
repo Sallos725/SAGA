@@ -9,7 +9,7 @@ RisuAI / CLI / benchmark harness
       outer orchestration
       |      |       |
       |      |       +------> Narrator LLM
-      |      +--------------> NMOS MemoryPort
+      |      +--------------> optional MemoryPort (null / fake / NMOS / other)
       +---------------------> Intent interpreter
              |
              v
@@ -35,8 +35,8 @@ RisuAI / CLI / benchmark harness
 | Concern | Owner | Must not own |
 | --- | --- | --- |
 | HP, inventory, quest stage, exact conditions | Runtime state | NMOS / narrator |
-| Semantic long-term recall | NMOS | Runtime rule code |
-| Dice/tool result | Dice/tool adapter + journal | Narrator |
+| Semantic long-term recall | Optional MemoryPort adapter | Runtime rule code |
+| Dice/tool result | Tool-result tape + adapter + journal | Narrator |
 | Free-text interpretation | Intent adapter | Rule mutation |
 | Prose | Narrator | State mutation |
 | Reroll/regeneration | Outer adapter | New state/tool execution |
@@ -48,7 +48,9 @@ RisuAI / CLI / benchmark harness
 2. Free text is interpreted into a closed `GameEvent` proposal.
 3. Runtime validates and assigns/reuses a stable event id.
 4. Rule module reads current `WorldState` and may call tool ports.
-5. Tool results become structured `RollRecord`s.
+5. External tool calls are durably claimed and recorded by the outer adapter before use.
+   Rules consume structured results (`RollRecord` for dice); they do not invoke remote I/O
+   directly. Local deterministic dice retain their pure execution path.
 6. Runtime produces `RuleResult` with new state, facts, patches, trace, and rolls.
 7. Journal persists the committed event/result before the host exposes the new state.
 8. Memory write is derived from committed facts. Failure is logged but does not roll back valid game state unless a future design explicitly requires transactional memory.
@@ -107,11 +109,21 @@ Never mutate historical event results in place. Edited user turns should create 
 ## Current persistence boundary
 
 `adapters/storage/sqlite.py` owns filesystem/database I/O and serializes each dispatch in a
-transaction before invoking the existing runtime. The HTTP host uses this repository instead
+transaction before invoking the existing runtime. Missing external results suspend a rule
+attempt without committing its partial state. The repository durably reserves the event,
+executes through `ToolResultTapePort` outside the world transaction, and reevaluates from the
+same state with recorded results. The final journal/snapshot/tape-status commit is atomic.
+Other actions cannot alter a branch reserved by an unresolved event. Pending tool claims
+are never expired or blindly rerun; remote reconciliation is an explicit later integration.
+The HTTP host uses this repository instead
 of a process-local registry. The adapter stores full committed results and periodic snapshots;
 recovery and branching replay these results without executing rules or tools. Forks copy their
 immutable prefix and record parent provenance. See [PERSISTENCE.md](PERSISTENCE.md) for storage
 versions, API routes, retention, and failure-window limitations.
+
+Storage migration v1 → v2 adds tape metadata without changing event/state schema v1 or
+runtime compatibility version `0.2.0`. It backs up the source and verifies replay and original
+history before committing. See [ADR 0005](adr/0005-durable-tool-results.md).
 
 ## System-sized example modules
 

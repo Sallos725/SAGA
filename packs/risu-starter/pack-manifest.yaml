@@ -1,6 +1,6 @@
 schema_version: 1
-id: nmos-trpg-starter
-name: NMOS TRPG Starter
+id: saga-trpg-starter
+name: SAGA Starter
 status: scaffold
 backend:
   required: true

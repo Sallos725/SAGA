@@ -2,10 +2,14 @@
 
 Copy the prompt below into Codex or Claude Code from the repository root.
 
-Current checkpoint (2026-10-04): the first implementation prompt's persistent runtime slice
-is implemented. Read [the phase 1 report](progress/phase-1.md) and
-[the persistence contract](PERSISTENCE.md) before continuing. The broader roadmap still has
-work beyond the implemented examples; NMOS and RisuAI bindings remain later phases.
+Current checkpoint (2026-10-04): SAGA foundation hardening is implemented on
+`codex/saga-foundation-hardening`. Read [the hardening report](progress/saga-foundation-hardening.md),
+[the persistence contract](PERSISTENCE.md), and [ADR 0005](adr/0005-durable-tool-results.md)
+before continuing. Package/import names are `saga-trpg` / `saga_trpg`; storage v1 requires an
+explicit backed-up upgrade to v2. Game schema v1 and runtime semantics `0.2.0` are unchanged.
+The tape has durable claim/result storage and a tested external-dice repository path.
+Actual remote tools and reconciliation of ambiguous executions remain later work.
+The [phase 1 report](progress/phase-1.md) is historical evidence, not the current task list.
 System-sized, openly licensed ruleset examples were subsequently added. Read
 [the ruleset example report](progress/ruleset-examples.md) and
 [the source-pack guide](../packs/rulesets/README.md) for supported mechanics and remaining limits.
@@ -17,23 +21,20 @@ chat/message ids. Read [the integration review](RISUAI_INTEGRATION.md#host-ident
 before treating turn identity as unavailable: its five focused tests were reproduced,
 but the plugin-to-SAGA mapping and current-host end-to-end test remain to be implemented.
 
-## Recommended first implementation prompt
+## Recommended next task: NMOS boundary audit
 
 > Read `AGENTS.md`, `CLAUDE.md`, `README.md`, `docs/ARCHITECTURE.md`, and `docs/IMPLEMENTATION_PLAN.md` before coding. Treat the architectural invariants as requirements, not suggestions.
 >
-> Your first goal is to turn this scaffold into a production-shaped vertical slice without overbuilding it. Work on a feature branch.
+> Inspect the current NMOS public/local API and document a minimal `MemoryPort` binding plan.
+> Work on a feature branch. Keep NMOS optional; no-memory and fake-memory operation must remain
+> possible. Confirm world/actor visibility, provenance, duplicate writes, and fail-soft behavior
+> before implementing a real transport. Do not expand RisuAI, rulesets, or the benchmark here.
 >
-> 1. Audit the scaffold for correctness and fix any obvious defects first.
-> 2. Implement a persistent world repository using append-only JSONL + periodic snapshots (SQLite is acceptable instead if you can justify it, but do not add infrastructure without need).
-> 3. Guarantee idempotent dispatch by stable event id/idempotency key.
-> 4. Add branch/replay support sufficient to rewind to an earlier committed event and fork a new branch without mutating the original history.
-> 5. Add tests proving: restart recovery, replay equality, no duplicate dice/state mutation on repeated event id, and branch isolation.
-> 6. Do not implement NMOS or RisuAI deeply yet; keep their ports stable and note any contract changes needed.
-> 7. Run tests/lint, self-review against `AGENTS.md`, and write `docs/progress/phase-1.md` describing changes, trade-offs, and remaining risks.
->
-> Do not silently weaken determinism for convenience. Do not let LLM output become authoritative state.
+> Run the full CI command set and retain deterministic replay, branch isolation, durable tool
+> identity, crash recovery, and rerender immutability. Never inject a non-pure remote tool as
+> bare `DicePort`; use `ToolBinding` and the tape. Do not automatically reset a pending claim.
 
-## Second prompt: NMOS integration
+## Subsequent prompt: NMOS integration
 
 > Inspect the CURRENT `Sallos725/NMOS` repository and its supported local/public integration surface before writing code. Do not rely on stale assumptions or copy NMOS internals.
 >

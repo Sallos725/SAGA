@@ -6,9 +6,9 @@ from pathlib import Path
 import pytest
 from test_runtime import make_engine
 
-from nmos_trpg.domain.events import GameEvent
-from nmos_trpg.runtime.journal import JsonlJournal
-from nmos_trpg.runtime.replay import replay_recorded_results
+from saga_trpg.domain.events import GameEvent
+from saga_trpg.runtime.journal import JsonlJournal
+from saga_trpg.runtime.replay import replay_recorded_results
 
 
 def flag_event(**kwargs) -> GameEvent:
@@ -67,8 +67,8 @@ def test_replay_rejects_corruption(corruption: str) -> None:
 
 def test_condition_hash_is_stable_across_processes() -> None:
     code = (
-        "from nmos_trpg.domain.models import WorldState, ActorState; "
-        "from nmos_trpg.runtime.hashing import stable_model_hash; "
+        "from saga_trpg.domain.models import WorldState, ActorState; "
+        "from saga_trpg.runtime.hashing import stable_model_hash; "
         "print(stable_model_hash(WorldState(world_id='w', actors={'p': "
         "ActorState(actor_id='p', conditions={'poisoned','stunned','hidden','blessed'})})))"
     )

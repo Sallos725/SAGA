@@ -1,7 +1,7 @@
 services:
-  trpg-runtime:
+  saga:
     build: .
-    command: uvicorn nmos_trpg.api.app:create_app --factory --host 0.0.0.0 --port 4850
+    command: uvicorn saga_trpg.api.app:create_app --factory --host 0.0.0.0 --port 4850
     ports:
       - "4850:4850"
     env_file:
