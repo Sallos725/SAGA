@@ -1,0 +1,261 @@
+{
+  "schema_version": 1,
+  "scenario_id": "distributed-knowledge",
+  "version": "1",
+  "public_setup": "Three adventurers approach a sealed ruin. Open the gate by coordinating your private information and owned resources. Only explicitly shared clue claims count as information disclosure in this experiment.",
+  "initial_state": {
+    "schema_version": 1,
+    "world_id": "ruin-distributed-knowledge",
+    "seq": 0,
+    "simulated_time": 0,
+    "actors": {
+      "a": {
+        "actor_id": "a",
+        "hp": 10,
+        "max_hp": 10,
+        "inventory": {},
+        "conditions": [],
+        "stats": {
+          "inscription": "DAWN"
+        }
+      },
+      "b": {
+        "actor_id": "b",
+        "hp": 10,
+        "max_hp": 10,
+        "inventory": {
+          "silver_key": 1
+        },
+        "conditions": [],
+        "stats": {}
+      },
+      "c": {
+        "actor_id": "c",
+        "hp": 10,
+        "max_hp": 10,
+        "inventory": {},
+        "conditions": [],
+        "stats": {
+          "warning": "STEP_LEFT"
+        }
+      },
+      "hidden-custodian": {
+        "actor_id": "hidden-custodian",
+        "hp": 10,
+        "max_hp": 10,
+        "inventory": {},
+        "conditions": [],
+        "stats": {
+          "gm_secret": "VALIDATOR_CANARY"
+        }
+      }
+    },
+    "flags": {
+      "gate_open": false,
+      "braced": false,
+      "gate_integrity": 6,
+      "gm_secret": "VALIDATOR_CANARY"
+    },
+    "quest_state": {}
+  },
+  "session": {
+    "schema_version": 1,
+    "world_id": "ruin-distributed-knowledge",
+    "branch_id": "main",
+    "participants": [
+      {
+        "participant_id": "human-a",
+        "actor_id": "a",
+        "participant_type": "human",
+        "permissions": [
+          "read",
+          "propose",
+          "message"
+        ],
+        "visible_actor_ids": [
+          "a",
+          "b",
+          "c"
+        ],
+        "own_stat_keys": [
+          "inscription",
+          "warning"
+        ],
+        "own_inventory_keys": [
+          "silver_key",
+          "hammer",
+          "lever"
+        ]
+      },
+      {
+        "participant_id": "ai-b",
+        "actor_id": "b",
+        "participant_type": "ai_agent",
+        "permissions": [
+          "read",
+          "propose",
+          "message"
+        ],
+        "visible_actor_ids": [
+          "a",
+          "b",
+          "c"
+        ],
+        "own_stat_keys": [
+          "inscription",
+          "warning"
+        ],
+        "own_inventory_keys": [
+          "silver_key",
+          "hammer",
+          "lever"
+        ]
+      },
+      {
+        "participant_id": "ai-c",
+        "actor_id": "c",
+        "participant_type": "ai_agent",
+        "permissions": [
+          "read",
+          "propose",
+          "message"
+        ],
+        "visible_actor_ids": [
+          "a",
+          "b",
+          "c"
+        ],
+        "own_stat_keys": [
+          "inscription",
+          "warning"
+        ],
+        "own_inventory_keys": [
+          "silver_key",
+          "hammer",
+          "lever"
+        ]
+      },
+      {
+        "participant_id": "gm",
+        "actor_id": null,
+        "participant_type": "gm",
+        "permissions": [
+          "read"
+        ],
+        "visible_actor_ids": [
+          "a",
+          "b",
+          "c"
+        ],
+        "own_stat_keys": [],
+        "own_inventory_keys": []
+      },
+      {
+        "participant_id": "spectator",
+        "actor_id": null,
+        "participant_type": "spectator",
+        "permissions": [
+          "read"
+        ],
+        "visible_actor_ids": [
+          "a",
+          "b",
+          "c"
+        ],
+        "own_stat_keys": [],
+        "own_inventory_keys": []
+      }
+    ],
+    "mode": "turn_based",
+    "turn_order": [
+      "a",
+      "c",
+      "b"
+    ],
+    "actions": [
+      {
+        "kind": "wait",
+        "description": "Pass one action turn. Communication is free and does not alter mechanics.",
+        "payload_schema": {
+          "additionalProperties": false,
+          "properties": {},
+          "title": "EmptyPayload",
+          "type": "object"
+        }
+      },
+      {
+        "kind": "unlock",
+        "description": "Use your silver key with the exact inscription and trap warning to open the gate.",
+        "payload_schema": {
+          "additionalProperties": false,
+          "properties": {
+            "inscription": {
+              "maxLength": 200,
+              "title": "Inscription",
+              "type": "string"
+            },
+            "warning": {
+              "maxLength": 200,
+              "title": "Warning",
+              "type": "string"
+            },
+            "item": {
+              "maxLength": 80,
+              "title": "Item",
+              "type": "string"
+            }
+          },
+          "required": [
+            "inscription",
+            "warning",
+            "item"
+          ],
+          "title": "UnlockPayload",
+          "type": "object"
+        }
+      },
+      {
+        "kind": "brace",
+        "description": "Use your lever once to brace the gate; subsequent force gains +4 effort.",
+        "payload_schema": {
+          "additionalProperties": false,
+          "properties": {},
+          "title": "EmptyPayload",
+          "type": "object"
+        }
+      },
+      {
+        "kind": "force",
+        "description": "Use your hammer. Roll 1d4 effort (+4 if braced); reduce gate integrity to zero.",
+        "payload_schema": {
+          "additionalProperties": false,
+          "properties": {},
+          "title": "EmptyPayload",
+          "type": "object"
+        }
+      }
+    ],
+    "public_flag_keys": [
+      "gate_open",
+      "braced",
+      "gate_integrity"
+    ],
+    "visibility_policy_version": "allowlist-v1",
+    "turn_policy_version": "one-commit-one-turn-v1"
+  },
+  "ruleset_id": "experiment.sealed-ruin",
+  "ruleset_version": "1",
+  "stochastic_policy": "fixed-effort-2-v1",
+  "seed": "multiplayer-spike-v1",
+  "max_decisions": 12,
+  "hidden_checks": {
+    "clue_owners": {
+      "inscription": "a",
+      "warning": "c"
+    },
+    "hidden_actor_ids": [
+      "hidden-custodian"
+    ],
+    "optimal_commits": 3
+  }
+}
