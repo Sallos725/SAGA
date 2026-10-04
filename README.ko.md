@@ -52,7 +52,8 @@ JSON 전체를 붙여넣으세요. 메인 모델은 **SAGA SRD Demo**로 유지�
 global 엔드포인트를 읽고 **Gemini 3.8 Flash**로 자동 연결하므로 다른 모델 설정은 필요 없습니다.
 비우면 기본 서술을 쓰고, 모델 실패·시간 초과 시에도 확정된 사실과 상태를 표시합니다.
 [설정과 인증정보 취급 범위](packs/risu-starter/README.md#optional-vertex-narration)를 참고하세요.
-이 기능의 실제 Gemini 생성은 아직 검증하지 않았습니다.
+승인받은 실제 Gemini 호출 2회가 6011에서 성공했고 확정 판정은 유지됐습니다.
+검증 범위와 비용 불확실성은 [검증 보고서](docs/progress/risu-vertex-narration.md)를 참고하세요.
 
 이 데모에서는 호스트 설정을 `useSayNothing=false`로 지정하세요. 댓글을 제외한 전체 기록은
 숨겨진 사용자 턴을 포함해 256개까지 지원합니다. 가장 최근 행동의 의미를 수정하면 안전하게

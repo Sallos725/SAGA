@@ -38,8 +38,14 @@ contains only bounded context. Invalid JSON/key fails before dispatch; OAuth/mod
 return committed fallback with a generic notice. Standard `google-auth` is an API-extra dependency.
 Read the [narration report](progress/risu-vertex-narration.md) and starter guide for timing,
 credential handling and evidence. No PocketRisu modification or auxiliary-model configuration
-is required. Installation, JSON input rejection and fallback UI regeneration are verified on
-6011. Natural-language intent and NMOS remain deferred; a real Gemini call still awaits user JSON.
+is required. Installation, JSON input rejection, fallback regeneration and two approved live
+Gemini calls are verified on 6011; authoritative results stayed unchanged. Exact billed cost
+was not observed. Natural-language intent and NMOS remain deferred.
+
+Owner rule for billable provider tests: before every future test, disclose its scope, maximum
+call count, estimated cost and assumptions/uncertainty, then obtain explicit approval. Stop
+at the approved limit or the first failure; do not make unapproved retries. The recorded
+two-call allowance has been consumed. This is an agent workflow rule, not an application UI step.
 
 The owner's oneuldo memory-pilot branch provides a concrete PocketRisu plugin route to
 chat/message ids. Read [the integration review](RISUAI_INTEGRATION.md#host-identity-reference-oneuldo-memory-pilot)

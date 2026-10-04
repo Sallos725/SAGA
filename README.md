@@ -53,7 +53,8 @@ service-account JSON. Keep **SAGA SRD Demo** as main; SAGA derives the project/g
 and uses **Gemini 3.8 Flash** automatically. No other model settings are needed. Blank input
 keeps fallback; model failure/timeout preserves committed facts and status. See the
 [setup and credential boundaries](packs/risu-starter/README.md#optional-vertex-narration).
-Real Gemini generation is not yet verified for this slice.
+Two approved live Gemini calls on 6011 passed with unchanged authoritative results; see the
+[verification report](docs/progress/risu-vertex-narration.md) for scope and cost uncertainty.
 
 Set `useSayNothing=false` in host settings for this demo. Full non-comment history, including
 hidden context, is limited to 256 user turns; semantic latest-action edits fork safely, while

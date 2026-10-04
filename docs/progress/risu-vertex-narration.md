@@ -71,13 +71,28 @@ With the field blank, an actual UI send and regeneration reused the same event, 
 and journal containing one committed entry; the response displayed `기록 재사용`. The field
 was restored blank for user input. No real credential or Gemini call was used in these checks.
 
+The user subsequently entered their JSON and explicitly approved **at most two** paid generation
+requests, with a stop on the first failure. Exactly two actual Gemini calls were then made via
+UI regeneration in test Chat 6. Both returned HTTP 200 and displayed genuine narration (47 and
+79 characters) followed by authoritative status. Event, state, rolls and the one-entry journal
+remained identical. The disclosed estimate was **USD 0.03–0.06**, assuming at most 10,000 input
+and 2,048 billed output tokens per call; this was an estimate, not a hard cost cap. Actual billed
+cost was not observed. The two-call allowance is exhausted; no further paid calls are authorized.
+
+Before those calls, a published-secret audit at `ef083a39c537dc0205e50b6935e7f03797fa7949`
+covered all 138 tracked files plus PR #8's diff, body and comments. Comparison with the actual
+key stayed inside the browser and found zero credential matches or complete private-key blocks;
+no secret value was exported. This audit applies to that recorded revision.
+
 Local evidence is under `/tmp/saga-risu-vertex-evidence/`: `json-red.txt`, `json-green.txt`,
 `json-pytest.txt`, `json-node-green.txt`, `json-ruff-check.txt`, `json-ruff-format.txt`,
 `worker-api-harness.json`, `worker-plugin-api.cjs`, `worker-api-server.py`,
 `host-secret-masking.json`, `plugin-installed.json`, `live-invalid-json.json`,
-`live-json-rerender.json`, `json-product-hashes.json`, `source-hashes.json` and
+`live-json-rerender.json`, `live-vertex-approved.json`, `published-secret-audit.json`,
+`json-product-hashes.json`, `source-hashes.json` and
 `worker-ledger.json`. These are local artifacts, not portable CI attachments.
 
-Live Gemini generation remains unverified until the user enters their JSON and a real call
-succeeds. Installation, invalid-input handling and fallback UI regeneration are verified above. Natural-language
-intent, NMOS, streaming, model tools and general card/lore compatibility remain outside this slice.
+Live Gemini verification is limited to the two approved calls above; it does not establish
+long-run reliability or exact billed cost. Natural-language intent, NMOS, streaming, model
+tools and general card/lore compatibility remain outside this slice. Future billable tests
+follow the explicit scope/cost approval rule in [the handoff](../AGENT_HANDOFF.md).

@@ -75,7 +75,7 @@ input. SAGA derives the project/global endpoint and uses Gemini 3.8 Flash after 
 Regeneration can change prose while retaining the event, state and rolls. Only bounded textual
 host context is copied; this does not complete general card/lore compatibility. See the
 [narration report](progress/risu-vertex-narration.md) for the optional request contract,
-secret-handling tests and remaining live verification. No PocketRisu code/API/image change or
+secret-handling tests and two successful approved live calls. No PocketRisu code/API/image change or
 auxiliary-model configuration is needed. Natural-language intent and NMOS remain separate work.
 
 Bridge identity v2 now canonicalizes cosmetic command variants, retains committed context-hidden

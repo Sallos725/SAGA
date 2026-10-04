@@ -96,8 +96,10 @@ before attempting fresh narration. Existing stale-selection/message/configuratio
 suppress delivery after changes. Bridge identity v2 and runtime/storage schemas remain unchanged.
 
 Automated tests use simulated OAuth/Vertex transports, including real SDK signing with an
-in-memory synthetic key. Live Gemini success is separate and not claimed until verified in the
-[narration report](progress/risu-vertex-narration.md).
+in-memory synthetic key. Separately, two explicitly approved live Gemini calls through 6011
+both returned 200 and displayed fresh prose with unchanged event/state/rolls/journal. Actual
+billed cost was not observed. See the [narration report](progress/risu-vertex-narration.md)
+for that bounded live verification.
 
 ### HTTP contract v2 (legacy v1 is read-only)
 

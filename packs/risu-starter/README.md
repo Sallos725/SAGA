@@ -52,7 +52,9 @@ The input is `vertex_service_account_json`; expand the plugin's parameters if it
 A malformed JSON/key is rejected before any game action. A valid key with failed authentication,
 permissions, model output or timeout falls back to recorded facts after the action commits,
 with a short visible notice. Regenerate the same message to retry narration; the event, HP and
-rolls remain unchanged. Actual live Gemini generation is not yet verified for this slice.
+rolls remain unchanged. Two approved live Gemini calls on 6011 succeeded with unchanged
+authoritative results. Actual billed cost was not observed; see the
+[verification report](../../docs/progress/risu-vertex-narration.md).
 
 The backend fixes the model to `gemini-3.8-flash`, thinking to `LOW` and output to 2,048 tokens.
 [Google's model guide](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-3-8-flash)
