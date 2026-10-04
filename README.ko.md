@@ -2,7 +2,13 @@
 
 **한국어** | [English](README.md)
 
+[![CI (main)](https://github.com/Sallos725/SAGA/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Sallos725/SAGA/actions/workflows/ci.yml)
+[![Python 3.11–3.13](docs/assets/python-versions.svg)](pyproject.toml)
+[![개발 단계: 프로토타입](docs/assets/stage-prototype.svg)](docs/IMPLEMENTATION_PLAN.md)
+
 장기간 이어지는 에이전트 기반 게임과 RisuAI를 위한, 결정론적이며 리플레이 가능한 TRPG 런타임입니다.
+
+[빠른 시작](#빠른-시작) · [아키텍처](docs/ARCHITECTURE.md) · [로드맵](docs/IMPLEMENTATION_PLAN.md) · [규칙 세트](packs/rulesets/README.md) · [기여 안내](CONTRIBUTING.md)
 
 프롬프트에 의존하는 챗봇을 하나 더 만드는 대신, 각 구성 요소의 책임을 명확히 나누는 것을 목표로 합니다.
 
