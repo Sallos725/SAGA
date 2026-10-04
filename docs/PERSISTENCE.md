@@ -82,7 +82,8 @@ Forks can themselves be forked. A required `at_event_id: null` selects genesis d
 event id already committed on another branch of the world. It requires an explicit `event_id`
 (or a reservation that already fixed one); a generated id is rejected with `ValueError`. Both are evaluated inside the
 write transaction, apply only to a new commit (retries still return their record), and raise
-`RepositoryConflict`. `locate_event` reports, per branch containing an event (or genesis), its
+`RepositoryConflict`. `fork` likewise accepts `unless_committed`, which refuses inside the
+fork transaction to create a branch for an event id the world already holds. `locate_event` reports, per branch containing an event (or genesis), its
 sequence, the branch head, fork sequence and any unresolved tool event. The PocketRisu bridge
 uses these to append consecutive turns to one branch and fork only on divergence.
 

@@ -506,7 +506,10 @@ class SQLiteWorldRepository:
         branch_id: str,
         at_event_id: str | None,
         source_branch_id: str = "main",
+        unless_committed: str | None = None,
     ) -> BranchInfo:
+        """Fork a committed prefix. `unless_committed` refuses, in the same write transaction,
+        to create a branch for an action that some branch of the world already holds."""
         request = ForkRequest(
             branch_id=branch_id, source_branch_id=source_branch_id, at_event_id=at_event_id
         )
@@ -517,6 +520,14 @@ class SQLiteWorldRepository:
                 "SELECT 1 FROM branches WHERE world_id = ? AND branch_id = ?", (world_id, branch_id)
             ).fetchone():
                 raise RepositoryConflict("branch already exists")
+            if (
+                unless_committed is not None
+                and connection.execute(
+                    "SELECT 1 FROM entries WHERE world_id = ? AND event_id = ?",
+                    (world_id, unless_committed),
+                ).fetchone()
+            ):
+                raise RepositoryConflict("event is already committed on another branch")
             fork_seq = 0
             if at_event_id is not None:
                 entry = SQLiteJournal(connection, world_id, source_branch_id).find_by_event_id(

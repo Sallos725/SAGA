@@ -133,6 +133,17 @@ def test_dispatch_preconditions_guard_only_new_commits(repository):
     )
 
 
+def test_fork_refuses_an_action_that_is_already_committed(repository):
+    from saga_trpg.adapters.storage.sqlite import RepositoryConflict
+
+    repository.dispatch("test", attack(event_id="mine"))
+    branches = repository.branches("test")
+    with pytest.raises(RepositoryConflict, match="already committed"):
+        repository.fork("test", branch_id="late", at_event_id=None, unless_committed="mine")
+    assert repository.branches("test") == branches
+    assert repository.fork("test", branch_id="late", at_event_id=None, unless_committed="new")
+
+
 def test_fork_at_genesis_and_duplicate_branch_rejected(repository):
     repository.dispatch("test", attack())
     repository.fork("test", branch_id="empty", at_event_id=None)

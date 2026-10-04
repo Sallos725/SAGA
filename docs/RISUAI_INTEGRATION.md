@@ -177,7 +177,9 @@ prefix; a branch that reaches the same id through other history is skipped, and 
 holds the prefix the request returns 409 before dispatch.
 
 Each new commit is guarded inside its repository write transaction: the branch head must
-still be the parent, and the event id must not exist on another branch of the world. Racing
+still be the parent, and the event id must not exist on another branch of the world. A fork
+is refused in its own transaction when the action is already committed, so a request that read
+just before an identical one committed leaves no empty branch. Racing
 requests therefore converge on one record or separate branches; the bridge reselects after a
 conflict and never commits one action twice. An empty fork is reserved for the action it is
 named after, so an interrupted fork is reused by its retry. A branch reserved by another

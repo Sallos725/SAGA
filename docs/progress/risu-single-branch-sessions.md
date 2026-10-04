@@ -50,7 +50,7 @@ change and the review fixes below:
 
 | Check | Result |
 | --- | --- |
-| Full `pytest -q` | 209 passed; one existing Starlette/httpx deprecation warning |
+| Full `pytest -q` | 212 passed; one existing Starlette/httpx deprecation warning |
 | `node --test tests/risu_provider.test.cjs` | 21 passed |
 | `ruff check .` / `ruff format --check .` | Passed |
 | `python -m compileall -q src` | Passed |
@@ -72,6 +72,13 @@ with a regression test that failed first:
   lookup skips such branches instead of failing on them.
 - `unique_in_world` skipped its check when the event id was omitted and later generated. It
   now requires an explicit id and checks the id that will be committed.
+
+A third defect was found by CI: `test_concurrent_cosmetic_first_submissions_converge_and_reopen`
+failed once on Python 3.13 with two branches instead of one. A request that read "not
+committed" just before an identical request committed went on to fork; the guarded dispatch
+then refused the duplicate commit, so the result was correct, but an empty branch remained.
+`fork` now takes `unless_committed` and refuses in its own write transaction. The window is
+covered by a deterministic stale-read test for a first and a later turn, rather than by timing.
 
 Storage for an unedited chat, measured by driving the bridge against a temporary database
 with repeated `check strength 10` actions:

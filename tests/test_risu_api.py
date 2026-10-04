@@ -57,7 +57,9 @@ def setup(tmp_path, *, narrator=None, interpreter=None):
     repo = SQLiteWorldRepository(tmp_path / "risu.sqlite3", dice=dice)
     intent = interpreter or CountingInterpreter()
     bridge = RisuBridge(repo, interpreter=intent, narrator=narrator)
-    return repo, dice, intent, TestClient(create_app(repository=repo, risu_bridge=bridge))
+    app = create_app(repository=repo, risu_bridge=bridge)
+    app.state.risu_bridge = bridge
+    return repo, dice, intent, TestClient(app)
 
 
 def test_ten_regenerations_and_restart_never_reinterpret_or_roll(tmp_path):
@@ -296,6 +298,31 @@ def test_foreign_branch_ending_at_the_parent_id_is_never_continued(tmp_path):
     } == foreign
     replay = client.post("/v1/chat/completions", json=request(*actions[:2])).json()["saga"]
     assert replay["replayed"] and replay["branch_id"] == "main"
+
+
+@pytest.mark.parametrize("turns", [1, 2])
+def test_stale_read_of_a_just_committed_action_leaves_no_empty_fork(tmp_path, monkeypatch, turns):
+    repo, dice, intent, client = setup(tmp_path)
+    bridge = client.app.state.risu_bridge
+    actions = [("u1", "attack opponent"), ("u2", "check strength 10")][:turns]
+    for index in range(turns):
+        saved = client.post("/v1/chat/completions", json=request(*actions[: index + 1])).json()
+    saved = saved["saga"]
+    before = dice.calls, repo.branches(saved["world_id"])
+    read_prefix, stale = bridge._read_prefix, [2]
+
+    def raced(world_id, identities):
+        # A concurrent identical request committed after this request's reads.
+        if len(identities) == turns and stale[0]:
+            stale[0] -= 1
+            return None
+        return read_prefix(world_id, identities)
+
+    monkeypatch.setattr(bridge, "_read_prefix", raced)
+    response = client.post("/v1/chat/completions", json=request(*actions))
+    assert response.status_code == 200, response.text
+    assert response.json()["saga"] == {**saved, "replayed": True}
+    assert (dice.calls, repo.branches(saved["world_id"])) == before
 
 
 def test_linear_session_appends_to_one_branch(tmp_path):

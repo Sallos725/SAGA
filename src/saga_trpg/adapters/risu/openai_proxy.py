@@ -211,6 +211,8 @@ class RisuBridge:
                     branch_id=event_id,
                     source_branch_id=item.branch_id,
                     at_event_id=prefix[-1] if prefix else None,
+                    # A racing identical request may have committed since this request read.
+                    unless_committed=event_id,
                 )
                 return event_id
         raise RepositoryConflict("SAGA branch history conflicts with host action identities")
