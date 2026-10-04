@@ -9,7 +9,8 @@ Agents should place phase handoff notes here, for example:
 
 Each note should capture completed work, tests, architectural deviations, unresolved risks, and the next recommended task.
 
-Current integration checkpoint: [Optional Vertex narration](risu-vertex-narration.md).
+Current integration checkpoint: [Risu single-branch sessions](risu-single-branch-sessions.md).
+Narration: [Optional Vertex narration](risu-vertex-narration.md).
 Prior identity contract: [Risu identity and context fixes](risu-identity-context-fix.md).
 Initial integration report: [PocketRisu command demo](risu-command-demo.md).
 Runtime foundation: [SAGA foundation hardening](saga-foundation-hardening.md).
