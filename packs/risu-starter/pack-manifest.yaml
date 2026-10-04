@@ -2,6 +2,11 @@ schema_version: 1
 id: saga-trpg-starter
 name: SAGA Starter
 status: command-demo
+version: 0.2.0
+bridge:
+  protocol_version: 2
+  identity_version: 2
+  legacy_v1: exact-history-read-only
 backend:
   required: true
   base_url_hint: http://saga-runtime:4850

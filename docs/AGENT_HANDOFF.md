@@ -24,6 +24,12 @@ The demo supports SRD attack/check/save commands with fallback narration; it is 
 interpreter, full ruleset, or general card/lore adapter. Storage v2 and runtime semantics are
 unchanged. The starter can proceed independently while NMOS remains unavailable.
 
+Bridge identity v2 subsequently fixes cosmetic command rerolls and context-hiding resets;
+read [the identity fix report](progress/risu-identity-context-fix.md) before extending it.
+Plugin 0.2.0 sends hidden non-comment user turns for committed-prefix validation. Existing
+v1 worlds are exact-history read-only, with new v2 play requiring a new host chat. No database
+or runtime schema migration was added. This trusted demo is not adversarial benchmark isolation.
+
 The owner's oneuldo memory-pilot branch provides a concrete PocketRisu plugin route to
 chat/message ids. Read [the integration review](RISUAI_INTEGRATION.md#host-identity-reference-oneuldo-memory-pilot)
 before treating turn identity as unavailable: its five focused tests were reproduced.

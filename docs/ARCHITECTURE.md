@@ -109,8 +109,11 @@ Never mutate historical event results in place. Edited user turns should create 
 ## Current persistence boundary
 
 The PocketRisu command adapter is an outer client of that boundary. It derives a world from
-host-instance/chat ids and immutable action branches from message ids, raw text and parent
-events. Committed entries are read before intent interpretation on regeneration. No domain
+host-instance/chat ids and immutable action branches from message ids, canonical validated
+commands and parent events (bridge identity v2). Prompt-hidden user turns retain their
+committed ancestry. Legacy v1 raw-text identities remain exact-history read-only; they are
+not silently migrated or replaced with new worlds. Committed entries are read before calling
+the intent port on regeneration. No domain
 or runtime I/O, state schema, or database schema was changed for this bridge. See
 [the Risu integration contract](RISUAI_INTEGRATION.md) for its bounded demo scope.
 

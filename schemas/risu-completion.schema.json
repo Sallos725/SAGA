@@ -29,6 +29,11 @@
     "HostAction": {
       "additionalProperties": false,
       "properties": {
+        "context_hidden": {
+          "default": false,
+          "title": "Context Hidden",
+          "type": "boolean"
+        },
         "message_id": {
           "maxLength": 200,
           "minLength": 1,
@@ -87,7 +92,10 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 1,
+          "enum": [
+            1,
+            2
+          ],
           "title": "Schema Version",
           "type": "integer"
         }

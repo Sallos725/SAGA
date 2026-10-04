@@ -20,7 +20,8 @@ function fixture() {
   };
   state.reply = async () => ({ ok: true, status: 200, json: async () => ({
     choices: [{ message: { content: "Resolved attack." } }],
-    saga: { schema_version: 1, event_id: "event-1", seq: 1, replayed: false,
+    saga: { schema_version: 2, identity_version: 2, legacy_read_only: false,
+      event_id: "event-1", seq: 1, replayed: false,
       rolls: [{ expression: "1d20", raw: [12], total: 12 }],
       state: { actors: { player: { actor_id: "player", hp: 20, max_hp: 20 },
         opponent: { actor_id: "opponent", hp: 22, max_hp: 30 } } } },
@@ -52,8 +53,8 @@ test("provider forwards stable identity out of band and renders authoritative st
   assert.equal(f.calls.length, 1);
   assert.equal(f.calls[0].networkRoute, "local_network");
   assert.equal(f.calls[0].url, "http://saga-runtime:4850/v1/chat/completions");
-  assert.deepEqual(f.calls[0].body.saga, { schema_version: 1, host_instance_id: "pocketrisu-test-uuid-1",
-    chat_id: "chat-1", actor_id: "player", purpose: "action", actions: [{ message_id: "u1", text: "attack opponent" }] });
+  assert.deepEqual(f.calls[0].body.saga, { schema_version: 2, host_instance_id: "pocketrisu-test-uuid-1",
+    chat_id: "chat-1", actor_id: "player", purpose: "action", actions: [{ message_id: "u1", text: "attack opponent", context_hidden: false }] });
   assert.deepEqual(f.calls[0].body.messages, [{ role: "user", content: "attack opponent" }]);
 });
 
@@ -121,14 +122,17 @@ test("network failure can be retried with a fresh ticket and identical event ide
   assert.deepEqual(f.calls[0].body, f.calls[1].body);
 });
 
-test("comments and disabled history never become user actions", async () => {
+test("context-hidden user history is retained and only comments are excluded", async () => {
   const f = fixture();
   f.character.chats[0].message.unshift(
     { chatId: "old", role: "user", data: "uncommitted old command" },
     { chatId: "cutoff", role: "char", data: "", disabled: "allBefore" },
     { chatId: "comment", role: "user", data: "comment", isComment: true });
   assert.equal((await f.send(await f.prepare())).success, true);
-  assert.deepEqual(f.calls[0].body.saga.actions, [{ message_id: "u1", text: "attack opponent" }]);
+  assert.deepEqual(f.calls[0].body.saga.actions, [
+    { message_id: "old", text: "uncommitted old command", context_hidden: true },
+    { message_id: "u1", text: "attack opponent", context_hidden: false },
+  ]);
 });
 
 test("missing/duplicate host IDs and mismatched prompt cannot dispatch", async () => {
@@ -191,5 +195,40 @@ test("server errors are visible and malformed results never display successful s
   const result = await f.send(await f.prepare());
   assert.equal(result.success, false);
   assert.match(result.content, /422/);
-  assert.deepEqual(f.calls[0].body.saga.actions, [{ message_id: "u1", text: "*says nothing*" }]);
+  assert.deepEqual(f.calls[0].body.saga.actions, [{ message_id: "u1", text: "*says nothing*", context_hidden: false }]);
+});
+
+test("individually hidden draft is sent for backend review, never silently omitted", async () => {
+  const f = fixture();
+  f.character.chats[0].message.unshift({ chatId: "draft", role: "user", data: "attack opponent", disabled: true });
+  f.reply = async () => ({ ok: false, status: 409, json: async () => ({ detail: "Hidden history has no matching committed prefix" }) });
+  const result = await f.send(await f.prepare());
+  assert.equal(result.success, false);
+  assert.match(result.content, /Hidden history/);
+  assert.equal(f.calls[0].body.saga.actions[0].message_id, "draft");
+  assert.equal(f.calls[0].body.saga.actions[0].context_hidden, true);
+});
+
+test("hidden latest user turn cannot dispatch an earlier active turn", async () => {
+  const f = fixture();
+  f.character.chats[0].message.push({ chatId: "draft", role: "user", data: "attack opponent", disabled: true });
+  const result = await f.send(await f.prepare());
+  assert.equal(result.success, false);
+  assert.match(result.content, /숨겨져/);
+  assert.equal(f.calls.length, 0);
+});
+
+test("v2 plugin preserves raw legacy text and shows read-only legacy response", async () => {
+  const f = fixture();
+  f.character.chats[0].message[0].data = "Attack  opponent";
+  f.prompt[0].content = "Attack  opponent";
+  const response = await f.reply();
+  const data = await response.json();
+  data.saga.identity_version = 1;
+  data.saga.legacy_read_only = true;
+  f.reply = async () => ({ ...response, json: async () => data });
+  const result = await f.send(await f.prepare());
+  assert.equal(result.success, true);
+  assert.match(result.content, /읽기 전용/);
+  assert.equal(f.calls[0].body.saga.actions[0].text, "Attack  opponent");
 });

@@ -33,10 +33,11 @@ class ClosedModel(BaseModel):
 class HostAction(ClosedModel):
     message_id: Identity
     text: str = Field(min_length=1, max_length=2048)
+    context_hidden: bool = False
 
 
 class HostTurn(ClosedModel):
-    schema_version: Literal[1]
+    schema_version: Literal[1, 2]
     host_instance_id: Identity
     chat_id: Identity
     actor_id: Literal["player"]
@@ -48,6 +49,8 @@ class HostTurn(ClosedModel):
         ids = [action.message_id for action in self.actions]
         if len(ids) != len(set(ids)):
             raise ValueError("duplicate host user-message identity")
+        if self.actions[-1].context_hidden:
+            raise ValueError("the latest user action is hidden; restore its visibility first")
         return self
 
 
@@ -70,30 +73,33 @@ class CompletionRequest(ClosedModel):
         return self
 
 
+def canonical_command(*, actor_id: str, text: str) -> GameEvent:
+    """Pure v2 identity contract; never call an injected/remote interpreter to derive an id."""
+    words = text.strip().lower().split()
+    circumstances = {}
+    if words and words[-1] in {"advantage", "disadvantage"}:
+        circumstances[words.pop()] = True
+    if len(words) == 2 and words[0] == "attack":
+        kind, payload = "attack", {"target_id": words[1], **circumstances}
+    elif (
+        len(words) == 3 and words[0] in {"check", "save"} and re.fullmatch(r"[0-9]{1,3}", words[2])
+    ):
+        kind = "ability_check" if words[0] == "check" else "saving_throw"
+        payload = {"ability": words[1], "difficulty": int(words[2]), **circumstances}
+    else:
+        raise ValueError(
+            "Supported commands: attack opponent; check strength 10; save dexterity 12. "
+            "Optionally append advantage or disadvantage. No natural-language intents yet."
+        )
+    validated = SRD521Rules.payload_models[kind].model_validate(payload)
+    return GameEvent(kind=kind, actor_id=actor_id, payload=validated.model_dump())
+
+
 class CommandInterpreter:
     """Closed SRD demo commands, deliberately independent of generated prose."""
 
     async def interpret(self, *, world_id: str, actor_id: str, text: str) -> GameEvent:
-        words = text.strip().lower().split()
-        circumstances = {}
-        if words and words[-1] in {"advantage", "disadvantage"}:
-            circumstances[words.pop()] = True
-        if len(words) == 2 and words[0] == "attack":
-            kind, payload = "attack", {"target_id": words[1], **circumstances}
-        elif (
-            len(words) == 3
-            and words[0] in {"check", "save"}
-            and re.fullmatch(r"[0-9]{1,3}", words[2])
-        ):
-            kind = "ability_check" if words[0] == "check" else "saving_throw"
-            payload = {"ability": words[1], "difficulty": int(words[2]), **circumstances}
-        else:
-            raise ValueError(
-                "Supported commands: attack opponent; check strength 10; save dexterity 12. "
-                "Optionally append advantage or disadvantage. No natural-language intents yet."
-            )
-        validated = SRD521Rules.payload_models[kind].model_validate(payload)
-        return GameEvent(kind=kind, actor_id=actor_id, payload=validated.model_dump())
+        return canonical_command(actor_id=actor_id, text=text)
 
 
 class RisuBridge:
@@ -109,15 +115,27 @@ class RisuBridge:
         self.narrator = narrator or FallbackNarrator()
 
     @staticmethod
-    def identities(turn: HostTurn) -> tuple[str, list[str]]:
+    def identities(turn: HostTurn, *, version: Literal[1, 2] = 2) -> tuple[str, list[str]]:
         world_id = "risu-" + stable_value_hash(
-            ["saga-risu-v1", turn.host_instance_id, turn.chat_id]
+            [f"saga-risu-v{version}", turn.host_instance_id, turn.chat_id]
         )
         identities = []
         parent = None
         for action in turn.actions:
+            content: str | dict = action.text
+            if version == 2:
+                try:
+                    event = canonical_command(actor_id=turn.actor_id, text=action.text)
+                except ValueError as exc:
+                    if action.context_hidden:
+                        raise RepositoryConflict(
+                            "Hidden user history is not a committed supported command. "
+                            "Restore it for review; hidden drafts are never executed automatically."
+                        ) from exc
+                    raise
+                content = {"kind": event.kind, "actor_id": event.actor_id, "payload": event.payload}
             parent = "risu-" + stable_value_hash(
-                ["saga-risu-action-v1", world_id, parent, action.message_id, action.text]
+                [f"saga-risu-action-v{version}", world_id, parent, action.message_id, content]
             )
             identities.append(parent)
         return world_id, identities
@@ -139,9 +157,40 @@ class RisuBridge:
 
     async def complete(self, request: CompletionRequest) -> dict:
         turn = request.saga
-        world_id, identities = self.identities(turn)
+        legacy_world, legacy_ids = self.identities(turn, version=1)
+        try:
+            self.repository.ruleset_for_world(legacy_world)
+            legacy_exists = True
+        except RepositoryNotFound:
+            legacy_exists = False
+        identity_version = 1 if legacy_exists else 2
+        if legacy_exists:
+            world_id, identities = legacy_world, legacy_ids
+            saved = self._read_prefix(world_id, identities)
+            if saved is None:
+                raise RepositoryConflict(
+                    "This chat has read-only v1 history. Only its exact original text and "
+                    "message-id prefix can replay. Restore that history, or start a new host "
+                    "chat for v2 commands. Legacy cosmetic edits cannot be reconstructed safely."
+                )
+        else:
+            if turn.schema_version == 1:
+                raise RepositoryConflict(
+                    "Bridge v1 is read-only. Update the plugin to protocol v2 for new chats."
+                )
+            world_id, identities = self.identities(turn)
+            for index, action in enumerate(turn.actions):
+                if (
+                    action.context_hidden
+                    and self._read_prefix(world_id, identities[: index + 1]) is None
+                ):
+                    raise RepositoryConflict(
+                        "Hidden history has no matching committed prefix. Restore the first "
+                        "hidden/edited turn for review, or remove a never-executed draft. "
+                        "No hidden action was executed and no campaign was reset."
+                    )
+            saved = self._read_prefix(world_id, identities)
         event_id = branch_id = identities[-1]
-        saved = self._read_prefix(world_id, identities)
         replayed = saved is not None
         if saved is None:
             if len(identities) > 1 and self._read_prefix(world_id, identities[:-1]) is None:
@@ -157,6 +206,9 @@ class RisuBridge:
             if payload_model is None or proposed.actor_id != turn.actor_id:
                 raise ValueError("intent must select a supported action for the identified actor")
             payload = payload_model.model_validate(proposed.payload)
+            expected = canonical_command(actor_id=turn.actor_id, text=turn.actions[-1].text)
+            if proposed.kind != expected.kind or payload.model_dump() != expected.payload:
+                raise ValueError("interpreter proposal differs from the canonical v2 command")
             event = GameEvent(
                 event_id=event_id,
                 idempotency_key=event_id,
@@ -234,7 +286,9 @@ class RisuBridge:
                 }
             ],
             "saga": {
-                "schema_version": 1,
+                "schema_version": turn.schema_version,
+                "identity_version": identity_version,
+                "legacy_read_only": legacy_exists,
                 "world_id": world_id,
                 "branch_id": branch_id,
                 "event_id": event_id,
