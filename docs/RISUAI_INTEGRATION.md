@@ -171,6 +171,11 @@ committed event by id and verifies its branch prefix against the submitted ident
 interpreting intent. Regeneration and restart therefore perform neither intent reinterpretation
 nor dice execution. New message ids create new actions even when text repeats.
 
+Explicit event ids are scoped per branch, so a branch that merely contains the parent id
+is not trusted. The branch appended to, or forked from, must hold exactly the submitted parent
+prefix; a branch that reaches the same id through other history is skipped, and if no branch
+holds the prefix the request returns 409 before dispatch.
+
 Each new commit is guarded inside its repository write transaction: the branch head must
 still be the parent, and the event id must not exist on another branch of the world. Racing
 requests therefore converge on one record or separate branches; the bridge reselects after a

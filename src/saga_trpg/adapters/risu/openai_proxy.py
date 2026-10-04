@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from saga_trpg.adapters.narrator.fallback import FallbackNarrator
 from saga_trpg.adapters.narrator.vertex import VertexNarrator
 from saga_trpg.adapters.storage.sqlite import (
+    EventLocation,
     RepositoryConflict,
     RepositoryNotFound,
     SQLiteWorldRepository,
@@ -162,17 +163,31 @@ class RisuBridge:
         if not found:
             return None
         # Report the branch that committed the action rather than a fork that inherited it.
-        origin = min(found, key=lambda item: (item.seq <= item.fork_seq, item.branch_id))
-        entries = self.repository.entries(
-            world_id, branch_id=origin.branch_id, through_seq=origin.seq
-        )
-        if [entry.committed.event.event_id for entry in entries] != identities:
-            raise RepositoryConflict("SAGA branch history conflicts with host action identities")
-        return origin.branch_id, entries[-1]
+        for item in sorted(found, key=lambda item: (item.seq <= item.fork_seq, item.branch_id)):
+            entries = self._matching(world_id, item, identities)
+            if entries is not None:
+                return item.branch_id, entries[-1]
+        raise RepositoryConflict("SAGA branch history conflicts with host action identities")
 
-    def _branch_for(self, world_id: str, event_id: str, parent_event_id: str | None) -> str:
-        """Continue the branch whose head is the parent; fork only when history diverges."""
-        found = self.repository.locate_event(world_id, parent_event_id)
+    def _matching(
+        self, world_id: str, item: EventLocation, identities: list[str]
+    ) -> list[JournalEntry] | None:
+        """The branch prefix through a located event, only if it is exactly these actions."""
+        if item.seq != len(identities):
+            return None
+        entries = self.repository.entries(world_id, branch_id=item.branch_id, through_seq=item.seq)
+        if [entry.committed.event.event_id for entry in entries] != identities:
+            return None
+        return entries
+
+    def _branch_for(self, world_id: str, identities: list[str]) -> str:
+        """Continue the branch whose head is the parent; fork only when history diverges.
+
+        Explicit event ids are branch scoped, so a branch merely containing the parent id is
+        not trusted: the branch written to, or forked from, must hold the exact parent prefix.
+        """
+        event_id, prefix = identities[-1], identities[:-1]
+        found = self.repository.locate_event(world_id, prefix[-1] if prefix else None)
         heads = [
             item
             for item in found
@@ -185,17 +200,20 @@ class RisuBridge:
                 or item.pending_event_id == event_id
             )
         ]
-        if heads:
-            return min(
-                heads, key=lambda item: (item.pending_event_id != event_id, item.branch_id)
-            ).branch_id
-        self.repository.fork(
-            world_id,
-            branch_id=event_id,
-            source_branch_id=min(item.branch_id for item in found),
-            at_event_id=parent_event_id,
-        )
-        return event_id
+        heads.sort(key=lambda item: (item.pending_event_id != event_id, item.branch_id))
+        for item in heads:
+            if self._matching(world_id, item, prefix) is not None:
+                return item.branch_id
+        for item in found:
+            if self._matching(world_id, item, prefix) is not None:
+                self.repository.fork(
+                    world_id,
+                    branch_id=event_id,
+                    source_branch_id=item.branch_id,
+                    at_event_id=prefix[-1] if prefix else None,
+                )
+                return event_id
+        raise RepositoryConflict("SAGA branch history conflicts with host action identities")
 
     async def complete(
         self, request: CompletionRequest, *, vertex_credentials: SecretStr | None = None
@@ -285,7 +303,7 @@ class RisuBridge:
                 if saved is not None:
                     break
                 try:
-                    branch_id = self._branch_for(world_id, event_id, event.parent_event_id)
+                    branch_id = self._branch_for(world_id, identities)
                     outcome = self.repository.dispatch(
                         world_id,
                         event,

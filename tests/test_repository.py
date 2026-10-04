@@ -109,6 +109,30 @@ def test_fork_rewinds_preserves_history_and_isolates_new_events(repository):
     )
 
 
+def test_dispatch_preconditions_guard_only_new_commits(repository):
+    from saga_trpg.adapters.storage.sqlite import RepositoryConflict
+
+    repository.fork("test", branch_id="other", at_event_id=None)
+    first = repository.dispatch("test", attack(event_id="test:e1"), branch_id="other")
+    # The check covers the id that will be committed, so a generated one must be explicit.
+    with pytest.raises(ValueError, match="explicit event_id"):
+        repository.dispatch("test", attack(), unique_in_world=True)
+    with pytest.raises(ValueError, match="explicit event_id"):
+        repository.dispatch("test", attack(idempotency_key="key"), unique_in_world=True)
+    with pytest.raises(RepositoryConflict, match="another branch"):
+        repository.dispatch("test", attack(event_id="test:e1"), unique_in_world=True)
+    with pytest.raises(RepositoryConflict, match="head changed"):
+        repository.dispatch("test", attack(event_id="late"), branch_id="other", expected_seq=0)
+    assert repository.entries("test") == []
+    retried = repository.dispatch(
+        "test", attack(event_id="test:e1"), branch_id="other", expected_seq=0, unique_in_world=True
+    )
+    assert retried.replayed and retried.entry == first.entry
+    assert repository.dispatch(
+        "test", attack(event_id="mine"), expected_seq=0, unique_in_world=True
+    )
+
+
 def test_fork_at_genesis_and_duplicate_branch_rejected(repository):
     repository.dispatch("test", attack())
     repository.fork("test", branch_id="empty", at_event_id=None)

@@ -46,11 +46,11 @@ entry.
 ## Verification
 
 The updated and added bridge tests first failed in **11 cases** against `2a3a556`. After the
-change:
+change and the review fixes below:
 
 | Check | Result |
 | --- | --- |
-| Full `pytest -q` | 207 passed; one existing Starlette/httpx deprecation warning |
+| Full `pytest -q` | 209 passed; one existing Starlette/httpx deprecation warning |
 | `node --test tests/risu_provider.test.cjs` | 21 passed |
 | `ruff check .` / `ruff format --check .` | Passed |
 | `python -m compileall -q src` | Passed |
@@ -61,6 +61,17 @@ both lines keep appending in place with matching full replays; a seeded per-turn
 replays and continues without a new branch; four concurrent different edits of one turn land
 on four separate branches with correct prefixes; a prefix that differs from the submitted
 identities returns 409 without dispatch. The concurrency tests were repeated six times.
+
+Two findings from the automated review of the pull request were reproduced and fixed, each
+with a regression test that failed first:
+
+- The branch selected for a new action was not the branch whose parent prefix had been
+  verified. Another branch ending at the same parent id through different history (possible
+  because explicit ids are branch scoped) was continued, committing on its state. Selection
+  now verifies the exact parent prefix of the branch it appends to or forks from, and replay
+  lookup skips such branches instead of failing on them.
+- `unique_in_world` skipped its check when the event id was omitted and later generated. It
+  now requires an explicit id and checks the id that will be committed.
 
 Storage for an unedited chat, measured by driving the bridge against a temporary database
 with repeated `check strength 10` actions:

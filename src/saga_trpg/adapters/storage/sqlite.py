@@ -299,7 +299,7 @@ class SQLiteWorldRepository:
 
         The optional preconditions apply only to a new commit and are checked in its write
         transaction: the branch head must still be `expected_seq`, and with `unique_in_world`
-        no other branch of the world may already hold the event id.
+        no other branch of the world may already hold the event id, which must be explicit.
         """
         event = GameEvent.model_validate(event.model_dump())
         while True:
@@ -347,15 +347,6 @@ class SQLiteWorldRepository:
             if not existing:
                 if expected_seq is not None and state.seq != expected_seq:
                     raise RepositoryConflict("branch head changed; retry the request")
-                if (
-                    unique_in_world
-                    and event.event_id is not None
-                    and connection.execute(
-                        "SELECT 1 FROM entries WHERE world_id = ? AND event_id = ?",
-                        (world_id, event.event_id),
-                    ).fetchone()
-                ):
-                    raise RepositoryConflict("event is already committed on another branch")
                 if pending is not None:
                     saved = GameEvent.model_validate_json(pending["event_json"])
                     if not (
@@ -376,6 +367,15 @@ class SQLiteWorldRepository:
                     event = saved
                 if self.external_dice is not None and not (event.event_id or event.idempotency_key):
                     raise ValueError("external tools require an event_id or idempotency_key")
+                if unique_in_world:
+                    # Checked on the id that will be committed; a generated id cannot be.
+                    if event.event_id is None:
+                        raise ValueError("unique_in_world requires an explicit event_id")
+                    if connection.execute(
+                        "SELECT 1 FROM entries WHERE world_id = ? AND event_id = ?",
+                        (world_id, event.event_id),
+                    ).fetchone():
+                        raise RepositoryConflict("event is already committed on another branch")
             dice: DicePort = (
                 self.dice if self.dice is not None else DeterministicDice(world["seed"])
             )

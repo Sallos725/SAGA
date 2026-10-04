@@ -79,7 +79,8 @@ Forks can themselves be forked. A required `at_event_id: null` selects genesis d
 
 `dispatch` accepts two optional preconditions for hosts that choose a branch before writing.
 `expected_seq` requires the branch head to be unchanged, and `unique_in_world` rejects an
-event id already committed on another branch of the world. Both are evaluated inside the
+event id already committed on another branch of the world. It requires an explicit `event_id`
+(or a reservation that already fixed one); a generated id is rejected with `ValueError`. Both are evaluated inside the
 write transaction, apply only to a new commit (retries still return their record), and raise
 `RepositoryConflict`. `locate_event` reports, per branch containing an event (or genesis), its
 sequence, the branch head, fork sequence and any unresolved tool event. The PocketRisu bridge

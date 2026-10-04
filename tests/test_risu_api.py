@@ -257,6 +257,47 @@ def test_contaminated_prefix_rejects_without_dispatch(tmp_path):
     assert dice.calls == calls and intent.calls == 0
 
 
+def test_foreign_branch_ending_at_the_parent_id_is_never_continued(tmp_path):
+    repo, _, _, client = setup(tmp_path)
+    actions = [("a", "attack opponent"), ("b", "attack opponent"), ("c", "attack opponent")]
+    for index in range(3):
+        saved = client.post("/v1/chat/completions", json=request(*actions[: index + 1])).json()
+    world_id = saved["saga"]["world_id"]
+    _, identities = RisuBridge.identities(CompletionRequest.model_validate(request(*actions)).saga)
+    check = {"ability": "strength", "difficulty": 10}
+    # Explicit ids are branch scoped, so another writer may end a different history at B's id.
+    for branch_id in ("aa-foreign", "zz-foreign"):
+        repo.fork(world_id, branch_id=branch_id, at_event_id=None)
+        for event_id in ("foreign", identities[1]):
+            repo.dispatch(
+                world_id,
+                GameEvent(
+                    kind="ability_check", event_id=event_id, actor_id="player", payload=check
+                ),
+                branch_id=branch_id,
+            )
+    expected = repo.replay(world_id, at_event_id=identities[1])
+    foreign = {
+        name: repo.entries(world_id, branch_id=name) for name in ("aa-foreign", "zz-foreign")
+    }
+    edited = client.post(
+        "/v1/chat/completions", json=request(*actions[:2], ("d", "check strength 10"))
+    )
+    assert edited.status_code == 200, edited.text
+    result = edited.json()["saga"]
+    assert result["seq"] == 3 and result["branch_id"] == result["event_id"]
+    assert result["state"]["actors"] == expected.model_dump(mode="json")["actors"]
+    assert [
+        entry.committed.event.event_id
+        for entry in repo.entries(world_id, branch_id=result["branch_id"])
+    ] == [*identities[:2], result["event_id"]]
+    assert {
+        name: repo.entries(world_id, branch_id=name) for name in ("aa-foreign", "zz-foreign")
+    } == foreign
+    replay = client.post("/v1/chat/completions", json=request(*actions[:2])).json()["saga"]
+    assert replay["replayed"] and replay["branch_id"] == "main"
+
+
 def test_linear_session_appends_to_one_branch(tmp_path):
     repo, dice, intent, client = setup(tmp_path)
     actions, results = [], []
