@@ -140,8 +140,10 @@ HP and rolls directly from this result. It does not parse generated prose back i
 `stable_value_hash` uses canonical JSON and SHA-256. Namespace `saga-risu-v2` plus host
 instance/chat ids derives the world id. Namespace `saga-risu-action-v2` plus world id,
 parent event id, user-message id and the validated `{kind, actor_id, payload}` command derives
-the event id. Canonical payloads include explicit ruleset defaults. The branch id equals
-the event id. Actor/ruleset remain fixed to `player` / `srd-5.2.1@0.1.0`.
+the event id. Canonical payloads include explicit ruleset defaults. Because each id includes
+its parent, one event id identifies its whole action prefix. The response `branch_id` names
+the branch that committed the action: `main` for an unedited chat, or the id of the first
+divergent action for an alternate line. Actor/ruleset remain fixed to `player` / `srd-5.2.1@0.1.0`.
 
 The synchronous closed-command parser normalizes case, whitespace and numeric DC formatting
 before hashing. For the same message id and ancestry, `attack opponent`, `Attack  opponent`
@@ -160,28 +162,42 @@ that metadata or normalize old hashes. Restore exact old history for reading, or
 host chat for v2 play. Upgrade plugin/backend together and stop old writers; no automatic
 migration, game-state metadata flag or database schema change is involved.
 
-Each new action forks the committed parent prefix using existing repository APIs. `main`
-remains the initial state. Each derived branch contains that prefix and at most its one new
-event; later actions fork it. No mapping table or storage migration is added. A request first
-reads the matching committed branch, before interpreting intent. Regeneration and restart
-therefore perform neither intent reinterpretation nor dice execution. New message ids create
-new actions even when text repeats. Concurrent duplicate requests converge through repository
-fork conflict checks and event idempotency. Pre-dispatch empty forks are recoverable.
+A chat continues on one branch. A new action is appended to the branch whose head is its
+parent event, starting with `main`; consecutive turns never create branches. Only when no
+branch ends at the parent (the host history diverged from what was committed) does the bridge
+fork that parent prefix into a branch named after the new action, and that line then continues
+in place too. No mapping table or storage migration is added. A request first locates the
+committed event by id and verifies its branch prefix against the submitted identities, before
+interpreting intent. Regeneration and restart therefore perform neither intent reinterpretation
+nor dice execution. New message ids create new actions even when text repeats.
+
+Each new commit is guarded inside its repository write transaction: the branch head must
+still be the parent, and the event id must not exist on another branch of the world. Racing
+requests therefore converge on one record or separate branches; the bridge reselects after a
+conflict and never commits one action twice. An empty fork is reserved for the action it is
+named after, so an interrupted fork is reused by its retry. A branch reserved by another
+action's unresolved external tool is never selected.
+
+Worlds written by the earlier per-turn layout (one copied branch per action) remain valid:
+their events are located the same way, and the next action is appended to the latest of those
+branches without creating another.
 
 In v2, a genuine semantic edit to the latest action creates an alternate branch from its known parent.
-Deleting the latest action selects the retained earlier branch. A changed earlier prefix that
+Deleting the latest action reads the retained earlier prefix of the same branch. A changed earlier prefix that
 has not itself been committed returns 409; rewind to the first changed turn and generate there.
-The bridge never silently reruns every remaining turn. Foreign entries in a derived branch
-also produce 409. Hidden user turns do not disappear from the chain: each must match a committed
+The bridge never silently reruns every remaining turn. A located event whose branch prefix
+differs from the submitted identities produces 409. Entries after the located event are not
+part of that history; an action that does not follow the branch head forks from its parent. Hidden user turns do not disappear from the chain: each must match a committed
 prefix or the request returns 409 before any write. A never-executed hidden draft is not treated
 as an event; restore it for review or remove the unused draft. A hidden latest action returns
 422 before any world/fork write. Visibility flags themselves are not part of event identity.
 
 New message ids intentionally remain new actions. Client-controlled ids, genuine semantic edits
 and the known seed still permit deliberate outcome selection; this is not adversarial benchmark
-isolation. Branch copies make this implementation quadratic in retained journal storage;
-requests are bounded to 256 non-comment user actions, including hidden turns. Efficient long campaigns need a later
-storage design, without weakening the current replay contract.
+isolation. Journal storage is linear in an unedited chat; each divergent edit copies its
+prefix once. Requests still carry and verify the whole action history, so they remain bounded
+to 256 non-comment user actions, including hidden turns. Longer campaigns need incremental
+prefix verification and paginated history reads, without weakening the current replay contract.
 
 ### Failures and verification boundaries
 

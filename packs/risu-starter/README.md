@@ -129,12 +129,12 @@ host retries. Remove the placeholder before the next command and disable the set
 - If a response is lost, regenerate the same user message. A completed event is recovered from
   SQLite even after a runtime restart. Do not send a duplicate new message to retry.
 - If chat, swipe, command or plugin settings change in flight, the plugin suppresses the result.
-  A committed result remains on its original immutable branch and can be recovered by returning
+  A committed result remains in its branch's immutable history and can be recovered by returning
   to that history. Cancellation/timeouts cannot undo an already committed action.
 - This first slice limits full non-comment history, including hidden turns, to 256 user turns.
-  Every prefix gets a copied journal
-  branch; storage grows quadratically with turn count. Long-horizon storage optimization is
-  a later task, not a demonstrated capacity of this demo.
+  A chat appends to one journal branch; only a divergent edit copies its prefix into a new
+  branch. Every request still submits and verifies the whole history. Long-horizon operation
+  is a later task, not a demonstrated capacity of this demo.
 
 The card and plugin are presentation/transport artifacts. Exact state remains in the runtime
 save volume; exported cards and host chat backups alone are not campaign backups.

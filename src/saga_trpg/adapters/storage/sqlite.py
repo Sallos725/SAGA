@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import AbstractContextManager
+from dataclasses import dataclass
 from pathlib import Path
 
 from saga_trpg.adapters.dice.recorded import RecordedDice, ToolResultRequired
@@ -31,6 +32,17 @@ class RepositoryConflict(ValueError):
 
 class RepositoryNotFound(LookupError):
     """The requested world, branch, or fork event does not exist."""
+
+
+@dataclass(frozen=True)
+class EventLocation:
+    """Where one branch holds an event; seq 0 denotes the initial world."""
+
+    branch_id: str
+    seq: int
+    head_seq: int
+    fork_seq: int
+    pending_event_id: str | None
 
 
 class SQLiteJournal:
@@ -275,11 +287,29 @@ class SQLiteWorldRepository:
             return self._load_state(connection, world_id, branch_id)
 
     def dispatch(
-        self, world_id: str, event: GameEvent, *, branch_id: str = "main"
+        self,
+        world_id: str,
+        event: GameEvent,
+        *,
+        branch_id: str = "main",
+        expected_seq: int | None = None,
+        unique_in_world: bool = False,
     ) -> DispatchOutcome:
+        """Commit or replay one event.
+
+        The optional preconditions apply only to a new commit and are checked in its write
+        transaction: the branch head must still be `expected_seq`, and with `unique_in_world`
+        no other branch of the world may already hold the event id.
+        """
         event = GameEvent.model_validate(event.model_dump())
         while True:
-            outcome, required = self._dispatch_attempt(world_id, event, branch_id=branch_id)
+            outcome, required = self._dispatch_attempt(
+                world_id,
+                event,
+                branch_id=branch_id,
+                expected_seq=expected_seq,
+                unique_in_world=unique_in_world,
+            )
             if required is None:
                 assert outcome is not None
                 return outcome
@@ -289,7 +319,13 @@ class SQLiteWorldRepository:
             self.tool_tape.execute(required.call, self.external_dice.executor)
 
     def _dispatch_attempt(
-        self, world_id: str, event: GameEvent, *, branch_id: str
+        self,
+        world_id: str,
+        event: GameEvent,
+        *,
+        branch_id: str,
+        expected_seq: int | None,
+        unique_in_world: bool,
     ) -> tuple[DispatchOutcome | None, ToolResultRequired | None]:
         outcome = None
         required = None
@@ -309,6 +345,17 @@ class SQLiteWorldRepository:
                 (world_id, branch_id),
             ).fetchone()
             if not existing:
+                if expected_seq is not None and state.seq != expected_seq:
+                    raise RepositoryConflict("branch head changed; retry the request")
+                if (
+                    unique_in_world
+                    and event.event_id is not None
+                    and connection.execute(
+                        "SELECT 1 FROM entries WHERE world_id = ? AND event_id = ?",
+                        (world_id, event.event_id),
+                    ).fetchone()
+                ):
+                    raise RepositoryConflict("event is already committed on another branch")
                 if pending is not None:
                     saved = GameEvent.model_validate_json(pending["event_json"])
                     if not (
@@ -400,11 +447,35 @@ class SQLiteWorldRepository:
             self._branch(connection, world_id, branch_id)
             return SQLiteJournal(connection, world_id, branch_id).find_by_event_id(event_id)
 
-    def entries(self, world_id: str, *, branch_id: str = "main") -> list[JournalEntry]:
+    def entries(
+        self, world_id: str, *, branch_id: str = "main", through_seq: int | None = None
+    ) -> list[JournalEntry]:
         with self._transaction() as connection:
             self._world(connection, world_id)
             self._branch(connection, world_id, branch_id)
-            return SQLiteJournal(connection, world_id, branch_id).entries()
+            return SQLiteJournal(connection, world_id, branch_id).entries(through_seq=through_seq)
+
+    def locate_event(self, world_id: str, event_id: str | None) -> list[EventLocation]:
+        """Branches whose history contains the event; None selects genesis in every branch."""
+        source, parameters = "0", [world_id]
+        if event_id is not None:
+            source = """(SELECT seq FROM entries e WHERE e.world_id = b.world_id
+                         AND e.branch_id = b.branch_id AND e.event_id = ?)"""
+            parameters.insert(0, event_id)
+        with self._transaction() as connection:
+            self._world(connection, world_id)
+            rows = connection.execute(
+                f"""SELECT * FROM (SELECT b.branch_id, b.fork_seq, {source} AS seq,
+                       COALESCE((SELECT MAX(seq) FROM entries h WHERE h.world_id = b.world_id
+                                 AND h.branch_id = b.branch_id), 0) AS head_seq,
+                       (SELECT event_id FROM tool_events t WHERE t.world_id = b.world_id
+                        AND t.branch_id = b.branch_id AND t.status = 'pending')
+                           AS pending_event_id
+                       FROM branches b WHERE b.world_id = ?)
+                    WHERE seq IS NOT NULL ORDER BY branch_id""",
+                parameters,
+            )
+            return [EventLocation(**dict(row)) for row in rows]
 
     def replay(
         self, world_id: str, *, branch_id: str = "main", at_event_id: str | None = None

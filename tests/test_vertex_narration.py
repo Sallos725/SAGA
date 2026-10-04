@@ -78,7 +78,7 @@ def test_one_json_input_derives_fixed_endpoint_after_commit_and_replays(
         body = json.loads(req.content)
         committed = json.loads(body["contents"][-1]["parts"][0]["text"])
         event_id = committed["event_id"]
-        saved = repo.get_event(committed["world_id"], event_id, branch_id=event_id)
+        saved = repo.get_event(committed["world_id"], event_id)
         assert saved is not None
         assert committed["state"] == saved.result.state.model_dump(mode="json")
         assert str(req.url) == (
@@ -347,7 +347,7 @@ def test_real_google_sdk_signing_refresh_and_vertex_with_in_memory_test_key(
         assert req.headers["authorization"] == "Bearer " + TOKEN
         body = json.loads(req.content)
         packet = json.loads(body["contents"][-1]["parts"][0]["text"])
-        assert repo.get_event(packet["world_id"], packet["event_id"], branch_id=packet["event_id"])
+        assert repo.get_event(packet["world_id"], packet["event_id"])
         return httpx.Response(
             200, json={"candidates": [{"content": {"parts": [{"text": "SDK boundary verified"}]}}]}
         )
