@@ -2,7 +2,13 @@
 
 [한국어](README.ko.md) | **English**
 
+[![CI (main)](https://github.com/Sallos725/SAGA/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Sallos725/SAGA/actions/workflows/ci.yml)
+[![Python 3.11–3.13](docs/assets/python-versions.svg)](pyproject.toml)
+[![Stage: prototype](docs/assets/stage-prototype.svg)](docs/IMPLEMENTATION_PLAN.md)
+
 A deterministic, replayable TRPG runtime for long-horizon agent-driven games and RisuAI.
+
+[Quick start](#quick-start) · [Architecture](docs/ARCHITECTURE.md) · [Roadmap](docs/IMPLEMENTATION_PLAN.md) · [Rulesets](packs/rulesets/README.md) · [Contributing](CONTRIBUTING.md)
 
 The design goal is not to build another prompt-heavy chatbot. It is to split responsibilities cleanly:
 
