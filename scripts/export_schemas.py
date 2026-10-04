@@ -13,6 +13,7 @@ from saga_trpg.domain.rulesets import (
     RulesetReference,
 )
 from saga_trpg.domain.tools import ToolCall, ToolExecution
+from saga_trpg.presentation.models import DialogueMetadata, PerformanceEvent
 from saga_trpg.runtime.journal import JournalEntry
 
 
@@ -30,6 +31,8 @@ def main() -> None:
         "ruleset-context": RulesetContext,
         "tool-call": ToolCall,
         "tool-execution": ToolExecution,
+        "dialogue-metadata": DialogueMetadata,
+        "performance-event": PerformanceEvent,
     }
     for name, model in models.items():
         schema = {
