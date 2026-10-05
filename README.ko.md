@@ -24,6 +24,97 @@ PocketRisu 명령어 데모는 NMOS 없이도 안정적인 사용자 턴 식별�
 Vertex 모델로 제한된 자연어 공격·능력 판정·내성을 해석하고, 판정 확정 뒤 서술을
 선택적으로 붙일 수 있습니다. 실제 서비스용 NMOS, MCP와 일반 카드·로어 연동은 남아 있습니다.
 
+## 한눈에 보는 구조
+
+초록은 구현 완료, 노랑은 부분 구현, 회색 점선은 계획 단계입니다. 자세한 내용은
+[아키텍처](docs/ARCHITECTURE.md)와 [로드맵](docs/IMPLEMENTATION_PLAN.md)을 참고하세요.
+
+```mermaid
+flowchart TD
+    subgraph FE["프런트엔드"]
+        risu["RisuAI / PocketRisu<br/>프로바이더 플러그인 + 스타터 카드"]:::done
+        http["디버그 HTTP API"]:::done
+        bench["RuleCheeseBench 러너<br/>모델 드라이버 · 숨은 검증기"]:::planned
+    end
+
+    subgraph OUT["외부 오케스트레이션: 어댑터, I/O 허용"]
+        bridge["RisuBridge<br/>턴 → 이벤트 id · 재생성 감지"]:::done
+        intent["IntentPort<br/>닫힌 명령 · Vertex 자연어"]:::partial
+        narr["NarratorPort<br/>폴백 · Vertex"]:::done
+        mem["MemoryPort<br/>지금은 null, 이후 NMOS"]:::planned
+        perf["퍼포먼스 프로젝션<br/>기반만 있음, 미연결"]:::partial
+    end
+
+    subgraph CORE["결정론적 코어: I/O 없음, 실제 시각 참조 없음"]
+        event(["검증된 GameEvent"]):::done
+        engine["RuntimeEngine"]:::done
+        rules["규칙 모듈<br/>SRD 5.2.1 · Fate Condensed 일부"]:::partial
+        dice["로컬 결정론적 주사위"]:::done
+        result(["커밋된 RuleResult"]):::done
+    end
+
+    subgraph STORE["영속 저장소: SQLite"]
+        journal[("저널 · 스냅샷 · 브랜치")]:::done
+        tape[("도구 결과 테이프")]:::done
+    end
+
+    mcp["MCP 주사위 / 외부 도구"]:::planned
+
+    risu --> bridge --> intent --> event
+    http --> event
+    bench -.-> event
+    event --> engine --> rules --> dice
+    engine --> result
+    result -- "노출 전에 저널 기록" --> journal
+    intent -- "해석 결과는 한 번만 저장" --> tape
+    rules -. "기록된 결과만 사용" .-> tape
+    tape -.-> mcp
+    bridge -- "재생성: 커밋된 항목 재사용" --> journal
+    result -- "읽기 전용 사실" --> narr
+    narr -- "서술 + 권위 있는 상태" --> risu
+    result -. "fail-soft 기록" .-> mem
+    mem -. "회상" .-> narr
+    narr -.-> perf
+
+    classDef done fill:#d1fae5,stroke:#059669,color:#064e3b
+    classDef partial fill:#fef3c7,stroke:#d97706,color:#78350f
+    classDef planned fill:#f3f4f6,stroke:#9ca3af,color:#374151,stroke-dasharray: 5 5
+```
+
+읽는 방법:
+
+- 사용자 턴은 프런트엔드로 들어와 검증된 `GameEvent`가 된 뒤에야 결정론적 코어에 도달합니다.
+- 코어는 무엇이든 노출하기 전에 `RuleResult`를 저널에 커밋합니다. 서술은 커밋된 사실만 읽습니다.
+- 재생성은 저널로 되돌아가므로, 서술은 바뀌어도 상태와 주사위는 바뀌지 않습니다.
+- 모델 해석이나 향후 MCP 도구처럼 비결정적인 결과는 도구 결과 테이프에 한 번만 저장하고
+  거기서 다시 읽습니다.
+- 메모리는 게임 상태 옆에 따로 있습니다. 기록이나 회상이 실패하면 서술 품질만 떨어지고
+  상태는 영향을 받지 않습니다.
+
+앞으로의 방향입니다. 엄격한 의존 관계가 아니라 권장 진행 순서입니다.
+
+```mermaid
+flowchart LR
+    p0["Phase 0<br/>불변 조건 고정"]:::done
+    p1["Phase 1<br/>영속 런타임<br/>남은 것: 트레이스 id"]:::done
+    p2["Phase 2<br/>NMOS 어댑터<br/>fail-soft 의미 기억 회상"]:::planned
+    p3["Phase 3<br/>RisuAI 어댑터<br/>남은 것: 스트리밍, 카드/로어,<br/>자연어 의도 라이브 검증"]:::partial
+    p4["Phase 4<br/>MCP / 도구 계층<br/>테이프 완료; MCP 바인딩,<br/>재조정 남음"]:::partial
+    p5["Phase 5<br/>모듈형 규칙<br/>남은 것: 인벤토리, 상태 이상,<br/>시계, 퀘스트, 가시성"]:::partial
+    p6["Phase 6<br/>RuleCheeseBench<br/>러너, 판정기, 메모리 ablation"]:::planned
+    later["그 이후<br/>퍼포먼스 계층, 저작 UI"]:::planned
+
+    p0 --> p1
+    p1 --> p2 & p3 & p4 & p5
+    p2 -. "서술에 회상 반영" .-> p3
+    p2 & p4 & p5 --> p6
+    p3 -.-> later
+
+    classDef done fill:#d1fae5,stroke:#059669,color:#064e3b
+    classDef partial fill:#fef3c7,stroke:#d97706,color:#78350f
+    classDef planned fill:#f3f4f6,stroke:#9ca3af,color:#374151,stroke-dasharray: 5 5
+```
+
 ## 설계 배경
 
 SAGA는 Aethrion 같은 결정론적 RP 엔진의 핵심 원칙을 따릅니다. 재생성(reroll)으로 서술은 바꿀 수 있지만,

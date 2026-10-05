@@ -25,6 +25,98 @@ The PocketRisu command demo connects stable user turns to that runtime without N
 with optional bounded Vertex natural-language attack/check/save proposals and narration after
 commit. Production NMOS, MCP, and general card/lore bindings remain separate integration work.
 
+## Architecture at a glance
+
+Green is implemented, amber is partial, dashed grey is planned. Details live in
+[the architecture](docs/ARCHITECTURE.md) and [the roadmap](docs/IMPLEMENTATION_PLAN.md).
+
+```mermaid
+flowchart TD
+    subgraph FE["Frontends"]
+        risu["RisuAI / PocketRisu<br/>provider plugin + starter card"]:::done
+        http["Debug HTTP API"]:::done
+        bench["RuleCheeseBench runner<br/>model driver · hidden validators"]:::planned
+    end
+
+    subgraph OUT["Outer orchestration: adapters, I/O allowed"]
+        bridge["RisuBridge<br/>turn → event id · regeneration detection"]:::done
+        intent["IntentPort<br/>closed commands · Vertex natural language"]:::partial
+        narr["NarratorPort<br/>fallback · Vertex"]:::done
+        mem["MemoryPort<br/>null today, NMOS later"]:::planned
+        perf["Performance projection<br/>foundation only, not wired"]:::partial
+    end
+
+    subgraph CORE["Deterministic core: no I/O, no wall clock"]
+        event(["validated GameEvent"]):::done
+        engine["RuntimeEngine"]:::done
+        rules["Rule modules<br/>SRD 5.2.1 · Fate Condensed subsets"]:::partial
+        dice["Local deterministic dice"]:::done
+        result(["committed RuleResult"]):::done
+    end
+
+    subgraph STORE["Durable storage: SQLite"]
+        journal[("Journal · snapshots · branches")]:::done
+        tape[("Tool-result tape")]:::done
+    end
+
+    mcp["MCP dice / external tools"]:::planned
+
+    risu --> bridge --> intent --> event
+    http --> event
+    bench -.-> event
+    event --> engine --> rules --> dice
+    engine --> result
+    result -- "journaled before exposure" --> journal
+    intent -- "interpretation saved once" --> tape
+    rules -. "recorded results only" .-> tape
+    tape -.-> mcp
+    bridge -- "regeneration: reuse committed entry" --> journal
+    result -- "read-only facts" --> narr
+    narr -- "prose + authoritative status" --> risu
+    result -. "fail-soft write" .-> mem
+    mem -. "recall" .-> narr
+    narr -.-> perf
+
+    classDef done fill:#d1fae5,stroke:#059669,color:#064e3b
+    classDef partial fill:#fef3c7,stroke:#d97706,color:#78350f
+    classDef planned fill:#f3f4f6,stroke:#9ca3af,color:#374151,stroke-dasharray: 5 5
+```
+
+How to read it:
+
+- A user turn enters through a frontend, becomes a validated `GameEvent`, and only then
+  reaches the deterministic core.
+- The core commits a `RuleResult` to the journal before anything is shown. Narration only
+  reads committed facts.
+- Regeneration goes back to the journal, so prose may change while state and dice do not.
+- Anything non-deterministic, such as model interpretation or future MCP tools, is saved
+  once on the tool-result tape and replayed from there.
+- Memory sits beside game state. A failed write or recall can degrade prose, never state.
+
+Where it is heading, in the recommended order rather than as strict dependencies:
+
+```mermaid
+flowchart LR
+    p0["Phase 0<br/>Lock invariants"]:::done
+    p1["Phase 1<br/>Persistent runtime<br/>left: trace ids"]:::done
+    p2["Phase 2<br/>NMOS adapter<br/>fail-soft semantic recall"]:::planned
+    p3["Phase 3<br/>RisuAI adapter<br/>left: streaming, card/lore,<br/>live intent verification"]:::partial
+    p4["Phase 4<br/>MCP / tool layer<br/>tape done; MCP binding,<br/>reconciliation left"]:::partial
+    p5["Phase 5<br/>Modular rules<br/>left: inventory, conditions,<br/>clocks, quests, visibility"]:::partial
+    p6["Phase 6<br/>RuleCheeseBench<br/>runner, judges, memory ablations"]:::planned
+    later["Later<br/>performance layer, authoring UI"]:::planned
+
+    p0 --> p1
+    p1 --> p2 & p3 & p4 & p5
+    p2 -. "recall in narration" .-> p3
+    p2 & p4 & p5 --> p6
+    p3 -.-> later
+
+    classDef done fill:#d1fae5,stroke:#059669,color:#064e3b
+    classDef partial fill:#fef3c7,stroke:#d97706,color:#78350f
+    classDef planned fill:#f3f4f6,stroke:#9ca3af,color:#374151,stroke-dasharray: 5 5
+```
+
 ## Why this shape
 
 SAGA borrows one strong idea from deterministic RP engines such as Aethrion: a reroll may
