@@ -135,7 +135,8 @@ SAGA는 게임 엔진 안에 별도의 메모리 시스템을 내장하지 않�
 
 API 키 없이 PocketRisu **6011** 플레이테스트를 실행하려면
 [격리된 배포 안내](deploy/README.md)와 [시작 카드·프로바이더](packs/risu-starter/README.md)를 참고하세요.
-`attack opponent`, `check strength 10`, `save dexterity 12` 명령을 보낼 수 있으며,
+`attack opponent`, `check strength 10`, `save dexterity 12` 명령과 `damage opponent 5`,
+`inflict opponent prone`, `wait 1 hour` 같은 주사위 없는 상태 명령을 보낼 수 있으며,
 응답 재생성은 확정된 이벤트와 주사위 결과를 재사용합니다. SRD 일부 규칙을 사용하는
 제한된 데모입니다. 명령과 기본 서술은 키 없이 동작합니다.
 Gemini 자연어 행동 해석과 서술을 쓰려면 **설정 → 플러그인 → SAGA SRD Demo → Vertex 서비스 계정 JSON**에
@@ -256,6 +257,8 @@ docs/
 - 백업, 롤백, 리플레이 검증을 포함하는 명시적 저장소 v1 → v2 마이그레이션
 - 범용 SQLite 도구 결과 테이프와 테이프에 기록된 외부 주사위 결과를 처리하는 저장소 경로
 - 닫힌 행동 스키마와 버전 관리를 갖춘, 선택 가능한 SRD 5.2.1 및 Fate Condensed 예제 모듈
+- SRD 5.2.1 `0.2.0` 상태 행동: GM이 선언하는 피해/회복, 명시적 상태 이상, 시뮬레이션 시간.
+  `0.1.0` 월드는 기존 행동 집합을 그대로 유지
 - 리플레이 가능한 범용 판타지 공격 규칙
 - FastAPI 디버그 엔드포인트
 - 호스트 턴을 불변 분기에 연결하는, 버전이 명시된 OpenAI 형태의 Risu completion 어댑터
@@ -273,7 +276,8 @@ docs/
 - 자연어 능력 판정·내성 및 일반적인 표현의 실제 모델 검증과 지원 범위 확장
 - 일반적인 RisuAI 카드·로어 호환과 스트리밍(모델 서술에는 제한된 텍스트 문맥만 전달)
 - 기존 JSONL 가져오기 및 향후 상태·이벤트 의미 체계 변경을 위한 마이그레이션
-- 완전한 TRPG 규칙 세트
+- 완전한 TRPG 규칙 세트 (인벤토리, 퀘스트 플래그, 가시성, 상태 이상 효과, 사망)
+- 새 SRD `0.2.0` 행동을 위한 PocketRisu 명령 (브리지는 아직 `0.1.0`에 고정)
 - 완전한 RuleCheeseBench 실행기와 평가기
 
 이 저장소의 작업을 Codex나 Claude Code에 인계한다면 `docs/AGENT_HANDOFF.md`부터 확인하세요.

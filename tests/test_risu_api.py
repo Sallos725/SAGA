@@ -11,7 +11,7 @@ from saga_trpg.adapters.risu.openai_proxy import (
     CompletionRequest,
     RisuBridge,
 )
-from saga_trpg.adapters.storage.sqlite import SQLiteWorldRepository
+from saga_trpg.adapters.storage.sqlite import RepositoryNotFound, SQLiteWorldRepository
 from saga_trpg.api.app import create_app
 from saga_trpg.domain.events import GameEvent
 from saga_trpg.runtime.hashing import stable_value_hash
@@ -659,3 +659,80 @@ def test_hidden_latest_and_true_first_turn_edit_have_distinct_behavior(tmp_path)
         repo.get_state(attack["world_id"], branch_id=attack["branch_id"]).model_dump(mode="json")
         == attack["state"]
     )
+
+
+def test_new_bridge_worlds_pin_srd_020_and_existing_010_worlds_keep_working(tmp_path):
+    repo, _, _, client = setup(tmp_path)
+    saved = client.post("/v1/chat/completions", json=request()).json()["saga"]
+    selection = repo.ruleset_for_world(saved["world_id"])
+    assert (selection.ruleset_id, selection.ruleset_version) == ("srd-5.2.1", "0.2.0")
+
+    body = request(instance="old-host")
+    world_id, _ = RisuBridge.identities(CompletionRequest.model_validate(body).saga)
+    definition = repo.registry.get("srd-5.2.1", "0.1.0")
+    repo.create_world(
+        definition.example_world(world_id), ruleset_id="srd-5.2.1", ruleset_version="0.1.0"
+    )
+    assert client.post("/v1/chat/completions", json=body).status_code == 200
+    old = request(("u1", "attack opponent"), ("u2", "damage opponent 5"), instance="old-host")
+    assert client.post("/v1/chat/completions", json=old).status_code == 422
+    assert repo.ruleset_for_world(world_id).ruleset_version == "0.1.0"
+
+
+@pytest.mark.parametrize(
+    "command,kind,payload",
+    [
+        ("damage opponent 5", "damage", {"target_id": "opponent", "amount": 5}),
+        ("heal player 3", "heal", {"target_id": "player", "amount": 3}),
+        (
+            "inflict opponent prone",
+            "apply_condition",
+            {"target_id": "opponent", "condition": "prone"},
+        ),
+        ("wait 2 rounds", "advance_time", {"amount": 2, "unit": "round"}),
+        ("wait 1 hour", "advance_time", {"amount": 1, "unit": "hour"}),
+    ],
+)
+def test_state_commands_commit_without_dice_and_replay(tmp_path, command, kind, payload):
+    repo, dice, intent, client = setup(tmp_path)
+    response = client.post("/v1/chat/completions", json=request(("u1", command)))
+    assert response.status_code == 200, response.text
+    result = response.json()["saga"]
+    assert result["rolls"] == [] and result["resolution"] is None
+    assert dice.calls == 0 and intent.calls == 1
+    entry = repo.entries(result["world_id"], branch_id=result["branch_id"])[-1]
+    assert (entry.committed.event.kind, entry.committed.event.payload) == (kind, payload)
+    again = client.post("/v1/chat/completions", json=request(("u1", command))).json()["saga"]
+    assert again == {**result, "replayed": True} and intent.calls == 1
+
+
+def test_cure_requires_the_condition_and_rejects_without_commit(tmp_path):
+    repo, _, _, client = setup(tmp_path)
+    assert (
+        client.post("/v1/chat/completions", json=request(("u1", "cure opponent prone"))).status_code
+        == 422
+    )
+    turns = [("u1", "inflict opponent prone"), ("u2", "cure opponent prone")]
+    for index in range(2):
+        response = client.post("/v1/chat/completions", json=request(*turns[: index + 1]))
+        assert response.status_code == 200, response.text
+    assert response.json()["saga"]["state"]["actors"]["opponent"]["conditions"] == []
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "damage opponent 0",
+        "damage opponent five",
+        "inflict opponent exhaustion",
+        "wait 1 week",
+        "heal player",
+    ],
+)
+def test_malformed_state_commands_never_create_worlds(tmp_path, command):
+    repo, dice, _, client = setup(tmp_path)
+    assert client.post("/v1/chat/completions", json=request(("u1", command))).status_code == 422
+    assert dice.calls == 0
+    world_id, _ = RisuBridge.identities(CompletionRequest.model_validate(request()).saga)
+    with pytest.raises(RepositoryNotFound):
+        repo.ruleset_for_world(world_id)

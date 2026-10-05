@@ -1,0 +1,26 @@
+name: saga-playtest-6131
+# Backend only, for an existing host-network PocketRisu on port 6131 (`nmos-p32-risu`).
+# That host reaches this runtime at http://127.0.0.1:4852 through its own server-side route.
+# Data is a separate volume; the 6011 playtest runtime and its worlds are untouched.
+services:
+  saga-runtime-6131:
+    build:
+      context: ..
+    image: saga-runtime:risu-6131
+    container_name: saga-runtime-6131
+    restart: unless-stopped
+    environment:
+      TRPG_DATA_DIR: /app/data
+      TRPG_DEFAULT_SEED: saga-risu-6131-v1
+    volumes:
+      - saga-runtime-6131-data:/app/data
+    ports:
+      - "127.0.0.1:4852:4850"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4850/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+volumes:
+  saga-runtime-6131-data:
+    name: saga-runtime-6131-data

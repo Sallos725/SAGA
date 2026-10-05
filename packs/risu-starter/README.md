@@ -96,9 +96,19 @@ and general card/lore compatibility are not supported.
 | `save dexterity 12` | Saving throw against DC 12 |
 | `attack opponent advantage` | Attack with advantage |
 | `check wisdom 15 disadvantage` | Ability check with disadvantage |
+| `damage opponent 5` | GM-declared damage; HP stops at 0, nothing else happens automatically |
+| `heal player 3` | GM-declared healing up to max HP |
+| `inflict opponent prone` | Add a named SRD condition (rejected if already present) |
+| `cure opponent prone` | Remove a named condition (rejected if absent) |
+| `wait 2 rounds` | Advance simulated time; units `round`/`minute`/`hour`/`day`, 6-second rounds |
 
 Abilities: `strength`, `dexterity`, `constitution`, `intelligence`, `wisdom`, `charisma`.
 DC range: 1–100. Commands are case-insensitive; no slash prefix. One command per user message.
+Conditions: `blinded`, `charmed`, `deafened`, `frightened`, `grappled`, `incapacitated`,
+`invisible`, `paralyzed`, `petrified`, `poisoned`, `prone`, `restrained`, `stunned`,
+`unconscious`; they are recorded only and do not change rolls. State commands roll no dice and
+are only accepted by worlds created on SRD `0.2.0`; chats started on an older backend keep
+`0.1.0` and reject them with a 422 instead of changing rules mid-campaign.
 The player starts at HP 20, the opponent at HP 30/AC 13. See the
 [ruleset scope and attribution](../../docs/RULESET_LICENSES.md) for the supported SRD subset.
 There is no automatic enemy turn, encounter reset command,

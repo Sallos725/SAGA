@@ -34,5 +34,65 @@
       "target_id": "opponent"
     },
     "schema_version": 1
+  },
+  {
+    "actor_id": "player",
+    "event_id": "example-4",
+    "idempotency_key": null,
+    "kind": "damage",
+    "parent_event_id": null,
+    "payload": {
+      "amount": 4,
+      "target_id": "player"
+    },
+    "schema_version": 1
+  },
+  {
+    "actor_id": "player",
+    "event_id": "example-5",
+    "idempotency_key": null,
+    "kind": "apply_condition",
+    "parent_event_id": null,
+    "payload": {
+      "condition": "poisoned",
+      "target_id": "player"
+    },
+    "schema_version": 1
+  },
+  {
+    "actor_id": "player",
+    "event_id": "example-6",
+    "idempotency_key": null,
+    "kind": "advance_time",
+    "parent_event_id": null,
+    "payload": {
+      "amount": 1,
+      "unit": "hour"
+    },
+    "schema_version": 1
+  },
+  {
+    "actor_id": "player",
+    "event_id": "example-7",
+    "idempotency_key": null,
+    "kind": "remove_condition",
+    "parent_event_id": null,
+    "payload": {
+      "condition": "poisoned",
+      "target_id": "player"
+    },
+    "schema_version": 1
+  },
+  {
+    "actor_id": "player",
+    "event_id": "example-8",
+    "idempotency_key": null,
+    "kind": "heal",
+    "parent_event_id": null,
+    "payload": {
+      "amount": 6,
+      "target_id": "player"
+    },
+    "schema_version": 1
   }
 ]

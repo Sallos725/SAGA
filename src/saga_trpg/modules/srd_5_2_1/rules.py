@@ -43,10 +43,79 @@ class Attack(RollCircumstances):
     target_id: str = Field(min_length=1)
 
 
+# Exhaustion has levels in the SRD and is left out until levels are tracked.
+Condition = Literal[
+    "blinded",
+    "charmed",
+    "deafened",
+    "frightened",
+    "grappled",
+    "incapacitated",
+    "invisible",
+    "paralyzed",
+    "petrified",
+    "poisoned",
+    "prone",
+    "restrained",
+    "stunned",
+    "unconscious",
+]
+TimeUnit = Literal["round", "minute", "hour", "day"]
+_SECONDS = {"round": 6, "minute": 60, "hour": 3600, "day": 86400}
+
+
+class HitPointChange(ClosedPayload):
+    target_id: str = Field(min_length=1)
+    amount: int = Field(ge=1, le=1000)
+
+
+class Damage(HitPointChange):
+    pass
+
+
+class Heal(HitPointChange):
+    pass
+
+
+class ConditionChange(ClosedPayload):
+    target_id: str = Field(min_length=1)
+    condition: Condition
+
+
+class ApplyCondition(ConditionChange):
+    pass
+
+
+class RemoveCondition(ConditionChange):
+    pass
+
+
+class AdvanceTime(ClosedPayload):
+    amount: int = Field(ge=1, le=100_000)
+    unit: TimeUnit
+
+
+ROLL_ACTIONS = {"ability_check": AbilityCheck, "saving_throw": SavingThrow, "attack": Attack}
+STATE_ACTIONS = {
+    "damage": Damage,
+    "heal": Heal,
+    "apply_condition": ApplyCondition,
+    "remove_condition": RemoveCondition,
+    "advance_time": AdvanceTime,
+}
+_ACTIONS_BY_VERSION = {"0.1.0": ROLL_ACTIONS, "0.2.0": {**ROLL_ACTIONS, **STATE_ACTIONS}}
+LATEST_VERSION = "0.2.0"
+
+
 class SRD521Rules:
     name = "srd-5.2.1"
-    version = "0.1.0"
-    payload_models = {"ability_check": AbilityCheck, "saving_throw": SavingThrow, "attack": Attack}
+
+    def __init__(self, version: str = LATEST_VERSION) -> None:
+        # Worlds pin a version; older versions keep their exact action set and semantics.
+        if version not in _ACTIONS_BY_VERSION:
+            raise ValueError(f"unsupported {self.name} version: {version}")
+        self.version = version
+        self.payload_models = dict(_ACTIONS_BY_VERSION[version])
 
     def apply(self, *, state: WorldState, event: GameEvent, dice: DicePort) -> RuleResult:
         if not event.event_id:
@@ -58,6 +127,12 @@ class SRD521Rules:
         actor = actor_in(state, event.actor_id)
         if isinstance(payload, Attack):
             return self._attack(state, actor, event, payload, dice)
+        if isinstance(payload, HitPointChange):
+            return self._hit_points(state, event, payload)
+        if isinstance(payload, ConditionChange):
+            return self._condition(state, event, payload)
+        if isinstance(payload, AdvanceTime):
+            return self._advance_time(state, event, payload)
 
         modifier = self._ability_modifier(actor, payload.ability)
         proficiency_key = (
@@ -167,6 +242,83 @@ class SRD521Rules:
                 f"{self.name}@{self.version}.attack",
                 f"d20={selected}; modifier={attack_modifier}",
             ],
+        )
+
+    def _hit_points(
+        self, state: WorldState, event: GameEvent, payload: HitPointChange
+    ) -> RuleResult:
+        target = actor_in(state, payload.target_id)
+        if not 0 <= target.hp <= target.max_hp or target.max_hp <= 0:
+            raise ValueError(f"{target.actor_id} has invalid HP")
+        if isinstance(payload, Damage):
+            after = max(0, target.hp - payload.amount)
+        else:
+            after = min(target.max_hp, target.hp + payload.amount)
+        next_state = state.model_copy(deep=True)
+        next_state.actors[target.actor_id].hp = after
+        return RuleResult(
+            state=next_state,
+            patches=[
+                StatePatch(path=f"actors.{target.actor_id}.hp", before=target.hp, after=after)
+            ],
+            facts=[
+                f"{event.actor_id}: {event.kind} {payload.amount} to {target.actor_id}; "
+                f"HP {target.hp}->{after}/{target.max_hp}."
+            ],
+            trace=[f"{self.name}@{self.version}.{event.kind}", f"amount={payload.amount}"],
+        )
+
+    def _condition(
+        self, state: WorldState, event: GameEvent, payload: ConditionChange
+    ) -> RuleResult:
+        target = actor_in(state, payload.target_id)
+        present = payload.condition in target.conditions
+        if isinstance(payload, ApplyCondition) and present:
+            raise ValueError(f"{target.actor_id} already has condition {payload.condition}")
+        if isinstance(payload, RemoveCondition) and not present:
+            raise ValueError(f"{target.actor_id} does not have condition {payload.condition}")
+        next_state = state.model_copy(deep=True)
+        conditions = next_state.actors[target.actor_id].conditions
+        if isinstance(payload, ApplyCondition):
+            conditions.add(payload.condition)
+        else:
+            conditions.remove(payload.condition)
+        return RuleResult(
+            state=next_state,
+            patches=[
+                StatePatch(
+                    path=f"actors.{target.actor_id}.conditions",
+                    before=sorted(target.conditions),
+                    after=sorted(conditions),
+                )
+            ],
+            facts=[
+                f"{event.actor_id}: {event.kind} {payload.condition} on {target.actor_id}; "
+                f"conditions {sorted(conditions)}."
+            ],
+            trace=[f"{self.name}@{self.version}.{event.kind}", f"condition={payload.condition}"],
+        )
+
+    def _advance_time(
+        self, state: WorldState, event: GameEvent, payload: AdvanceTime
+    ) -> RuleResult:
+        seconds = payload.amount * _SECONDS[payload.unit]
+        next_state = state.model_copy(deep=True)
+        next_state.simulated_time = state.simulated_time + seconds
+        return RuleResult(
+            state=next_state,
+            patches=[
+                StatePatch(
+                    path="simulated_time",
+                    before=state.simulated_time,
+                    after=next_state.simulated_time,
+                )
+            ],
+            facts=[
+                f"{event.actor_id}: advance_time {payload.amount} {payload.unit}(s); "
+                f"simulated time {next_state.simulated_time}s."
+            ],
+            trace=[f"{self.name}@{self.version}.advance_time", f"seconds={seconds}"],
         )
 
 

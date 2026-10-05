@@ -31,8 +31,10 @@
 - [x] durable generic tool-result tape, external dice integration seam, restart/concurrency tests
 - [ ] provider-specific reconciliation of ambiguous executions before enabling live MCP tools
 - [ ] inventory module
-- [ ] checks/saves module
-- [ ] conditions module
+- [x] checks/saves module (SRD)
+- [x] conditions module (SRD `0.2.0`: explicit apply/remove, no effects)
+- [x] damage/heal and simulated time (SRD `0.2.0`)
+- [ ] PocketRisu bridge and commands on SRD `0.2.0`
 - [ ] quest module
 - [ ] observation/knowledge module
 
