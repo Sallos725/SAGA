@@ -1,6 +1,6 @@
 # Fate Condensed example
 
-Selected system: Fate Condensed example, version 0.1.0.
+Selected system: Fate Condensed example, version 0.2.0.
 Use overcome or create_advantage against static opposition, with a stored skill:<name> rating.
 Four journaled d3 faces map 1/2/3 to -1/0/+1. The recorded total includes the skill rating.
 An overcome failure/tie, or failed advantage, leaves a fictional choice pending; do not state that
@@ -26,4 +26,4 @@ Source: https://fate-srd.com/downloads/CC-BY-SRDs.zip
 
 License: CC-BY-3.0 — https://creativecommons.org/licenses/by/3.0/
 
-Changes: Selected unmodified-roll mechanics reimplemented in Python; 4d3-8 represents four Fate dice. Original example actors and prompts. Costs remain explicit pending adjudications.
+Changes: Selected unmodified-roll mechanics expressed as rulebook data; 4d3-8 represents four Fate dice. Original example actors and prompts. Costs remain explicit pending adjudications.

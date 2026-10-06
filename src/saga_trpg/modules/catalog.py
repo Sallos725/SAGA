@@ -62,6 +62,8 @@ def legacy_world(world_id: str) -> WorldState:
 # is the bundled rulebook interpreted by the generic engine.
 SRD_VERSIONS = ("0.1.0", "0.2.0", "0.3.0")
 SRD_LATEST = "0.4.0"
+FATE_LATEST = "0.2.0"
+BUNDLED_RULEBOOKS = {"srd-5.2.1": SRD_LATEST, "fate-condensed": FATE_LATEST}
 _SRD_ROLL_SCOPE = [
     "ability checks",
     "saving throws",
@@ -191,12 +193,15 @@ class RulesetRegistry:
     def __init__(self) -> None:
         fate = FateCondensedRules()
         legacy = GenericFantasyRules()
-        srd_book = load_rulebook(rulebook_path("srd-5.2.1"))
-        if srd_book.version != SRD_LATEST:
-            raise ValueError(f"bundled SRD rulebook is {srd_book.version}, expected {SRD_LATEST}")
+        books = []
+        for rulebook_id, expected in BUNDLED_RULEBOOKS.items():
+            book = load_rulebook(rulebook_path(rulebook_id))
+            if book.version != expected:
+                raise ValueError(f"bundled {rulebook_id} is {book.version}, expected {expected}")
+            books.append(book)
         definitions = [
             *[srd_definition(version) for version in SRD_VERSIONS],
-            rulebook_definition(srd_book),
+            *[rulebook_definition(book) for book in books],
             RulesetDefinition(
                 fate,
                 RulesetManifest(

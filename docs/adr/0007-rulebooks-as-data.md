@@ -48,6 +48,13 @@ and system-specific loops are listed as not implemented. If a real rulebook cann
 expressed as data plus formulas, a further ADR decides whether to add a sandboxed scripting
 layer or more builtins. Until then the catalog still accepts no downloaded code.
 
+**Second system, same day.** Fate Condensed became `fate-condensed@0.2.0` as data. It needed
+five declarative additions, all inside the B layer: `d3` dice with a fixed modifier (`4d3-8`),
+`pending` on outcome rules, typed `records` collections in world flags, `on_outcome` effects
+that write a record, and a `unique` form of `requires`. Nine equivalence scenarios match the
+Python module in state, patches and resolution; roll records match except for the generic
+`<kind>:<index>` roll key. No scripting was required.
+
 ## Consequences
 
 - Creators edit one file, run `python -m saga_trpg.rulebooks check`, and get errors by entry

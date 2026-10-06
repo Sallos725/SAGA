@@ -25,6 +25,17 @@ writing. See [ADR 0007](../adr/0007-rulebooks-as-data.md) and the
 - Registry: `srd-5.2.1@0.4.0` is served from the rulebook; `0.1.0`–`0.3.0` stay as Python
   oracles. `SRD_LATEST` lives in the catalog; the Risu bridge pins it for new worlds.
 
+## Follow-up: Fate Condensed as data (same day)
+
+- `fate-condensed@0.2.0` is a rulebook; `0.1.0` stays as the Python oracle. Schema v1 grew
+  by: roll `NdF±M` with `d3`, `pending` on outcome rules, `records` (typed collections in
+  flags, validated before any roll), `on_outcome` record effects, `requires.unique`, text and
+  integer input defaults, `actor.id`, `example_world.flags`.
+- Nine equivalence scenarios (overcome and create_advantage across all four grades, custom
+  boost name) match the Python module in state, patches and resolution; rolls match except
+  the roll key (`overcome:0` instead of `overcome`). Duplicate aspect names and malformed
+  existing records are rejected before dice.
+
 ## Verification
 
 - `pytest` 388 passed, `ruff` clean, `node --test` 23 passed, pack export check clean.
@@ -54,15 +65,14 @@ writing. See [ADR 0007](../adr/0007-rulebooks-as-data.md) and the
 ## Unresolved
 
 - No import path from a RisuAI module container yet; rulebooks are bundled with the package.
-- Fate Condensed is still Python only. Expressing it as data needs Fate dice (`4dF`) in the
-  check frame (allowed by the schema) and graded `success` rules; its pending-cost semantics
-  need an engine notion of `pending_adjudication`, which the schema does not have.
+- Spending free invokes, expiring boosts, opposed rolls and resource pools remain outside the
+  schema; they would need either new builtins or the scripted layer.
 - Item effects, durations, multi-step procedures and opposed rolls are out of schema v1.
 - The 6131 and 6011 runtimes run older images; existing chats keep their pinned versions.
 
 ## Next recommended task
 
-Deploy to 6131 and play through a conditions scenario live; then either express Fate as data
-(adds `pending_adjudication` and graded outcomes to the schema) or build the RisuAI module
-import path, whichever the owner wants first. A "rulebook author" skill for AI-assisted
-creators can sit on top of the creator guide once the schema has survived a second system.
+Build the RisuAI module import path: first read the PocketRisu 1.13.0 module export format
+from the host source, then define how a rulebook travels inside a module (lorebook text plus a
+data asset) and how SAGA validates and pins it. A "rulebook author" skill for AI-assisted
+creators can sit on top of the creator guide now that the schema has survived two systems.

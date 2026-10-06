@@ -35,6 +35,7 @@ Problems are reported by entry, for example
   "actions": { ... },      // 4. what a player can do
   "conditions": { ... },   // 5. named states and what they do to rolls
   "items": { ... },        // 6. optional closed item list
+  "records": { ... },      // 6b. optional typed record collections (aspects, boosts, clocks…)
   "example_world": { ... },// 7. a starting cast for demos and tests
   "implemented": [ ... ],  // plain-language scope, shown to the narrator and in docs
   "not_implemented": [ ... ],
@@ -74,8 +75,9 @@ Problems are reported by entry, for example
 }
 ```
 
-`roll` is `NdF` with 1..100 dice and F in 4, 6, 8, 10, 12, 20 or 100; Fate dice (`dF`) are not
-in schema v1 yet. `advantage: "roll_twice"`
+`roll` is `NdF[±M]` with 1..100 dice, F in 3, 4, 6, 8, 10, 12, 20 or 100 and an optional fixed
+modifier. Fate dice are written `4d3-8` (each d3 face 1/2/3 stands for −/blank/+; the journal
+keeps the raw faces). `advantage: "roll_twice"`
 enables advantage/disadvantage: the action accepts `advantage` and `disadvantage` booleans,
 conditions can add either, one of each cancels out, and the better or worse of two rolls is
 kept. `"none"` rolls once and rejects those inputs.
@@ -95,6 +97,9 @@ kept. `"none"` rolls once and rejects those inputs.
 
 Rules are tried top to bottom; the first true `when` wins; if none matches the action is
 rejected. Names available: `die` (the kept die), `total` (die plus modifier), `target`.
+Add `"pending": true` to a rule when that result leaves a choice to the GM (Fate's failure
+or tie costs): the resolution is marked `pending_adjudication` and the narrator is told that
+nothing was applied.
 Outcomes must be one of `failure`, `tie`, `success`, `success_with_style`, `miss`, `hit`,
 `critical_hit`. Fate-style graded results use several `success` rules with different `when`.
 
@@ -116,10 +121,15 @@ Two shapes. A **check action** rolls dice:
 ```
 
 - `input` fields: `integer` (needs `range`), `text` (needs `enum` or `pattern`), `actor` (an
-  actor id), `boolean`. Add `"optional": true` for an optional field. Do not declare
-  `advantage`/`disadvantage`; the check frame adds them.
-- `requires` are checked in order before anything is rolled; a false `when` rejects the
-  action with your `error` text.
+  actor id), `boolean`. Add `"optional": true` for an optional field or a `default` value.
+  Do not declare `advantage`/`disadvantage`; the check frame adds them.
+- `requires` are checked in order before anything is rolled. Either a formula
+  (`{ "when": "actor.hp > 0", "error": "…" }`) or a uniqueness rule over a record collection
+  (`{ "unique": { "record": "fate_aspects", "field": "name", "value": "input.aspect_name" }, "error": "…" }`).
+- `on_outcome` writes records when a given outcome happens:
+  `"on_outcome": { "success": [ { "record": "fate_aspects", "fields": { "name": "input.aspect_name", "owner_id": "actor.id", "free_invokes": "1" } } ] }`.
+  Every field of the record must be given as a formula; the record is stored under the event
+  id in `flags.<record>` and appears in the patches.
 - `modifier` and `target` are formulas. `on_hit` is only for `attack`-role actions: `dice` must
   evaluate to a dice expression such as `1d8` (at most 100 dice after a critical doubles the
   count), `bonus` to a number; on `critical_hit` the dice count doubles when `critical` is
@@ -167,6 +177,24 @@ your actions say so.
 Leave `items` empty to accept any key of the shape `[a-z0-9_]{1,40}`. List items to close the
 set: `"torch": { "name": "Torch" }`. Items have no effect in schema v1.
 
+### 6b. `records` — typed collections in world flags
+
+```json
+"records": {
+  "fate_aspects": {
+    "fields": { "name": { "type": "text", "pattern": "^.{1,200}$" },
+                "owner_id": { "type": "actor" },
+                "free_invokes": { "type": "integer", "range": [0, 10] } },
+    "unique": ["name"]
+  }
+}
+```
+
+Records live in `flags.<name>` keyed by the event that created them. Existing records are
+validated against the field types before any roll, so a hand-edited world cannot corrupt a
+session silently. `unique` lists the fields a `requires.unique` rule may guard; guarding any
+other field is rejected. Within one outcome, each record collection may be written once.
+
 ### 7. `example_world`
 
 ```json
@@ -179,6 +207,7 @@ set: `"torch": { "name": "Torch" }`. Items have no effect in schema v1.
 ```
 
 Used by demos, tests and new PocketRisu worlds. Keep it small and valid against your stats.
+Add `"flags": { "fate_aspects": {} }` to start record collections empty.
 
 ## Formulas
 
@@ -189,7 +218,7 @@ and no way to change anything.
 
 | Name | Meaning | Available in |
 | --- | --- | --- |
-| `actor.<stat>` | the acting actor's validated stat, plus `actor.hp`, `actor.max_hp` | actions |
+| `actor.<stat>` | the acting actor's validated stat, plus `actor.id`, `actor.hp`, `actor.max_hp` | actions |
 | `actor.<family>[key]` | a family stat such as `actor.proficient[input.proficiency]` | actions |
 | `mod[<stat>]` | the stat's `modifier` formula applied to the actor's value | actions |
 | `input.<field>` | the validated action input; an optional text field that was omitted reads as `""` | actions |
@@ -211,7 +240,8 @@ actions, conditions or items change.
 ## Not in schema v1
 
 Item effects and equipment, spells, initiative and action economy, multi-step procedures such
-as death saves, condition durations, opposed rolls and resource pools. Describe them under
+as death saves, condition durations, opposed rolls, spending or expiring records (invokes,
+boosts) and resource pools. Describe them under
 `not_implemented` so the narrator does not improvise them. A later schema version or a
 scripted layer (see ADR 0007) may add them.
 

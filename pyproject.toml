@@ -32,7 +32,7 @@ mcp = [
 packages = ["src/saga_trpg"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 testpaths = ["tests"]
 
 [tool.ruff]

@@ -264,8 +264,8 @@ Implemented:
 - SRD 5.2.1 `0.3.0` inventory: exact per-actor item counts with closed keys (`give`/`take`),
   no item effects
 - **Rulebooks as data**: a closed JSON schema plus a small formula language, one generic
-  engine, a `check` command with errors by entry; `srd-5.2.1@0.4.0` is the bundled rulebook
-  and adds condition effects on rolls ([guide](docs/RULEBOOKS.md),
+  engine, a `check` command with errors by entry; `srd-5.2.1@0.4.0` and `fate-condensed@0.2.0`
+  are bundled rulebooks ([guide](docs/RULEBOOKS.md),
   [ADR 0007](docs/adr/0007-rulebooks-as-data.md))
 - PocketRisu commands for those actions (`damage`, `heal`, `inflict`, `cure`, `wait`,
   `give`, `take`) and a compact read-only status footer; new bridge worlds pin the latest
