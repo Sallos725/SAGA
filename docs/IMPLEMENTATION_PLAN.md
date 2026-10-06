@@ -110,6 +110,10 @@ Start tiny.
 - [ ] quest flags
 - [ ] visibility/observation
 - [x] system-sized example module manifests + campaign selection
+- [x] rulebook data format v1, formula language, generic engine and `check` command
+- [x] condition effects on rolls, as rulebook data (SRD `0.4.0`)
+- [ ] Fate Condensed as data (needs graded outcomes and pending adjudication in the schema)
+- [ ] RisuAI module container import: validate and pin a rulebook from a module
 
 Only after those are stable:
 

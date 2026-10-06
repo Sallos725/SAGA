@@ -5,8 +5,8 @@ import json
 from pathlib import Path
 
 from saga_trpg.domain.events import GameEvent
-from saga_trpg.modules.catalog import COMMON_BOT_DESCRIPTION, RulesetRegistry
-from saga_trpg.modules.srd_5_2_1.rules import LATEST_VERSION as SRD_LATEST
+from saga_trpg.modules.catalog import COMMON_BOT_DESCRIPTION, SRD_LATEST, RulesetRegistry
+from saga_trpg.rulebooks.loader import rulebook_path
 
 
 def json_text(value: object) -> str:
@@ -31,6 +31,9 @@ def build_files() -> dict[Path, str]:
             ("advance_time", {"amount": 1, "unit": "hour"}),
             ("remove_condition", {"target_id": "player", "condition": "poisoned"}),
             ("heal", {"target_id": "player", "amount": 6}),
+            ("give", {"target_id": "player", "item": "torch", "amount": 2}),
+            ("apply_condition", {"target_id": "opponent", "condition": "prone"}),
+            ("attack", {"target_id": "opponent"}),
         ],
         "fate-condensed": [
             ("overcome", {"skill": "investigate", "difficulty": 2}),
@@ -46,6 +49,11 @@ def build_files() -> dict[Path, str]:
         manifest = definition.manifest
         directory = root / ruleset_id
         files[directory / "module.json"] = json_text(manifest.model_dump(mode="json"))
+        if ruleset_id == "srd-5.2.1":
+            # The creator-facing source: the same file the engine interprets.
+            files[directory / "rulebook.json"] = rulebook_path(ruleset_id).read_text(
+                encoding="utf-8"
+            )
         files[directory / "initial-world.json"] = (
             definition.example_world(f"{ruleset_id}-example").model_dump_json(indent=2) + "\n"
         )

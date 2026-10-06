@@ -5,6 +5,7 @@ Each system currently implements a declared example subset; these are not full r
 
 | Module | Source license | Implemented example |
 | --- | --- | --- |
+| `srd-5.2.1` version `0.4.0` | CC BY 4.0 | **Data rulebook** (`rulebook.json`): everything in `0.3.0` plus condition effects on rolls and incapacitating conditions, interpreted by the generic engine |
 | `srd-5.2.1` version `0.3.0` | CC BY 4.0 | Everything in `0.2.0` plus exact per-actor item counts (`give`/`take`) with closed keys and no item effects |
 | `srd-5.2.1` version `0.2.0` | CC BY 4.0 | Ability checks, saving throws, configured weapon attacks, advantage/disadvantage, critical damage, HP; GM-declared damage/heal, explicit named conditions, simulated time |
 | `srd-5.2.1` version `0.1.0` | CC BY 4.0 | Rolls and HP subtraction only; kept registered so existing worlds keep their exact action set |
@@ -16,6 +17,8 @@ these licensed-source examples.
 ## Files
 
 - `common-bot-description.md`: system-independent GM instructions.
+- `<module>/rulebook.json` (SRD only so far): the creator-facing source the engine interprets;
+  copy it to start your own system. See [the creator guide](../../docs/RULEBOOKS.md).
 - `<module>/module.json`: identity/version, source/license/attribution, supported event schemas,
   narrator instructions, and explicit implementation boundaries.
 - `<module>/prompt.md`: readable ruleset instructions and attribution.

@@ -14,7 +14,7 @@ from saga_trpg.adapters.risu.openai_proxy import (
 from saga_trpg.adapters.storage.sqlite import RepositoryNotFound, SQLiteWorldRepository
 from saga_trpg.api.app import create_app
 from saga_trpg.domain.events import GameEvent
-from saga_trpg.modules.srd_5_2_1.rules import LATEST_VERSION
+from saga_trpg.modules.catalog import SRD_LATEST
 from saga_trpg.runtime.hashing import stable_value_hash
 
 
@@ -666,7 +666,7 @@ def test_new_bridge_worlds_pin_the_latest_srd_and_existing_010_worlds_keep_worki
     repo, _, _, client = setup(tmp_path)
     saved = client.post("/v1/chat/completions", json=request()).json()["saga"]
     selection = repo.ruleset_for_world(saved["world_id"])
-    assert (selection.ruleset_id, selection.ruleset_version) == ("srd-5.2.1", LATEST_VERSION)
+    assert (selection.ruleset_id, selection.ruleset_version) == ("srd-5.2.1", SRD_LATEST)
 
     body = request(instance="old-host")
     world_id, _ = RisuBridge.identities(CompletionRequest.model_validate(body).saga)
@@ -799,7 +799,7 @@ def test_inventory_commands_pin_030_and_round_trip(tmp_path):
         response = client.post("/v1/chat/completions", json=request(*turns[: index + 1]))
         assert response.status_code == 200, response.text
     result = response.json()["saga"]
-    assert repo.ruleset_for_world(result["world_id"]).ruleset_version == "0.3.0"
+    assert repo.ruleset_for_world(result["world_id"]).ruleset_version == SRD_LATEST
     assert result["state"]["actors"]["player"]["inventory"] == {"silver_key": 1, "torch": 1}
     assert result["rolls"] == [] and dice.calls == 0
     rejected = client.post(
@@ -813,3 +813,16 @@ def test_inventory_commands_pin_030_and_round_trip(tmp_path):
         ).status_code
         == 422
     )
+
+
+def test_bridge_worlds_on_040_apply_condition_effects_from_the_rulebook(tmp_path):
+    repo, dice, _, client = setup(tmp_path)
+    turns = [("u1", "inflict player prone"), ("u2", "attack opponent")]
+    for index in range(2):
+        response = client.post("/v1/chat/completions", json=request(*turns[: index + 1]))
+        assert response.status_code == 200, response.text
+    result = response.json()["saga"]
+    assert repo.ruleset_for_world(result["world_id"]).ruleset_version == "0.4.0"
+    d20s = [roll for roll in result["rolls"] if roll["roll_key"].startswith("attack:")]
+    assert len(d20s) == 2
+    assert any("prone" in line for line in result["trace"])

@@ -11,6 +11,8 @@ from saga_trpg.modules.fate_condensed.rules import example_world as fate_world
 from saga_trpg.modules.generic_fantasy.rules import GenericFantasyRules
 from saga_trpg.modules.srd_5_2_1.rules import SRD521Rules
 from saga_trpg.modules.srd_5_2_1.rules import example_world as srd_world
+from saga_trpg.rulebooks.engine import DataRules
+from saga_trpg.rulebooks.loader import RulebookSpec, load_rulebook, rulebook_path
 
 COMMON_BOT_DESCRIPTION = """You are the game master of this campaign.
 Describe scenes and portray non-player characters; leave player decisions to the player.
@@ -56,7 +58,10 @@ def legacy_world(world_id: str) -> WorldState:
     )
 
 
+# Hand-written Python versions stay registered for the worlds that pin them; the latest SRD
+# is the bundled rulebook interpreted by the generic engine.
 SRD_VERSIONS = ("0.1.0", "0.2.0", "0.3.0")
+SRD_LATEST = "0.4.0"
 _SRD_ROLL_SCOPE = [
     "ability checks",
     "saving throws",
@@ -158,12 +163,40 @@ def srd_definition(version: str) -> RulesetDefinition:
     return RulesetDefinition(srd, manifest, srd_world)
 
 
+def rulebook_definition(spec: RulebookSpec) -> RulesetDefinition:
+    """Registry entry for a validated rulebook; the manifest mirrors the file."""
+    rules = DataRules(spec)
+    manifest = RulesetManifest(
+        ruleset_id=spec.id,
+        ruleset_version=spec.version,
+        title=spec.title,
+        implementation_scope="example",
+        source_url=spec.source.url if spec.source else None,
+        source_revision=spec.source.revision if spec.source else None,
+        license_id=spec.license.id,
+        license_url=spec.license.url,
+        attribution=spec.license.attribution,
+        modifications=spec.modifications,
+        implemented=list(spec.implemented),
+        not_implemented=list(spec.not_implemented),
+        narrator_instructions=spec.narration,
+        event_payload_schemas={
+            kind: model.model_json_schema() for kind, model in rules.payload_models.items()
+        },
+    )
+    return RulesetDefinition(rules, manifest, rules.example_world)
+
+
 class RulesetRegistry:
     def __init__(self) -> None:
         fate = FateCondensedRules()
         legacy = GenericFantasyRules()
+        srd_book = load_rulebook(rulebook_path("srd-5.2.1"))
+        if srd_book.version != SRD_LATEST:
+            raise ValueError(f"bundled SRD rulebook is {srd_book.version}, expected {SRD_LATEST}")
         definitions = [
             *[srd_definition(version) for version in SRD_VERSIONS],
+            rulebook_definition(srd_book),
             RulesetDefinition(
                 fate,
                 RulesetManifest(
