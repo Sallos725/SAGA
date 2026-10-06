@@ -149,3 +149,29 @@ def test_help_lists_every_action_with_its_positional_inputs():
     srd = command_help(SRD)
     assert "attack <target_id> [advantage|disadvantage]" in srd
     assert "(alias: check)" in srd and "advance_time <amount> <unit>  (alias: wait)" in srd
+
+
+def test_mixed_case_enum_members_map_back_to_their_declared_spelling(tmp_path):
+    import json
+
+    from saga_trpg.rulebooks.loader import parse_rulebook
+
+    data = json.loads(rulebook_path("srd-5.2.1").read_text())
+    data["actions"]["ability_check"]["input"]["ability"]["enum"] = ["Strength", "dexterity"]
+    data["stats"]["weapon_ability"]["enum"] = ["Strength", "dexterity"]
+    spec = parse_rulebook(data)
+    event = parse_command(spec, actor_id="player", text="check strength 10")
+    assert event.payload["ability"] == "Strength"
+    with pytest.raises(CommandError, match="ability"):
+        parse_command(spec, actor_id="player", text="check wisdom 10")
+
+
+def test_example_world_actor_ids_must_be_lower_case_to_be_addressable(tmp_path):
+    import json
+
+    from saga_trpg.rulebooks.loader import RulebookError, parse_rulebook
+
+    data = json.loads(rulebook_path("srd-5.2.1").read_text())
+    data["example_world"]["actors"]["NPC1"] = data["example_world"]["actors"].pop("opponent")
+    with pytest.raises(RulebookError, match="NPC1"):
+        parse_rulebook(data)

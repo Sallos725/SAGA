@@ -86,13 +86,18 @@
     let entries;
     try { entries = await api.getCurrentLorebookEntries(); } catch { return null; }
     if (!Array.isArray(entries)) return null;
+    const found = new Map();
     for (const entry of entries) {
       const match = RULEBOOK_TAG.exec(String(entry?.comment ?? ""));
       if (!match || typeof entry.content !== "string") continue;
       if (await sha256Hex(entry.content) !== match[3]) continue;
-      return { content: entry.content };
+      found.set(match[1] + "@" + match[2], entry.content);
     }
-    return null;
+    if (found.size > 1) {
+      throw new Error("SAGA 룰북 모듈이 여러 개 켜져 있습니다 (" + [...found.keys()].join(", ") + "). 하나만 켜고 다시 시도하세요.");
+    }
+    const [content] = found.values();
+    return content ? { content } : null;
   }
   function createClient(api, uuid = randomId) {
     const tickets = new Map();

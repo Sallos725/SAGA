@@ -410,3 +410,23 @@ test("without a rulebook entry the turn carries no attachment", async () => {
   await f.send(await f.prepare());
   assert.equal("rulebook" in f.calls[1].body.saga, false);
 });
+
+test("two different enabled rulebook modules are an error, the same one twice is fine", async () => {
+  const f = fixture();
+  const hash = text => require("node:crypto").createHash("sha256").update(text, "utf8").digest("hex");
+  const a = "{\"schema_version\": 1, \"id\": \"a\"}", b = "{\"schema_version\": 1, \"id\": \"b\"}";
+  f.api.getCurrentLorebookEntries = () => [
+    { comment: "saga:rulebook:a@1.0.0:" + hash(a), content: a },
+    { comment: "saga:rulebook:a@1.0.0:" + hash(a), content: a },
+  ];
+  await f.send(await f.prepare());
+  assert.deepEqual(f.calls[0].body.saga.rulebook, { content: a });
+  f.api.getCurrentLorebookEntries = () => [
+    { comment: "saga:rulebook:a@1.0.0:" + hash(a), content: a },
+    { comment: "saga:rulebook:b@1.0.0:" + hash(b), content: b },
+  ];
+  const response = await f.send(await f.prepare());
+  assert.equal(response.success, false);
+  assert.match(response.content, /a@1\.0\.0.*b@1\.0\.0|b@1\.0\.0.*a@1\.0\.0/);
+  assert.equal(f.calls.length, 1);
+});

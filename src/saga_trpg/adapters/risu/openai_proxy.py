@@ -247,6 +247,11 @@ class RisuBridge:
     def _ensure_world(self, world_id: str, spec: RulebookSpec) -> WorldState:
         # New worlds pin the given rulebook; existing worlds keep the version they were
         # created with, so their action set and semantics never change under them.
+        try:
+            self.repository.ruleset_for_world(world_id)
+            return self.repository.get_initial_state(world_id)
+        except RepositoryNotFound:
+            pass
         definition = self.repository.registry.get(spec.id, spec.version)
         self.repository.create_world(
             definition.example_world(world_id),
@@ -254,6 +259,14 @@ class RisuBridge:
             ruleset_id=spec.id,
             ruleset_version=spec.version,
         )
+        # A racing first request may have pinned this chat to another rulebook; identities
+        # and events were derived with ours, so refuse rather than continue under theirs.
+        selection = self.repository.ruleset_for_world(world_id)
+        if (selection.ruleset_id, selection.ruleset_version) != (spec.id, spec.version):
+            raise RepositoryConflict(
+                f"this chat was just pinned to {selection.ruleset_id}@{selection.ruleset_version}"
+                "; regenerate to continue under that rulebook"
+            )
         return self.repository.get_initial_state(world_id)
 
     async def _natural_intent(

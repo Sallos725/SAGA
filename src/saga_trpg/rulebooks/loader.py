@@ -428,6 +428,11 @@ def _cross_check(spec: RulebookSpec):  # noqa: C901
             yield from _check_formula(f"actions.{key}.on_hit.bonus", action.on_hit.bonus, allowed)
     if spec.example_world is not None:
         for actor_id, actor in spec.example_world.actors.items():
+            if not re.fullmatch(r"^[a-z0-9][a-z0-9_.-]{0,60}$", actor_id):
+                yield (
+                    f"example_world.actors.{actor_id}: actor ids are lower-case identifiers "
+                    "so commands can address them"
+                )
             for condition in actor.conditions:
                 if condition not in spec.conditions:
                     yield (

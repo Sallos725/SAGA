@@ -116,6 +116,7 @@ Commands are derived from the world's rulebook: `<action> <values in input order
 `save`, `inflict`, `cure` and `wait` are aliases. A malformed command returns the full command
 list of that rulebook. Enable a SAGA rulebook module (`packs/rulesets/<id>/risu-module.json`)
 before starting a **new** chat and that chat plays by it; existing chats keep their rulebook.
+Enable only one SAGA rulebook module at a time; two different ones are refused with their ids.
 
 Abilities: `strength`, `dexterity`, `constitution`, `intelligence`, `wisdom`, `charisma`.
 DC range: 1–100. Commands are case-insensitive; no slash prefix. One command per user message.

@@ -207,6 +207,8 @@ other field is rejected. Within one outcome, each record collection may be writt
 ```
 
 Used by demos, tests and new PocketRisu worlds. Keep it small and valid against your stats.
+Actor ids are lower-case identifiers so commands can address them (`attack opponent`);
+enum members may use any case and commands match them case-insensitively.
 Add `"flags": { "fate_aspects": {} }` to start record collections empty.
 
 ## Formulas

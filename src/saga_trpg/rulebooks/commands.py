@@ -48,28 +48,36 @@ def _positional(spec: RulebookSpec, kind: str) -> list[str]:
     return list(action.input)
 
 
-def _input_kinds(spec: RulebookSpec, kind: str) -> dict[str, str]:
-    """Field name → integer | boolean | word | text.
+def _input_kinds(spec: RulebookSpec, kind: str) -> dict[str, Any]:
+    """Field name → integer | boolean | word | text | list of enum members.
 
-    `word` values are closed choices (actor ids, enums, conditions, items, units) and are
-    lower-cased so cosmetic variants share one identity; `text` keeps its case."""
+    `word` values are closed lower-case identifiers (actor ids, conditions, items, units);
+    enum members map case-insensitively back to their declared spelling; `text` keeps its
+    case. Cosmetic variants of a command therefore share one identity."""
     action = spec.actions[kind]
     if isinstance(action, BuiltinAction):
-        kinds = {name: "word" for name in _BUILTIN_ORDER[action.builtin]}
+        kinds: dict[str, Any] = {name: "word" for name in _BUILTIN_ORDER[action.builtin]}
         kinds["amount"] = "integer"
         return kinds
     return {name: _kind_of(item) for name, item in action.input.items()}
 
 
-def _kind_of(item: InputSpec) -> str:
+def _kind_of(item: InputSpec) -> Any:
     if item.type in ("integer", "boolean"):
         return item.type
-    if item.type == "actor" or item.enum is not None:
+    if item.enum is not None:
+        return list(item.enum)
+    if item.type == "actor":
         return "word"
     return "text"
 
 
-def _typed(name: str, kind: str, raw: str) -> Any:
+def _typed(name: str, kind: Any, raw: str) -> Any:
+    if isinstance(kind, list):
+        for member in kind:
+            if member.lower() == raw.lower():
+                return member
+        raise CommandError(f"{name} must be one of {', '.join(kind)}, got {raw!r}")
     if kind == "word":
         raw = raw.lower()
         return raw.removesuffix("s") if name == "unit" and raw.endswith("s") else raw

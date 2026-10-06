@@ -905,3 +905,22 @@ def test_error_message_lists_the_rulebook_commands(tmp_path):
     response = client.post("/v1/chat/completions", json=fate_request(("u1", "dance")))
     assert response.status_code == 422
     assert "overcome <skill> <difficulty>" in response.json()["detail"]
+
+
+def test_losing_the_first_pin_race_is_a_conflict_not_a_silent_switch(tmp_path, monkeypatch):
+    repo, dice, _, client = setup(tmp_path)
+    body = fate_request(("u1", "overcome investigate 2"), instance="race-host")
+    world_id = RisuBridge.world_id_for(CompletionRequest.model_validate(body).saga)
+    create = repo.create_world
+
+    def racer(initial, **kwargs):
+        # Another first request for this chat pinned the SRD rulebook just before us.
+        srd = repo.registry.get("srd-5.2.1", SRD_LATEST)
+        create(srd.example_world(world_id), ruleset_id="srd-5.2.1", ruleset_version=SRD_LATEST)
+        return create(initial, **kwargs)
+
+    monkeypatch.setattr(repo, "create_world", racer)
+    response = client.post("/v1/chat/completions", json=body)
+    assert response.status_code == 409, response.text
+    assert dice.calls == 0
+    assert repo.ruleset_for_world(world_id).ruleset_id == "srd-5.2.1"
