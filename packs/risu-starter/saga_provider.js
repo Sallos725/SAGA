@@ -1,9 +1,9 @@
 //@name saga_runtime
 //@display-name SAGA SRD Demo
 //@api 3.0
-//@version 0.4.0
+//@version 0.5.0
 //@arg server_url string SAGA URL (default http://saga-runtime:4850)
-//@arg host_instance_id string Stable host identity (empty generates a persistent local identity)
+//@arg host_instance_id string Stable host identity (set it explicitly; empty generates one via plugin storage, which hung on one host)
 //@arg vertex_service_account_json string {{name::Vertex 서비스 계정 JSON}}{{textarea}} JSON 전체를 붙여넣으세요. Gemini 3.8 Flash로 자연어 행동·서술; 비우면 명령·기본 서술.
 
 (() => {
@@ -43,6 +43,36 @@
     return Array.from(crypto.getRandomValues(new Uint8Array(16)), value => value.toString(16).padStart(2, "0")).join("");
   }
 
+  // Read-only view of the committed response. SAGA owns every value here; the host only renders.
+  const escapeHtml = value => String(value).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
+  function formatTime(seconds) {
+    if (!Number.isInteger(seconds) || seconds < 0) return null;
+    const parts = [];
+    const units = [["d", 86400], ["h", 3600], ["m", 60], ["s", 1]];
+    let rest = seconds;
+    for (const [label, size] of units) {
+      const count = Math.floor(rest / size);
+      if (count > 0 || (label === "s" && parts.length === 0)) parts.push(count + label);
+      rest %= size;
+    }
+    return parts.join(" ");
+  }
+  function statusFooter(state) {
+    const actors = Object.values(state.state.actors).map(actor => {
+      const conditions = Array.isArray(actor.conditions) && actor.conditions.length ? " <i>" + escapeHtml(actor.conditions.join(", ")) + "</i>" : "";
+      return "<b>" + escapeHtml(actor.actor_id) + "</b> " + escapeHtml(actor.hp) + "/" + escapeHtml(actor.max_hp) + conditions;
+    });
+    const player = state.state.actors.player;
+    const items = player && player.inventory && typeof player.inventory === "object"
+      ? Object.entries(player.inventory).map(([key, count]) => escapeHtml(key) + "×" + escapeHtml(count)) : [];
+    const rolls = state.rolls.map(roll => escapeHtml(roll.expression) + " → [" + roll.raw.map(escapeHtml).join(", ") + "] = " + escapeHtml(roll.total));
+    const time = formatTime(state.state.simulated_time);
+    const line1 = actors.concat(time === null ? [] : ["⏱ " + time], ["🎒 " + (items.length ? items.join(", ") : "—")]).join(" · ");
+    const line2 = ["🎲 " + (rolls.length ? rolls.join(" · ") : "주사위 없음"), "턴 " + escapeHtml(state.seq) + (state.replayed ? " · 기록 재사용" : ""),
+      "<code>" + escapeHtml(state.event_id) + "</code>"].join(" · ");
+    return '<div style="margin-top:0.75em;padding-top:0.4em;border-top:1px solid rgba(128,128,128,0.35);font-size:0.78em;line-height:1.6;opacity:0.85">' +
+      line1 + "<br>" + line2 + "</div>";
+  }
   function createClient(api, uuid = randomId) {
     const tickets = new Map();
     let identityPromise;
@@ -159,12 +189,8 @@
             typeof prose !== "string" || !Array.isArray(state.rolls) || !state.state?.actors) {
           throw new Error("SAGA 응답 형식이 잘못되었습니다.");
         }
-        const hp = Object.values(state.state.actors).map(actor => actor.actor_id + " HP " + actor.hp + "/" + actor.max_hp).join(" · ");
-        const rolls = state.rolls.map(roll => roll.expression + " → [" + roll.raw.join(", ") + "] = " + roll.total).join(" · ");
-        const status = "**SAGA 확정 판정 · 턴 " + state.seq + (state.replayed ? " · 기록 재사용" : "") + "**\n\n" +
-          hp + "\n\n주사위: " + (rolls || "없음") + "\n\n이벤트: `" + state.event_id + "`";
         const legacy = state.legacy_read_only ? "\n\n기존 v1 기록은 읽기 전용입니다. 새 행동은 새 채팅에서 시작하세요." : "";
-        return { success: true, content: prose + "\n\n---\n\n" + status + legacy };
+        return { success: true, content: prose + "\n\n" + statusFooter(state) + legacy };
       } catch (error) {
         return { success: false, content: error instanceof Error ? error.message : "SAGA 요청 실패" };
       } finally {
