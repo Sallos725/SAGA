@@ -58,5 +58,5 @@
 
 ## P4 — Authoring
 
-- [ ] "rulebook author" skill for AI-assisted creators, on top of `docs/RULEBOOKS.md`
+- [x] "rulebook author" skill for AI-assisted creators, on top of `docs/RULEBOOKS.md`
 - [ ] rulebook template generator (`saga_trpg.rulebooks new`)

@@ -1,5 +1,10 @@
 # Writing a rulebook
 
+Working with Claude Code? The repository ships a `rulebook-author` skill
+(`.claude/skills/rulebook-author/SKILL.md`) that walks through this page with you: five
+questions, copy the nearest bundled file, check after every section, prove it with the engine,
+package it as a module.
+
 A rulebook is one JSON file that tells SAGA how a game system works: which numbers a
 character has, how dice are rolled, how results are graded, which actions exist, what
 conditions do and which items exist. SAGA's generic engine reads the file; the file contains

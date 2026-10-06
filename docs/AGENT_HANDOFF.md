@@ -12,7 +12,8 @@ rulebooks remain closed pending a further ADR. Rulebooks ship as RisuAI modules
 ([RISUAI_MODULES.md](RISUAI_MODULES.md), [ADR 0008](adr/0008-rulebooks-in-risuai-modules.md));
 the backend imports them at `POST /rulebooks`, plugin 0.6.0 forwards an enabled module's
 rulebook with each turn, and commands are derived from the world's rulebook
-(`saga_trpg.rulebooks.commands`). Live Fate-module verification on 6131 is pending.
+(`saga_trpg.rulebooks.commands`). Live Fate-module verification on 6131 is pending. To write
+or extend a rulebook with a creator, use the `rulebook-author` skill in `.claude/skills/`.
 
 Earlier checkpoint (2026-10-06): SRD `0.2.0` state actions (damage, heal, conditions, time)
 and their PocketRisu commands are merged. Read [ADR 0006](adr/0006-ruleset-versions-and-state-actions.md)
