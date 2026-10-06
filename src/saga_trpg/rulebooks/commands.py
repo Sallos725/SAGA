@@ -62,7 +62,15 @@ def _input_kinds(spec: RulebookSpec, kind: str) -> dict[str, Any]:
         if action.builtin.startswith("record_"):
             record = spec.records[action.record]
             key = record.unique[0]
-            key_kind = "integer" if record.fields[key].type == "integer" else "text"
+            field = record.fields[key]
+            if field.enum is not None:
+                key_kind: Any = list(field.enum)
+            elif field.type == "actor":
+                key_kind = "word"
+            elif field.type in ("integer", "boolean"):
+                key_kind = field.type
+            else:
+                key_kind = "text"
             return {key: key_kind, "amount": "integer"}
         kinds: dict[str, Any] = {name: "word" for name in _BUILTIN_ORDER[action.builtin]}
         kinds["amount"] = "integer"

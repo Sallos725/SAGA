@@ -268,3 +268,84 @@ def test_record_builtins_are_validated_by_entry(tmp_path, mutate, message):
     mutate(data)
     with pytest.raises(RulebookError, match=message):
         load_rulebook(write_spec(tmp_path, data))
+
+
+def test_record_keys_keep_their_declared_type_and_enum_spelling(tmp_path):
+    data = json.loads(rulebook_path("fate-condensed", "0.4.0").read_text())
+    data["records"]["clocks"] = {
+        "fields": {
+            "kind": {"type": "text", "enum": ["Open", "Closed"]},
+            "ticks": {"type": "integer", "range": [0, 8]},
+        },
+        "unique": ["kind"],
+    }
+    data["records"]["flags"] = {
+        "fields": {"armed": {"type": "boolean"}, "count": {"type": "integer", "range": [0, 9]}},
+        "unique": ["armed"],
+    }
+    data["actions"]["tick"] = {
+        "builtin": "record_adjust",
+        "record": "clocks",
+        "field": "ticks",
+        "sign": 1,
+    }
+    data["actions"]["bump"] = {
+        "builtin": "record_adjust",
+        "record": "flags",
+        "field": "count",
+        "sign": 1,
+    }
+    spec = load_rulebook(write_spec(tmp_path, data))
+    from saga_trpg.rulebooks.commands import parse_command
+
+    assert parse_command(spec, actor_id="player", text="tick open").payload == {
+        "kind": "Open",
+        "amount": 1,
+    }
+    assert parse_command(spec, actor_id="player", text="bump true 2").payload == {
+        "armed": True,
+        "amount": 2,
+    }
+    state = fate_world("s")
+    state.flags["clocks"] = {"c1": {"kind": "Open", "ticks": 0}}
+    state.flags["flags"] = {"f1": {"armed": True, "count": 0}}
+    engine = engine_for(DataRules(spec), ScriptedDice(), state=state)
+    engine.dispatch(event("tick", {"kind": "Open"}))
+    engine.dispatch(event("bump", {"armed": True}, "b"))
+    assert engine.state.flags["clocks"]["c1"]["ticks"] == 1
+    assert engine.state.flags["flags"]["f1"]["count"] == 1
+
+
+def test_record_builtins_refuse_ambiguous_or_malformed_collections_and_unique_collisions(
+    tmp_path,
+):
+    data = json.loads(rulebook_path("fate-condensed", "0.4.0").read_text())
+    data["records"]["counters"] = {
+        "fields": {"value": {"type": "integer", "range": [0, 9]}},
+        "unique": ["value"],
+    }
+    data["actions"]["grow"] = {
+        "builtin": "record_adjust",
+        "record": "counters",
+        "field": "value",
+        "sign": 1,
+    }
+    spec = load_rulebook(write_spec(tmp_path, data))
+    state = fate_world("s")
+    state.flags["counters"] = {"a": {"value": 1}, "b": {"value": 2}}
+    engine = engine_for(DataRules(spec), ScriptedDice(), state=state)
+    with pytest.raises(ValueError, match="already"):
+        engine.dispatch(event("grow", {"value": 1}))
+    state = fate_world("s")
+    state.flags["fate_boosts"] = {
+        "x": {"name": "Dup", "owner_id": "player"},
+        "y": {"name": "Dup", "owner_id": "player"},
+    }
+    engine = engine_for(DataRules(spec), ScriptedDice(), state=state)
+    with pytest.raises(ValueError, match="more than one"):
+        engine.dispatch(event("use_boost", {"name": "Dup"}))
+    state = fate_world("s")
+    state.flags["fate_boosts"] = ["not", "a", "dict"]
+    engine = engine_for(DataRules(spec), ScriptedDice(), state=state)
+    with pytest.raises(ValueError, match="fate_boosts"):
+        engine.dispatch(event("use_boost", {"name": "Dup"}))

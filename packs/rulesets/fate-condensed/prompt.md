@@ -15,7 +15,7 @@ This is a partial example implementation.
 
 Implemented: overcome against static opposition; four outcome grades; create a new situation aspect; one/two free invokes on new aspects; boost records; spending free invokes on an aspect; using (removing) a boost.
 
-Not implemented: character creation and advancement; paid/free invocations and rerolls; stunts and compels; attack, defend, stress and consequences; opposed rolls and existing-aspect advantages; paid invocations, invoke effects on rolls, and applying costs.
+Not implemented: character creation and advancement; rerolls; stunts and compels; attack, defend, stress and consequences; opposed rolls and existing-aspect advantages; paid invocations, invoke effects on rolls, and applying costs.
 
 ## Source and attribution
 

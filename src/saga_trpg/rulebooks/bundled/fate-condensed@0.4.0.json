@@ -257,7 +257,7 @@
   ],
   "not_implemented": [
     "character creation and advancement",
-    "paid/free invocations and rerolls",
+    "rerolls",
     "stunts and compels",
     "attack, defend, stress and consequences",
     "opposed rolls and existing-aspect advantages",

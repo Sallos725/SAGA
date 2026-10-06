@@ -220,15 +220,18 @@ class DataRules:
                 fields.pop("target_id", None)
                 record = self.spec.records[action.record]
                 key_field = record.fields[record.unique[0]]
-                fields[record.unique[0]] = _input_field(
-                    InputSpec(
-                        type="integer" if key_field.type == "integer" else "text",
-                        range=key_field.range,
-                        enum=key_field.enum,
-                        pattern=key_field.pattern
-                        or (".+" if key_field.type != "integer" else None),
+                if key_field.type == "boolean":
+                    fields[record.unique[0]] = (bool, Field())
+                else:
+                    fields[record.unique[0]] = _input_field(
+                        InputSpec(
+                            type="integer" if key_field.type == "integer" else "text",
+                            range=key_field.range,
+                            enum=key_field.enum,
+                            pattern=key_field.pattern
+                            or (".+" if key_field.type == "text" else None),
+                        )
                     )
-                )
                 if builtin == "record_adjust":
                     fields["amount"] = (int, Field(default=1, ge=1, le=1000))
         title = "".join(part.title() for part in kind.split("_"))
@@ -478,13 +481,16 @@ class DataRules:
         data: dict[str, Any],
     ) -> RuleResult:
         collection = self.spec.records[action.record]
-        for key, item in state.flags.get(action.record, {}).items():
+        stored_all = state.flags.get(action.record, {})
+        if not isinstance(stored_all, dict):
+            raise ValueError(f"flags.{action.record} must hold structured records")
+        for key, item in stored_all.items():
             _validate_record(f"flags.{action.record}.{key}", item, collection.fields)
         unique = collection.unique[0]
         key = _find_record(state, action.record, unique, data[unique])
         if key is None:
             raise ValueError(f"no {action.record} record with {unique} {data[unique]!r}")
-        stored = state.flags[action.record][key]
+        stored = stored_all[key]
         if action.builtin == "record_remove":
             del next_state.flags[action.record][key]
             return RuleResult(
@@ -505,6 +511,11 @@ class DataRules:
                 f"{action.record} {data[unique]!r}: {action.field} would be {after}, "
                 f"outside {field.range[0]}..{field.range[1]}"
             )
+        if action.field in collection.unique and any(
+            other_key != key and item.get(action.field) == after
+            for other_key, item in stored_all.items()
+        ):
+            raise ValueError(f"{action.record} already has {action.field} {after!r}")
         next_state.flags[action.record][key][action.field] = after
         return RuleResult(
             state=next_state,
@@ -607,10 +618,16 @@ def _find_record(state: WorldState, collection: str, field: str, value: Any) -> 
     stored = state.flags.get(collection, {})
     if not isinstance(stored, dict):
         return None
-    for key, item in stored.items():
-        if isinstance(item, dict) and item.get(field) == value:
-            return key
-    return None
+    matches = [
+        key
+        for key, item in stored.items()
+        if isinstance(item, dict)
+        and item.get(field) == value
+        and type(item.get(field)) is type(value)
+    ]
+    if len(matches) > 1:
+        raise ValueError(f"{collection} has more than one record with {field} {value!r}")
+    return matches[0] if matches else None
 
 
 def _validate_field(label: str, value: Any, field: RecordField) -> None:
