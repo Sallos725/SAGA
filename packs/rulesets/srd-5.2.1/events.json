@@ -94,5 +94,41 @@
       "target_id": "player"
     },
     "schema_version": 1
+  },
+  {
+    "actor_id": "player",
+    "event_id": "example-9",
+    "idempotency_key": null,
+    "kind": "give",
+    "parent_event_id": null,
+    "payload": {
+      "amount": 2,
+      "item": "torch",
+      "target_id": "player"
+    },
+    "schema_version": 1
+  },
+  {
+    "actor_id": "player",
+    "event_id": "example-10",
+    "idempotency_key": null,
+    "kind": "apply_condition",
+    "parent_event_id": null,
+    "payload": {
+      "condition": "prone",
+      "target_id": "opponent"
+    },
+    "schema_version": 1
+  },
+  {
+    "actor_id": "player",
+    "event_id": "example-11",
+    "idempotency_key": null,
+    "kind": "attack",
+    "parent_event_id": null,
+    "payload": {
+      "target_id": "opponent"
+    },
+    "schema_version": 1
   }
 ]

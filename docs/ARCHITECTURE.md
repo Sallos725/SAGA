@@ -156,6 +156,12 @@ and semantics; new worlds pin the latest. State-only actions (damage, healing, c
 time) are explicit events that roll nothing and never trigger implicit effects such as
 unconsciousness at 0 HP. See [ADR 0006](adr/0006-ruleset-versions-and-state-actions.md).
 
+The latest versions are not Python: a rulebook is one JSON document (stats, check frames,
+outcome tables, actions, conditions, items, example world, narration) validated against a
+closed schema and interpreted by one generic engine under `rulebooks/`. Formulas use a closed
+expression language, never scripts. Earlier Python modules stay registered as oracles. See
+[ADR 0007](adr/0007-rulebooks-as-data.md) and [the creator guide](RULEBOOKS.md).
+
 ## Optional narrative performance
 
 The local `presentation/` foundation projects completed narrative text and optional validated

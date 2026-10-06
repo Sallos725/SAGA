@@ -8,7 +8,7 @@
 
 A deterministic, replayable TRPG runtime for long-horizon agent-driven games and RisuAI.
 
-[Quick start](#quick-start) · [Architecture](docs/ARCHITECTURE.md) · [Roadmap](docs/IMPLEMENTATION_PLAN.md) · [Rulesets](packs/rulesets/README.md) · [Contributing](CONTRIBUTING.md)
+[Quick start](#quick-start) · [Architecture](docs/ARCHITECTURE.md) · [Roadmap](docs/IMPLEMENTATION_PLAN.md) · [Rulesets](packs/rulesets/README.md) · [Write a rulebook](docs/RULEBOOKS.md) · [Contributing](CONTRIBUTING.md)
 
 The design goal is not to build another prompt-heavy chatbot. It is to split responsibilities cleanly:
 
@@ -231,7 +231,8 @@ src/saga_trpg/
   runtime/       Event dispatch, journal, replay, deterministic RNG
   ports/         Interfaces for memory, dice, narration, intent
   adapters/      NMOS, local/MCP dice, RisuAI/OpenAI-compatible adapters
-  modules/       Pluggable rulesets
+  modules/       Hand-written example rulesets (kept as oracles)
+  rulebooks/     Rulebook schema, formula language, generic engine, bundled data
   benchmark/     RuleCheeseBench harness
   api/           Thin HTTP host
 
@@ -262,6 +263,10 @@ Implemented:
   [progress report](docs/progress/srd-state-actions.md))
 - SRD 5.2.1 `0.3.0` inventory: exact per-actor item counts with closed keys (`give`/`take`),
   no item effects
+- **Rulebooks as data**: a closed JSON schema plus a small formula language, one generic
+  engine, a `check` command with errors by entry; `srd-5.2.1@0.4.0` is the bundled rulebook
+  and adds condition effects on rolls ([guide](docs/RULEBOOKS.md),
+  [ADR 0007](docs/adr/0007-rulebooks-as-data.md))
 - PocketRisu commands for those actions (`damage`, `heal`, `inflict`, `cure`, `wait`,
   `give`, `take`) and a compact read-only status footer; new bridge worlds pin the latest
   version, existing worlds keep theirs and reject newer commands without changing

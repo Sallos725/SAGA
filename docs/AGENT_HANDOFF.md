@@ -2,7 +2,15 @@
 
 Copy the prompt below into Codex or Claude Code from the repository root.
 
-Current checkpoint (2026-10-06): SRD `0.2.0` state actions (damage, heal, conditions, time)
+Current checkpoint (2026-10-06, later): rulebooks are data. Read
+[ADR 0007](adr/0007-rulebooks-as-data.md), [the creator guide](RULEBOOKS.md) and
+[the rulebooks report](progress/rulebooks-v1.md) before touching rules: new system
+behaviour goes into a rulebook JSON interpreted by `saga_trpg.rulebooks.engine`, not into
+Python under `modules/`. `srd-5.2.1@0.4.0` is the bundled rulebook; `0.1.0`–`0.3.0` stay
+registered as Python oracles for pinned worlds and the equivalence test. Scripts in
+rulebooks remain closed pending a further ADR.
+
+Earlier checkpoint (2026-10-06): SRD `0.2.0` state actions (damage, heal, conditions, time)
 and their PocketRisu commands are merged. Read [ADR 0006](adr/0006-ruleset-versions-and-state-actions.md)
 and [the state-actions report](progress/srd-state-actions.md) first: ruleset versions are
 pinned per world and registered side by side, new worlds take the latest, nothing happens

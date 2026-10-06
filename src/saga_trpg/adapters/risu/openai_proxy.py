@@ -29,9 +29,9 @@ from saga_trpg.adapters.storage.sqlite import (
 from saga_trpg.domain.events import GameEvent
 from saga_trpg.domain.models import WorldState
 from saga_trpg.domain.tools import ToolCall
+from saga_trpg.modules.catalog import SRD_LATEST
 from saga_trpg.modules.srd_5_2_1.rules import (
     INVENTORY_ACTIONS,
-    LATEST_VERSION,
     ROLL_ACTIONS,
     STATE_ACTIONS,
 )
@@ -243,13 +243,13 @@ class RisuBridge:
     def _ensure_world(self, world_id: str) -> WorldState:
         # New worlds pin the latest SRD version; existing worlds keep the version they were
         # created with, so their action set and semantics never change under them.
-        definition = self.repository.registry.get("srd-5.2.1", LATEST_VERSION)
+        definition = self.repository.registry.get("srd-5.2.1", SRD_LATEST)
         initial = definition.example_world(world_id)
         self.repository.create_world(
             initial,
             if_missing=True,
             ruleset_id="srd-5.2.1",
-            ruleset_version=LATEST_VERSION,
+            ruleset_version=SRD_LATEST,
         )
         selection = self.repository.ruleset_for_world(world_id)
         if selection.ruleset_id != "srd-5.2.1":

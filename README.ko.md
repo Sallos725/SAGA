@@ -8,7 +8,7 @@
 
 장기간 이어지는 에이전트 기반 게임과 RisuAI를 위한, 결정론적이며 리플레이 가능한 TRPG 런타임입니다.
 
-[빠른 시작](#빠른-시작) · [아키텍처](docs/ARCHITECTURE.md) · [로드맵](docs/IMPLEMENTATION_PLAN.md) · [규칙 세트](packs/rulesets/README.md) · [기여 안내](CONTRIBUTING.md)
+[빠른 시작](#빠른-시작) · [아키텍처](docs/ARCHITECTURE.md) · [로드맵](docs/IMPLEMENTATION_PLAN.md) · [규칙 세트](packs/rulesets/README.md) · [룰북 작성](docs/RULEBOOKS.md) · [기여 안내](CONTRIBUTING.md)
 
 프롬프트에 의존하는 챗봇을 하나 더 만드는 대신, 각 구성 요소의 책임을 명확히 나누는 것을 목표로 합니다.
 
@@ -232,7 +232,8 @@ src/saga_trpg/
   runtime/       이벤트 디스패치, 저널, 리플레이, 결정론적 난수 생성
   ports/         메모리, 주사위, 서술, 의도 해석 인터페이스
   adapters/      NMOS, 로컬/MCP 주사위, RisuAI/OpenAI 호환 어댑터
-  modules/       교체 가능한 규칙 세트
+  modules/       직접 작성한 예제 규칙 세트 (정답지로 유지)
+  rulebooks/     룰북 스키마, 수식 언어, 범용 엔진, 번들 데이터
   benchmark/     RuleCheeseBench 실행 기반
   api/           얇은 HTTP 서버 계층
 
@@ -262,6 +263,9 @@ docs/
   ([ADR 0006](docs/adr/0006-ruleset-versions-and-state-actions.md),
   [진행 보고서](docs/progress/srd-state-actions.md))
 - SRD 5.2.1 `0.3.0` 인벤토리: 닫힌 키의 액터별 정확한 아이템 개수(`give`/`take`), 아이템 효과 없음
+- **데이터로 된 룰북**: 닫힌 JSON 스키마 + 작은 수식 언어 + 범용 엔진 하나, 항목별로 오류를
+  알려주는 `check` 명령. `srd-5.2.1@0.4.0`이 번들 룰북이고 상태 이상의 판정 효과가 추가됨
+  ([작성 가이드](docs/RULEBOOKS.md), [ADR 0007](docs/adr/0007-rulebooks-as-data.md))
 - 그 행동들을 위한 PocketRisu 명령(`damage`, `heal`, `inflict`, `cure`, `wait`, `give`, `take`)과
   작은 읽기 전용 상태 푸터. 새 브리지 월드는 최신 버전에 고정되고, 기존 월드는 자기 버전을
   유지하며 더 새로운 명령은 변경 없이 거부
