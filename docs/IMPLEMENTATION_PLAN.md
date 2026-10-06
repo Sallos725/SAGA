@@ -115,7 +115,7 @@ Start tiny.
 - [x] Fate Condensed as data (`0.2.0`: graded outcomes, pending costs, records)
 - [x] RisuAI module export (plain JSON shape) and backend import/pinning (`POST /rulebooks`)
 - [x] plugin forwards the module's rulebook entry; rulebook-derived command vocabulary
-- [ ] `.risum` / `.charx` export with a supplied RPack table
+- [x] `.risum` / `.charx` export with a supplied RPack table
 
 Only after those are stable:
 

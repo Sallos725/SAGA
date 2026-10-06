@@ -19,7 +19,9 @@ live with unchanged authoritative results; the existing host card was retained. 
 1. Start the isolated host/runtime using [the deployment guide](../../deploy/README.md).
 2. Open PocketRisu on port **6011**. Import `saga_provider.js` under Settings → Plugins.
    Allow the plugin's provider/replacer permissions when the host asks.
-3. Import `saga-srd-demo.card.json` as a character card.
+3. Import `saga-srd-demo.card.json` as a character card, or a `.charx` made with
+   `python -m saga_trpg.rulebooks charx saga-srd-demo.card.json --rulebook ../rulesets/srd-5.2.1/rulebook.json --rpack-map rpack_map.bin`
+   (the rulebook then travels inside the card; see [the module format](../../docs/RISUAI_MODULES.md)).
 4. Select the **SAGA SRD Demo** model (`pluginmodel:::SAGA SRD Demo`).
    Use it only as the main model; auxiliary generations are deliberately rejected.
 5. Turn off automatic `*says nothing*` insertion in host settings (`useSayNothing=false`).

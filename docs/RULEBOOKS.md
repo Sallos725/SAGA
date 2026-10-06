@@ -253,6 +253,12 @@ bump `version` and export again. See [RISUAI_MODULES.md](RISUAI_MODULES.md) for 
 format and [ADR 0008](adr/0008-rulebooks-in-risuai-modules.md) for the contract. A backend
 can also receive a rulebook directly: `POST /rulebooks` with `{"content": "<the JSON text>"}`.
 
+For the host's binary shapes, `python -m saga_trpg.rulebooks risum` writes a `.risum` and
+`python -m saga_trpg.rulebooks charx <card.json> --rulebook <rulebook.json>` writes a `.charx`
+card with the rulebook inside. Both need the host's RPack table once
+(`python -m saga_trpg.rulebooks rpack-map <host dist/assets>`); see
+[RISUAI_MODULES.md](RISUAI_MODULES.md).
+
 ## Not in schema v1
 
 Item effects and equipment, spells, initiative and action economy, multi-step procedures such

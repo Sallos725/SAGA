@@ -50,3 +50,8 @@ local-backups/
 .agents/
 .DS_Store
 Thumbs.db
+
+# The host's RPack table and files encoded with it stay out of the repository
+rpack_map.bin
+*.risum
+*.charx
