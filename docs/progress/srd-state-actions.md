@@ -24,6 +24,15 @@ and documentation. Live on the 6131 test host; not deployed to the 6011 playtest
 - `deploy/compose.risu-6131.yaml` runs a backend-only runtime on `127.0.0.1:4852` for an
   existing host-network PocketRisu on port 6131, with its own data volume.
 
+## Follow-up: `0.3.0` inventory and the status footer (same day)
+
+- `srd-5.2.1@0.3.0` adds `give` and `take`: exact per-actor counts, keys `[a-z0-9_]{1,40}`,
+  no effects, over-take rejected before commit, key removed at zero. New bridge worlds pin
+  `0.3.0`; `0.2.0` worlds keep rejecting the new kinds. Bridge commands
+  `give <target> <item> <n>` / `take <target> <item> <n>`.
+- Plugin 0.5.0 renders one compact HTML footer (HP, conditions, time, inventory, rolls,
+  turn, event id) from the response; verified rendering on the 6131 host.
+
 ## Verification
 
 - Offline: `pytest` 290 passed; `ruff check`/`format --check` clean; `node --test` 22 passed;
@@ -49,7 +58,8 @@ and documentation. Live on the 6131 test host; not deployed to the 6011 playtest
 ## Unresolved
 
 - Conditions have no mechanical effect on rolls and no duration. Death saves,
-  unconsciousness at 0 HP, resistances and inventory are still unimplemented.
+  unconsciousness at 0 HP, resistances, item effects, equipment and currency are still
+  unimplemented.
 - The Vertex natural-language interpreter still proposes roll actions only; state changes
   need commands.
 - The 6011 runtime still runs the pre-`0.2.0` image. Upgrading it keeps existing chats on
@@ -57,5 +67,7 @@ and documentation. Live on the 6131 test host; not deployed to the 6011 playtest
 
 ## Next recommended task
 
-Inventory (`give`/`take`/`use` with closed item keys) under a further SRD version, then
-condition effects on rolls once the roll path can read conditions without changing `0.2.0`.
+Condition effects on rolls, but as ruleset data (a condition-to-advantage table the engine
+interprets) rather than more Python branches: the owner intends rulebooks to arrive as RisuAI
+modules on top of a generic SAGA core. Decide first whether modules carry data only or also
+sandboxed scripts (see the open question in the handoff).

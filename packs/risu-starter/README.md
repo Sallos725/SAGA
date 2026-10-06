@@ -106,14 +106,18 @@ and general card/lore compatibility are not supported.
 | `inflict opponent prone` | Add a named SRD condition (rejected if already present) |
 | `cure opponent prone` | Remove a named condition (rejected if absent) |
 | `wait 2 rounds` | Advance simulated time; units `round`/`minute`/`hour`/`day`, 6-second rounds |
+| `give player torch 3` | Add items; keys are `[a-z0-9_]{1,40}` (commands are lower-cased) |
+| `take player torch 1` | Remove items; rejected if fewer are held, key disappears at 0 |
 
 Abilities: `strength`, `dexterity`, `constitution`, `intelligence`, `wisdom`, `charisma`.
 DC range: 1–100. Commands are case-insensitive; no slash prefix. One command per user message.
 Conditions: `blinded`, `charmed`, `deafened`, `frightened`, `grappled`, `incapacitated`,
 `invisible`, `paralyzed`, `petrified`, `poisoned`, `prone`, `restrained`, `stunned`,
-`unconscious`; they are recorded only and do not change rolls. State commands roll no dice and
-are only accepted by worlds created on SRD `0.2.0`; chats started on an older backend keep
-`0.1.0` and reject them with a 422 instead of changing rules mid-campaign.
+`unconscious`; they are recorded only and do not change rolls. Items have no modelled effect;
+the footer shows the player's exact counts. State and inventory commands roll no dice and are
+only accepted by worlds created on a backend that had them (`0.2.0` for state, `0.3.0` for
+inventory); older chats keep their version and reject newer commands with a 422 instead of
+changing rules mid-campaign.
 The player starts at HP 20, the opponent at HP 30/AC 13. See the
 [ruleset scope and attribution](../../docs/RULESET_LICENSES.md) for the supported SRD subset.
 There is no automatic enemy turn, encounter reset command,

@@ -104,7 +104,7 @@ Start tiny.
 
 - [x] generic checks (SRD ability checks and saving throws)
 - [x] attacks/damage/heal (SRD `0.2.0`: GM-declared damage/heal clamped to 0..max)
-- [ ] inventory
+- [x] inventory (SRD `0.3.0`: exact counts with closed keys; no item effects)
 - [x] conditions (SRD `0.2.0`: explicit named conditions; no effects or durations yet)
 - [x] clocks/time (SRD `0.2.0`: `advance_time` in seconds, six-second rounds)
 - [ ] quest flags
