@@ -23,8 +23,9 @@ that the engine cannot express.
 2. **Start from the nearest bundled file**, never from scratch:
    `packs/rulesets/srd-5.2.1/rulebook.json` for d20-style systems,
    `packs/rulesets/fate-condensed/rulebook.json` for graded results and records.
-   Copy it to a new file, change `id`, `version` (`0.1.0`), `title`, `license`, then edit
-   section by section.
+   Copy it to a new file, change `id`, `version` (`0.1.0`), `title`, `license`, and replace
+   or remove `source` and `modifications` (they describe the SRD/Fate files, not the new
+   system), then edit section by section.
 3. **Check after every section**:
    ```bash
    python -m saga_trpg.rulebooks check path/to/book.json
@@ -66,7 +67,7 @@ that the engine cannot express.
   `<id>@<version>.json` there, never an edit in place.
 - Do not add Python under `src/saga_trpg/modules/` for a system. Those are oracles for the
   old hand-written versions, not the place for new rules.
-- Licensing: `license.id`, `license.url` and `attribution` are required. For SRD-derived
+- Licensing: `license.id` and `attribution` are required, `license.url` is optional. For SRD-derived
   content copy the attribution from the SRD file; for Fate-derived content from the Fate
   file; for original systems use the author's own license and name.
 
@@ -77,7 +78,7 @@ that the engine cannot express.
 | "roll under skill on d100" | `checks: { roll: "1d100" }`, outcome `when: "total <= target"` |
 | "2d6, 6- miss, 7–9 partial, 10+ full" | one check `2d6`, three outcome rules on `total` |
 | "advantage / disadvantage" | check frame `advantage: "roll_twice"` |
-| "poisoned gives -2" | not expressible as a flat modifier yet → `conditions` effect (adv/disadv) or `not_implemented` |
+| "poisoned gives -2" | flat condition modifiers are not expressible yet → `not_implemented`; only if the creator explicitly prefers it, model it as a `conditions` advantage/disadvantage effect and say that it changes the rule |
 | "track clocks / aspects / wounds" | `records` + `on_outcome`; spending/expiring needs builtins `record_adjust`/`record_remove` if present, else `not_implemented` |
 | "show skills instead of HP in the footer" | `display.actor: ["skill:*"]`, `display.world: []` |
 
