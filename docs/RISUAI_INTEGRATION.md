@@ -184,8 +184,10 @@ the event id. Canonical payloads include explicit ruleset defaults. Because each
 its parent, one event id identifies its whole action prefix. The response `branch_id` names
 the branch that committed the action: `main` for an unedited chat, or the id of the first
 divergent action for an alternate line. The actor is fixed to `player`; the ruleset is
-`srd-5.2.1`, pinned per world at creation (`0.2.0` for new worlds; earlier worlds keep `0.1.0`
-and their exact action set). Adding command verbs never changes existing command identities.
+`srd-5.2.1`, pinned per world at creation: new worlds take the latest registered version
+(`0.3.0` at this revision); worlds created on `0.1.0` or `0.2.0` keep that version, its exact
+action set and semantics, and reject newer commands with a validation error. Adding command
+verbs never changes existing command identities.
 If the rules reject a divergent edit before any commit, the fork created for it is discarded
 again, so the host can retry with a corrected edit on the same message without leftover
 branches. Set `host_instance_id` explicitly; see the starter guide for the storage hang

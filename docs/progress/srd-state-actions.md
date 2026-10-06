@@ -58,7 +58,8 @@ and documentation. Live on the 6131 test host; not deployed to the 6011 playtest
 ## Unresolved
 
 - Conditions have no mechanical effect on rolls and no duration. Death saves,
-  unconsciousness at 0 HP, resistances and inventory are still unimplemented.
+  unconsciousness at 0 HP, resistances, item effects, equipment and currency are still
+  unimplemented.
 - The Vertex natural-language interpreter still proposes roll actions only; state changes
   need commands.
 - The 6011 runtime still runs the pre-`0.2.0` image. Upgrading it keeps existing chats on
@@ -66,5 +67,7 @@ and documentation. Live on the 6131 test host; not deployed to the 6011 playtest
 
 ## Next recommended task
 
-Inventory (`give`/`take`/`use` with closed item keys) under a further SRD version, then
-condition effects on rolls once the roll path can read conditions without changing `0.2.0`.
+Condition effects on rolls, but as ruleset data (a condition-to-advantage table the engine
+interprets) rather than more Python branches: the owner intends rulebooks to arrive as RisuAI
+modules on top of a generic SAGA core. Decide first whether modules carry data only or also
+sandboxed scripts (see the open question in the handoff).

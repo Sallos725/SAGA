@@ -6,7 +6,11 @@ Current checkpoint (2026-10-06): SRD `0.2.0` state actions (damage, heal, condit
 and their PocketRisu commands are merged. Read [ADR 0006](adr/0006-ruleset-versions-and-state-actions.md)
 and [the state-actions report](progress/srd-state-actions.md) first: ruleset versions are
 pinned per world and registered side by side, new worlds take the latest, nothing happens
-automatically at 0 HP, and the 6011 runtime still runs the older image.
+automatically at 0 HP, and the 6011 runtime still runs the older image. `0.3.0` adds
+inventory counts. Open design question before adding more SRD logic in Python: the owner
+wants rulebooks delivered as RisuAI modules over a generic core, so condition effects and
+similar rules should become validated ruleset data that the engine interprets; whether
+modules may also carry sandboxed scripts is undecided and needs an ADR.
 
 Earlier checkpoint (2026-10-04): SAGA foundation hardening is implemented on
 `codex/saga-foundation-hardening`. Read [the hardening report](progress/saga-foundation-hardening.md),

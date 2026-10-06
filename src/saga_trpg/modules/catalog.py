@@ -132,10 +132,11 @@ def srd_definition(version: str) -> RulesetDefinition:
             "Selected mechanics reimplemented in Python; original example actors "
             "and prompts. No source art, setting, or full rulebook is bundled."
         ),
+        # Scope follows the registered action set, not string ordering of versions.
         implemented=(
             _SRD_ROLL_SCOPE
-            + (_SRD_STATE_SCOPE if version >= "0.2.0" else [])
-            + (_SRD_INVENTORY_SCOPE if version >= "0.3.0" else [])
+            + (_SRD_STATE_SCOPE if "damage" in srd.payload_models else [])
+            + (_SRD_INVENTORY_SCOPE if "give" in srd.payload_models else [])
         ),
         not_implemented=(
             [
