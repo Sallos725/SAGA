@@ -287,11 +287,18 @@ Do not use generic HP or SRD combat mechanics to fill in unsupported Fate rules.
             ),
         ]
         self._definitions = {(item.rules.name, item.rules.version): item for item in definitions}
+        self._imported: set[tuple[str, str]] = set()
+
+    def builtin_identities(self) -> list[tuple[str, str]]:
+        """Every (id, version) shipped with the package, excluding imported rulebooks."""
+        return [key for key in self._definitions if key not in self._imported]
 
     def add(self, definition: RulesetDefinition) -> None:
         """Register an imported rulebook; an existing id/version is left untouched."""
         key = (definition.rules.name, definition.rules.version)
-        self._definitions.setdefault(key, definition)
+        if key not in self._definitions:
+            self._definitions[key] = definition
+            self._imported.add(key)
 
     def get(self, ruleset_id: str, version: str) -> RulesetDefinition:
         try:

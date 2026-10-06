@@ -152,3 +152,45 @@ def test_api_imports_a_rulebook_and_pins_worlds_to_it_across_restart(tmp_path):
     bad = client.post("/rulebooks", json={"content": text.replace("House Fate", "Other")})
     assert bad.status_code == 409
     assert client.post("/rulebooks", json={"content": "nope"}).status_code == 422
+
+
+def test_store_refuses_any_registered_identity_and_never_publishes_an_unbuildable_file(
+    tmp_path,
+):
+    repo, client = client_for(tmp_path)
+    older = json.loads(SRD_TEXT)
+    older["version"] = "0.3.0"
+    assert client.post("/rulebooks", json={"content": json.dumps(older)}).status_code == 409
+    broken = json.loads(FATE_TEXT)
+    broken["id"], broken["version"] = "broken", "0.1.0"
+    broken["actions"]["overcome"]["input"]["model_config"] = {"type": "boolean"}
+    response = client.post("/rulebooks", json={"content": json.dumps(broken)})
+    assert response.status_code == 422, response.text
+    assert "model_config" in response.json()["detail"]
+    assert not (tmp_path / "rulebooks").exists() or not list((tmp_path / "rulebooks").iterdir())
+    SQLiteWorldRepository(tmp_path / "worlds.sqlite3")  # still starts
+
+
+def test_store_hashes_submitted_bytes_and_publishes_without_overwriting(tmp_path):
+    store = RulebookStore(tmp_path / "rulebooks")
+    crlf = FATE_TEXT.replace("\n", "\r\n")
+    spec, created = store.register(crlf)
+    assert created
+    assert store.register(crlf)[1] is False
+    assert store.path_for(spec.id, spec.version).read_bytes() == crlf.encode("utf-8")
+    with pytest.raises(RepositoryConflict):
+        store.register(FATE_TEXT)
+    assert not list((tmp_path / "rulebooks").glob("*.tmp*"))
+
+
+def test_second_repository_sees_a_rulebook_imported_through_the_first(tmp_path):
+    first = SQLiteWorldRepository(tmp_path / "worlds.sqlite3")
+    second = SQLiteWorldRepository(tmp_path / "worlds.sqlite3")
+    custom = json.loads(FATE_TEXT)
+    custom["id"], custom["version"] = "late-fate", "1.0.0"
+    first.register_rulebook(json.dumps(custom))
+    initial = first.registry.get("late-fate", "1.0.0").example_world("late")
+    first.create_world(initial, ruleset_id="late-fate", ruleset_version="1.0.0")
+    assert second.ruleset_for_world("late").ruleset_id == "late-fate"
+    assert second.get_state("late").world_id == "late"
+    assert second.registry.get("late-fate", "1.0.0").manifest.ruleset_version == "1.0.0"

@@ -155,7 +155,19 @@ class SQLiteWorldRepository:
             if (ruleset_id, version) != (self._explicit_rules.name, self._explicit_rules.version):
                 raise ValueError("ruleset/version differs from the explicitly injected rules")
             return self._explicit_rules
-        return self.registry.get(ruleset_id, version).rules
+        return self._definition(ruleset_id, version).rules
+
+    def _definition(self, ruleset_id: str, version: str):
+        """Registry lookup that refreshes imported rulebooks on a miss.
+
+        Another process may have imported a rulebook since this one started; stored files are
+        the durable truth, so a miss re-reads them before failing."""
+        try:
+            return self.registry.get(ruleset_id, version)
+        except ValueError:
+            for spec in self.rulebooks.load_all():
+                self.registry.add(rulebook_definition(spec))
+            return self.registry.get(ruleset_id, version)
 
     def ruleset_for_world(self, world_id: str) -> RulesetReference:
         with self._transaction() as connection:
@@ -186,9 +198,12 @@ class SQLiteWorldRepository:
 
     def register_rulebook(self, text: str) -> tuple[RulesetManifest, bool]:
         """Validate, persist and register a rulebook; returns its manifest and whether new."""
-        spec, created = self.rulebooks.register(text, bundled=bundled_digests())
-        definition = rulebook_definition(spec)
-        self.registry.add(definition)
+        bundled = bundled_digests()
+        reserved = [key for key in self.registry.builtin_identities() if key not in bundled]
+        spec, created = self.rulebooks.register(
+            text, bundled=bundled, reserved=reserved, build=rulebook_definition
+        )
+        self.registry.add(rulebook_definition(spec))
         return self.registry.get(spec.id, spec.version).manifest, created
 
     def create_world(

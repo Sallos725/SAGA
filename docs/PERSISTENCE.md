@@ -102,8 +102,11 @@ the rules reject the edited action a fork was just created for, so failed edits 
 accumulate empty branches; a racing identical request that already committed keeps its branch.
 
 Imported rulebooks are files beside the database (`<data dir>/rulebooks/<id>@<version>.json`),
-written only after validation, registered on every start, and immutable per version. Back them
-up with the database; a world pinned to an imported rulebook cannot replay without its file.
+written only after validation and a successful engine build, published by exclusive create so
+racing importers cannot both win, hashed as submitted bytes, registered on every start and on
+any registry miss (so a second process sees an import without restarting), and immutable per
+version. Built-in and bundled identities can never be shadowed. Back them up with the
+database; a world pinned to an imported rulebook cannot replay without its file.
 
 Copies make this implementation simple and independently replayable, at the cost of storage
 proportional to the copied prefix. Large histories may later need shared immutable prefixes,
