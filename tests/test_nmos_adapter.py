@@ -161,3 +161,16 @@ async def test_remember_without_history_sends_a_single_message_manifest():
     adapter = adapter_for(fake)
     await adapter.remember(MemoryWrite(world_id="w", event_id="e9", text="lonely fact"))
     assert [m["host_logical_id"] for m in fake.manifests["w/main"]] == ["e9"]
+
+
+@pytest.mark.asyncio
+async def test_a_stale_shorter_manifest_never_replaces_a_longer_one():
+    fake = FakeNMOS()
+    adapter = adapter_for(fake)
+    e1, e2 = history_entry("e1", "first"), history_entry("e2", "second")
+    await adapter.remember(write("e2", "second", [e1, e2]))
+    assert [m["host_logical_id"] for m in fake.manifests["world-1/main"]] == ["e1", "e2"]
+    # A delayed request for e1 arrives with its older, shorter manifest.
+    await adapter.remember(write("e1", "first", [e1]))
+    assert [m["host_logical_id"] for m in fake.manifests["world-1/main"]] == ["e1", "e2"]
+    assert ("world-1/main", "e1", sha("first")) in fake.bodies

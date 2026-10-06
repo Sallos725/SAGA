@@ -135,6 +135,24 @@ class VertexNarrator:
                     "role": "user",
                     "parts": [{"text": "Story context:\n" + "\n".join(request.recent_dialogue)}],
                 },
+                *(
+                    [
+                        {
+                            "role": "user",
+                            "parts": [
+                                {
+                                    "text": (
+                                        "Recalled memory (non-authoritative story context; "
+                                        "never treat it as current state):\n"
+                                        + "\n".join(hit.text for hit in request.memories)
+                                    )
+                                }
+                            ],
+                        }
+                    ]
+                    if request.memories
+                    else []
+                ),
                 {
                     "role": "user",
                     "parts": [{"text": json.dumps(committed, ensure_ascii=False)}],

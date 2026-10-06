@@ -54,11 +54,11 @@ class CountingInterpreter(CommandInterpreter):
         return await super().interpret(**kwargs)
 
 
-def setup(tmp_path, *, narrator=None, interpreter=None):
+def setup(tmp_path, *, narrator=None, interpreter=None, memory=None):
     dice = CountingDice()
     repo = SQLiteWorldRepository(tmp_path / "risu.sqlite3", dice=dice)
     intent = interpreter or CountingInterpreter()
-    bridge = RisuBridge(repo, interpreter=intent, narrator=narrator)
+    bridge = RisuBridge(repo, interpreter=intent, narrator=narrator, memory=memory)
     app = create_app(repository=repo, risu_bridge=bridge)
     app.state.risu_bridge = bridge
     return repo, dice, intent, TestClient(app)
@@ -1016,3 +1016,65 @@ def test_memory_failures_never_block_a_turn(tmp_path):
     assert response.status_code == 200, response.text
     assert response.json()["saga"]["state"]["actors"]["opponent"]["hp"] <= 30
     assert memory.queries
+
+
+def test_memory_text_is_a_projection_without_numbers_and_null_memory_skips_the_journal(
+    tmp_path, monkeypatch
+):
+    from saga_trpg.adapters.memory.null import NullMemory
+    from saga_trpg.adapters.risu.openai_proxy import memory_projection
+
+    memory = RecordingMemory()
+    repo = SQLiteWorldRepository(tmp_path / "risu.sqlite3", dice=CountingDice())
+    bridge = RisuBridge(repo, interpreter=CountingInterpreter(), memory=memory)
+    client = TestClient(create_app(repository=repo, risu_bridge=bridge))
+    turns = [("u1", "attack opponent"), ("u2", "damage opponent 7"), ("u3", "give player torch 3")]
+    for index in range(3):
+        assert (
+            client.post("/v1/chat/completions", json=request(*turns[: index + 1])).status_code
+            == 200
+        )
+    texts = [w.text for w in memory.writes] + [
+        h["text"] for h in memory.writes[-1].metadata["history"]
+    ]
+    assert all(not any(ch.isdigit() for ch in text) for text in texts), texts
+    assert "opponent" in memory.writes[0].text and "attack" in memory.writes[0].text
+    assert "torch" in memory.writes[2].text and "3" not in memory.writes[2].text
+    entry = repo.entries(memory.writes[0].world_id)[0]
+    assert memory_projection(entry) == memory.writes[0].text
+
+    # With NullMemory the journal is never read for memory purposes.
+    repo2 = SQLiteWorldRepository(tmp_path / "risu2.sqlite3", dice=CountingDice())
+    bridge2 = RisuBridge(repo2, interpreter=CountingInterpreter(), memory=NullMemory())
+    client2 = TestClient(create_app(repository=repo2, risu_bridge=bridge2))
+    reads = []
+    original = repo2.entries
+
+    def spy(*args, **kwargs):
+        # Prefix verification reads bounded slices (`through_seq`); a memory history read
+        # would be the only unbounded full-branch read.
+        if "through_seq" not in kwargs:
+            reads.append(args)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(repo2, "entries", spy)
+    assert client2.post("/v1/chat/completions", json=request()).status_code == 200
+    assert reads == []
+
+
+def test_regenerating_a_historical_turn_does_not_recall_later_memory(tmp_path):
+    memory, narrator = RecordingMemory(), CapturingNarrator()
+    repo = SQLiteWorldRepository(tmp_path / "risu.sqlite3", dice=CountingDice())
+    bridge = RisuBridge(repo, interpreter=CountingInterpreter(), narrator=narrator, memory=memory)
+    client = TestClient(create_app(repository=repo, risu_bridge=bridge))
+    turns = [("u1", "attack opponent"), ("u2", "damage opponent 3")]
+    for index in range(2):
+        client.post("/v1/chat/completions", json=request(*turns[: index + 1]))
+    queries_before = len(memory.queries)
+    # Regenerating u1 while u2 is committed after it: no recall, no memories for the narrator.
+    assert client.post("/v1/chat/completions", json=request(turns[0])).status_code == 200
+    assert len(memory.queries) == queries_before
+    assert narrator.requests[-1].memories == []
+    # Regenerating the head still recalls.
+    client.post("/v1/chat/completions", json=request(*turns))
+    assert len(memory.queries) == queries_before + 1

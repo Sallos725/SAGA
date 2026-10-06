@@ -24,8 +24,9 @@ inspector) belong to the PocketRisu-facing plugin and the operator UI; SAGA does
 
 - A world branch is a conversation: `chat_id = "<world_id>/<branch_id>"`, `host = "saga"`.
 - A committed event is a message: `host_logical_id` = event id, `revision_hash` = sha256 of
-  the committed facts text, `role = "char"`, `name = "SAGA"`. Only prose facts travel; exact
-  HP, inventory and rolls never do.
+  its **semantic projection** (`memory_projection` in the bridge: actor, action kind,
+  text-valued inputs such as targets, conditions, items and names, and the recorded outcome;
+  never totals, damage, HP, counts or durations), `role = "char"`, `name = "SAGA"`.
 - `remember` sends the new body together with `then_reconcile` carrying the branch's whole
   committed manifest (the bridge builds it from the journal, so the adapter is stateless and a
   sidecar that lost its data can ask for any body and get it in a second `bodies` call).
@@ -34,6 +35,14 @@ inspector) belong to the PocketRisu-facing plugin and the operator UI; SAGA does
   returns the packet text as one `MemoryHit` with `trace_id` and `freshness` in its metadata.
 - Every failure is soft: a write logs and returns; a read logs and returns no hits. A
   2-second timeout bounds the cost of an absent sidecar.
+- Writes to one conversation are serialized within a process and a delayed request carrying
+  a shorter history sends only its body, never a shorter manifest, so the active conversation
+  cannot roll backwards. Processes are not coordinated with each other.
+- Recall happens only when the rendered event is the branch head: regenerating an older
+  turn gets no memories, so later facts cannot leak into earlier prose. The Vertex narrator
+  receives recalled text as a separate, explicitly non-authoritative part before the
+  authoritative JSON.
+- With `NullMemory` the bridge neither reads the journal for history nor calls recall.
 - Actor-scoped (epistemic) retrieval is not offered by this sidecar version; `actor_scope`
   is ignored and documented as such. Hidden benchmark checks must therefore not be written
   to memory at all.

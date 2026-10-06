@@ -19,6 +19,7 @@ Actor-scoped (epistemic) retrieval is not offered by this sidecar version and is
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 from typing import Any
@@ -58,6 +59,11 @@ class NMOSAdapter:
         self._client = client or httpx.AsyncClient(
             base_url=self.base_url, timeout=httpx.Timeout(timeout_seconds)
         )
+        # Per-conversation serialization within this process, and the longest manifest sent
+        # so far, so a delayed request carrying an older, shorter history cannot roll the
+        # sidecar's active conversation backwards. Other processes are not coordinated.
+        self._locks: dict[str, asyncio.Lock] = {}
+        self._manifest_length: dict[str, int] = {}
 
     def _headers(self) -> dict[str, str]:
         return {"authorization": f"Bearer {self.api_key}"} if self.api_key else {}
@@ -117,34 +123,38 @@ class NMOSAdapter:
             "text": item.text,
             "hash": sha256_text(item.text),
         }
-        response = await self._post(
-            "/v1/sync/bodies",
-            {
+        lock = self._locks.setdefault(chat_id, asyncio.Lock())
+        async with lock:
+            payload: dict[str, Any] = {
                 "host": HOST,
                 "chat_id": chat_id,
                 "bodies": [self._body(item.event_id, current, item)],
-                "then_reconcile": {
+            }
+            stale = len(manifest) < self._manifest_length.get(chat_id, 0)
+            if not stale:
+                payload["then_reconcile"] = {
                     "host": HOST,
                     "chat_id": chat_id,
                     "hash_version": 1,
                     "messages": manifest,
-                },
-            },
-        )
-        if response is None:
-            return
-        needed = (response.get("reconcile") or {}).get("needed_bodies") or []
-        missing = [
-            self._body(ref["host_logical_id"], by_id[ref["host_logical_id"]], item)
-            for ref in needed
-            if isinstance(ref, dict)
-            and ref.get("host_logical_id") in by_id
-            and ref.get("host_logical_id") != item.event_id
-        ]
-        if missing:
-            await self._post(
-                "/v1/sync/bodies", {"host": HOST, "chat_id": chat_id, "bodies": missing}
-            )
+                }
+            response = await self._post("/v1/sync/bodies", payload)
+            if response is None:
+                return
+            if not stale:
+                self._manifest_length[chat_id] = len(manifest)
+            needed = (response.get("reconcile") or {}).get("needed_bodies") or []
+            missing = [
+                self._body(ref["host_logical_id"], by_id[ref["host_logical_id"]], item)
+                for ref in needed
+                if isinstance(ref, dict)
+                and ref.get("host_logical_id") in by_id
+                and ref.get("host_logical_id") != item.event_id
+            ]
+            if missing:
+                await self._post(
+                    "/v1/sync/bodies", {"host": HOST, "chat_id": chat_id, "bodies": missing}
+                )
 
     @staticmethod
     def _body(event_id: str, body: dict[str, str], item: MemoryWrite) -> dict[str, Any]:

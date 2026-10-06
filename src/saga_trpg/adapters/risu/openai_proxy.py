@@ -159,6 +159,29 @@ def command_for(
         ) from None
 
 
+def memory_projection(entry: JournalEntry) -> str:
+    """What semantic memory may hear about a committed event: no numbers, no exact state.
+
+    Actors, action kind, text-valued inputs (targets, conditions, items, names) and the
+    recorded outcome are narrative; totals, damage, HP, counts and durations are state and
+    stay in the journal ([ADR 0001](../../../docs/adr/0001-state-vs-memory.md))."""
+    event = entry.committed.event
+    details = [
+        f"{key} {value}"
+        for key, value in event.payload.items()
+        if isinstance(value, str) and value and not value.isdigit()
+    ]
+    text = f"{event.actor_id}: {event.kind}"
+    if details:
+        text += " (" + ", ".join(details) + ")"
+    resolution = entry.result.resolution
+    if resolution is not None:
+        text += f" -> {resolution.outcome}"
+        if resolution.pending_adjudication:
+            text += ", cost pending"
+    return text + "."
+
+
 class CommandInterpreter:
     """Closed rulebook commands, deliberately independent of generated prose."""
 
@@ -385,20 +408,20 @@ class RisuBridge:
         raise RepositoryConflict("SAGA branch history conflicts with host action identities")
 
     async def _remember(self, world_id: str, branch_id: str, saved: JournalEntry) -> None:
-        """Write the committed facts to memory with the branch's whole committed history.
+        """Write a semantic projection of the committed event with the branch's history.
 
         The history lets a stateless adapter rebuild its manifest and serve any body a memory
-        service asks for. Exact numbers stay in the journal; memory only sees prose facts."""
+        service asks for. Exact numbers never leave the journal: `memory_projection` keeps
+        who did what to whom and how it turned out, not totals, HP or counts."""
+        if isinstance(self.memory, NullMemory):
+            return
         try:
             entries = self.repository.entries(world_id, branch_id=branch_id)
             history = [
-                history_entry(entry.committed.event.event_id, " ".join(entry.result.facts))
+                history_entry(entry.committed.event.event_id, memory_projection(entry))
                 for entry in entries
-                if entry.result.facts
             ]
-            text = " ".join(saved.result.facts)
-            if not text:
-                return
+            text = memory_projection(saved)
             await self.memory.remember(
                 MemoryWrite(
                     world_id=world_id,
@@ -410,7 +433,16 @@ class RisuBridge:
         except Exception:
             logger.warning("memory write failed after commit; continuing without it")
 
+    def _is_head(self, world_id: str, branch_id: str, saved: JournalEntry) -> bool:
+        """Only the branch head may recall: a historical regeneration must not see later facts."""
+        for item in self.repository.locate_event(world_id, saved.committed.event.event_id):
+            if item.branch_id == branch_id:
+                return item.seq == item.head_seq
+        return False
+
     async def _recall(self, world_id: str, branch_id: str, query: str) -> list[MemoryHit]:
+        if isinstance(self.memory, NullMemory):
+            return []
         try:
             hits = await self.memory.retrieve(
                 world_id=world_id, query=query, branch_id=branch_id, limit=4
@@ -567,7 +599,11 @@ class RisuBridge:
 
         if not replayed:
             await self._remember(world_id, branch_id, saved)
-        memories = await self._recall(world_id, branch_id, turn.actions[-1].text)
+        memories = (
+            await self._recall(world_id, branch_id, turn.actions[-1].text)
+            if self._is_head(world_id, branch_id, saved)
+            else []
+        )
         narration = NarrationRequest(
             world_id=world_id,
             event=saved.committed.event.model_copy(deep=True),

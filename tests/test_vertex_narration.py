@@ -364,3 +364,35 @@ def test_real_google_sdk_signing_refresh_and_vertex_with_in_memory_test_key(
         if file.is_file():
             assert TOKEN.encode() not in file.read_bytes()
             assert pem.encode() not in file.read_bytes()
+
+
+def test_recalled_memories_reach_the_vertex_prompt_as_non_authoritative_context(
+    tmp_path, monkeypatch, fake_credentials
+):
+    from saga_trpg.ports.memory import MemoryHit
+
+    class Memory:
+        async def remember(self, item):
+            return None
+
+        async def retrieve(self, **kwargs):
+            return [MemoryHit(text="The innkeeper believes the player still owes silver.")]
+
+    repo, dice, intent, client = setup(tmp_path, memory=Memory())
+    seen = []
+
+    def remote(req):
+        body = json.loads(req.content)
+        seen.append(body)
+        return httpx.Response(
+            200, json={"candidates": [{"content": {"parts": [{"text": "prose"}]}}]}
+        )
+
+    install_vertex(monkeypatch, remote)
+    assert vertex_post(client).status_code == 200
+    texts = [part["text"] for content in seen[-1]["contents"] for part in content["parts"]]
+    recalled = [t for t in texts if t.startswith("Recalled memory")]
+    assert recalled and "owes silver" in recalled[0]
+    assert "non-authoritative" in recalled[0]
+    # The authoritative JSON stays separate and last.
+    assert json.loads(texts[-1])["event_id"]
