@@ -45,7 +45,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "rpack-map":
         try:
             table = extract_rpack_map(args.source)
-        except RPackError as exc:
+        except (OSError, RPackError) as exc:
             print(str(exc), file=sys.stderr)
             return 1
         Path(args.out).write_bytes(table)

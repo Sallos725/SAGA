@@ -80,6 +80,8 @@ def read_risum(data: bytes, rpack: RPackMap) -> dict[str, Any]:
     if data[1] != _VERSION:
         raise RPackError(f"unsupported .risum version {data[1]}")
     (length,) = struct.unpack_from("<I", data, 2)
+    if 6 + length > len(data):
+        raise RPackError("truncated .risum: module payload is shorter than its length")
     main = rpack.decode(data[6 : 6 + length])
     try:
         envelope = json.loads(main)
@@ -87,4 +89,21 @@ def read_risum(data: bytes, rpack: RPackMap) -> dict[str, Any]:
         raise RPackError("module payload did not decode; wrong RPack table?") from None
     if envelope.get("type") != "risuModule" or not isinstance(envelope.get("module"), dict):
         raise RPackError("payload is not a risuModule envelope")
+    # Walk the asset records to the terminator so a malformed frame is never reported valid.
+    position = 6 + length
+    while True:
+        if position >= len(data):
+            raise RPackError("truncated .risum: missing end-of-file terminator")
+        marker = data[position]
+        position += 1
+        if marker == 0:
+            break
+        if marker != 1 or position + 4 > len(data):
+            raise RPackError("truncated .risum: malformed asset record")
+        (asset_length,) = struct.unpack_from("<I", data, position)
+        position += 4 + asset_length
+        if position > len(data):
+            raise RPackError("truncated .risum: asset is shorter than its length")
+    if position != len(data):
+        raise RPackError("malformed .risum: trailing bytes after the terminator")
     return envelope["module"]

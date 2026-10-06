@@ -166,3 +166,35 @@ def test_cli_writes_risum_and_charx_files(tmp_path, capsys):
     assert zipfile.is_zipfile(charx)
     assert main(["risum", str(rulebook_path("srd-5.2.1")), "--out", str(risum)]) == 1
     assert "rpack" in capsys.readouterr().err.lower()
+
+
+def test_card_v3_preserves_optional_v3_fields_and_the_character_book():
+    card = json.load(open(CARD_PATH, encoding="utf-8"))
+    card["data"]["character_book"] = {"entries": [{"keys": ["key"], "content": "lore"}]}
+    card["data"]["nickname"] = "Saga"
+    card["data"]["source"] = ["https://example.invalid"]
+    card["data"]["creation_date"] = 1
+    lifted = build_card_v3(card)["data"]
+    assert lifted["character_book"] == card["data"]["character_book"]
+    assert lifted["nickname"] == "Saga" and lifted["source"] == ["https://example.invalid"]
+    assert lifted["creation_date"] == 1 and "modification_date" not in lifted
+
+
+def test_risum_reader_validates_the_whole_frame():
+    table = RPackMap(fake_map())
+    good = write_risum(build_module(SRD_TEXT), table)
+    with pytest.raises(RPackError, match="terminator"):
+        read_risum(good[:-1], table)
+    with pytest.raises(RPackError, match="trailing"):
+        read_risum(good + b"\x00", table)
+    with pytest.raises(RPackError, match="truncated"):
+        read_risum(good[:-1] + b"\x01\xff\xff\xff\xff", table)
+    asset = good[:-1] + b"\x01" + struct.pack("<I", 3) + b"abc" + b"\x00"
+    assert read_risum(asset, table)["name"].startswith("SAGA")
+
+
+def test_rpack_map_cli_reports_a_missing_source_without_a_traceback(tmp_path, capsys):
+    from saga_trpg.rulebooks.__main__ import main
+
+    assert main(["rpack-map", str(tmp_path / "missing.js"), "--out", str(tmp_path / "m.bin")]) == 1
+    assert "missing.js" in capsys.readouterr().err

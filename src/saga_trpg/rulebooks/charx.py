@@ -50,6 +50,17 @@ def build_card_v3(card: dict[str, Any]) -> dict[str, Any]:
         else:
             lifted[field] = value or ""
     lifted["group_only_greetings"] = list(data.get("group_only_greetings") or [])
+    # Optional CCv3 fields and the card's own lorebook travel unchanged when present.
+    for field in (
+        "character_book",
+        "nickname",
+        "creator_notes_multilingual",
+        "source",
+        "creation_date",
+        "modification_date",
+    ):
+        if data.get(field) is not None:
+            lifted[field] = data[field]
     lifted["assets"] = [
         {"type": "icon", "uri": f"embeded://{ICON_PATH}", "name": "main", "ext": "png"}
     ]
