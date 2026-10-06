@@ -47,7 +47,7 @@ def _actor_item(spec: RulebookSpec, actor: ActorState, entry: str) -> str | None
         if family.type == "boolean":
             return ", ".join(name for name, _ in members) or None
         return ", ".join(f"{name} {_signed(value)}" for name, value in members) or None
-    value = actor.stats.get(entry)
+    value = actor.stats.get(entry, spec.stats[entry].default)
     return None if value is None else f"{entry} {value}"
 
 

@@ -79,6 +79,11 @@ writing. See [ADR 0007](../adr/0007-rulebooks-as-data.md) and the
 - `rulebooks/display.py` renders plain strings; the bridge adds `saga.display` to every
   response; plugin 0.7.0 prints them and falls back to the old rendering for older backends.
   SRD shows HP/conditions/inventory and time; Fate shows skills and aspects, no HP.
+- Adding `display` changed the bundled bytes, so the bundled files became immutable per
+  version: `srd-5.2.1@0.4.0` and `fate-condensed@0.2.0` keep their original bytes beside the
+  new `0.5.0` / `0.3.0`, every bundled version is registered, and `bundled_digests` covers
+  all of them. Modules exported earlier import byte for byte; worlds pinned to the older
+  versions replay unchanged.
 
 ## Verification
 

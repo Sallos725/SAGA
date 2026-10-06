@@ -823,7 +823,7 @@ def test_bridge_worlds_on_040_apply_condition_effects_from_the_rulebook(tmp_path
         response = client.post("/v1/chat/completions", json=request(*turns[: index + 1]))
         assert response.status_code == 200, response.text
     result = response.json()["saga"]
-    assert repo.ruleset_for_world(result["world_id"]).ruleset_version == "0.4.0"
+    assert repo.ruleset_for_world(result["world_id"]).ruleset_version == "0.5.0"
     d20s = [roll for roll in result["rolls"] if roll["roll_key"].startswith("attack:")]
     assert len(d20s) == 2
     assert any("prone" in line for line in result["trace"])

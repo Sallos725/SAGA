@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "fate-condensed",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "title": "Fate Condensed example",
   "license": {
     "id": "CC-BY-3.0",
@@ -127,5 +127,5 @@
     "opposed rolls and existing-aspect advantages",
     "applying costs and boost expiry"
   ],
-  "narration": "Selected system: Fate Condensed example, version 0.2.0.\nUse overcome or create_advantage against static opposition, with a stored skill:<name> rating.\nFour journaled d3 faces map 1/2/3 to -1/0/+1. The recorded total includes the skill rating.\nAn overcome failure/tie, or failed advantage, leaves a fictional choice pending; do not state that\na cost or adverse aspect was applied. Successful new aspects and boosts are stored in world flags.\nFree invokes are recorded but spending invokes and expiring boosts are not automated in this slice.\nDo not use generic HP or SRD combat mechanics to fill in unsupported Fate rules.\n"
+  "narration": "Selected system: Fate Condensed example, version 0.3.0.\nUse overcome or create_advantage against static opposition, with a stored skill:<name> rating.\nFour journaled d3 faces map 1/2/3 to -1/0/+1. The recorded total includes the skill rating.\nAn overcome failure/tie, or failed advantage, leaves a fictional choice pending; do not state that\na cost or adverse aspect was applied. Successful new aspects and boosts are stored in world flags.\nFree invokes are recorded but spending invokes and expiring boosts are not automated in this slice.\nDo not use generic HP or SRD combat mechanics to fill in unsupported Fate rules.\n"
 }

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "srd-5.2.1",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "title": "SRD 5.2.1 example",
   "license": {
     "id": "CC-BY-4.0",
@@ -165,5 +165,5 @@
     "item effects, equipment, weight and currency",
     "inspiration and rules rerolls"
   ],
-  "narration": "Selected system: SRD 5.2.1 example, version 0.4.0.\nUse ability_check, saving_throw, or attack for rolls. Ability scores, proficiency, weapon data,\nand AC come from stored actor stats. The GM supplies the check difficulty and circumstances in\nvalidated input. Narrate the recorded resolution. Natural 1/20 overrides apply to attacks only.\nUse damage or heal for GM-declared hit point changes; HP is clamped to 0..max and nothing happens\nautomatically at 0 HP. Use apply_condition or remove_condition to change named conditions\nexplicitly. Conditions change rolls exactly as the recorded trace says: advantage or\ndisadvantage from the conditions table, and incapacitating conditions block rolls until removed.\nUse advance_time to move simulated time in rounds, minutes, hours, or days. Use give or take to\nchange an actor's exact item counts; items have no modelled effect. The recorded inventory is\nauthoritative; never invent items.\nUnsupported rules require a future implementation; never borrow Fate rules or invent their effects.\n"
+  "narration": "Selected system: SRD 5.2.1 example, version 0.5.0.\nUse ability_check, saving_throw, or attack for rolls. Ability scores, proficiency, weapon data,\nand AC come from stored actor stats. The GM supplies the check difficulty and circumstances in\nvalidated input. Narrate the recorded resolution. Natural 1/20 overrides apply to attacks only.\nUse damage or heal for GM-declared hit point changes; HP is clamped to 0..max and nothing happens\nautomatically at 0 HP. Use apply_condition or remove_condition to change named conditions\nexplicitly. Conditions change rolls exactly as the recorded trace says: advantage or\ndisadvantage from the conditions table, and incapacitating conditions block rolls until removed.\nUse advance_time to move simulated time in rounds, minutes, hours, or days. Use give or take to\nchange an actor's exact item counts; items have no modelled effect. The recorded inventory is\nauthoritative; never invent items.\nUnsupported rules require a future implementation; never borrow Fate rules or invent their effects.\n"
 }

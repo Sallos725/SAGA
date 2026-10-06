@@ -55,6 +55,11 @@ that write a record, and a `unique` form of `requires`. Nine equivalence scenari
 Python module in state, patches and resolution; roll records match except for the generic
 `<kind>:<index>` roll key. No scripting was required.
 
+**Bundled files are immutable per version.** `rulebooks/bundled/<id>@<version>.json` is never
+edited; a change to the rules, or to any byte, is a new file with a new version, and every
+bundled version stays registered. This keeps modules exported earlier importable byte for byte
+and keeps worlds pinned to older bundled versions replaying after an upgrade.
+
 ## Consequences
 
 - Creators edit one file, run `python -m saga_trpg.rulebooks check`, and get errors by entry

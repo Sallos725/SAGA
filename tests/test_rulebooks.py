@@ -61,7 +61,7 @@ def write_spec(tmp_path, data):
 
 def test_srd_rulebook_loads_and_exposes_closed_payload_models():
     spec = load_rulebook(SRD_PATH)
-    assert (spec.id, spec.version) == ("srd-5.2.1", "0.4.0")
+    assert (spec.id, spec.version) == ("srd-5.2.1", "0.5.0")
     rules = DataRules(spec)
     assert set(rules.payload_models) == {
         "ability_check",
@@ -111,7 +111,7 @@ def test_check_command_reports_problems_in_plain_text(tmp_path, capsys):
     assert main(["check", str(path)]) == 1
     assert "actions.attack.check" in capsys.readouterr().err
     assert main(["check", str(SRD_PATH)]) == 0
-    assert "srd-5.2.1@0.4.0" in capsys.readouterr().out
+    assert "srd-5.2.1@0.5.0" in capsys.readouterr().out
 
 
 # --- equivalence with the hand-written SRD module --------------------------------------------
@@ -333,10 +333,10 @@ def test_registry_serves_srd_040_from_the_rulebook_and_keeps_python_versions():
     from saga_trpg.modules.catalog import SRD_LATEST, RulesetRegistry
 
     registry = RulesetRegistry()
-    assert SRD_LATEST == "0.4.0"
+    assert SRD_LATEST == "0.5.0"
     latest = registry.get("srd-5.2.1", SRD_LATEST)
     assert isinstance(latest.rules, DataRules)
-    assert latest.manifest.ruleset_version == "0.4.0"
+    assert latest.manifest.ruleset_version == "0.5.0"
     assert "condition effects on attack, check and save rolls" in " ".join(
         latest.manifest.implemented
     )
@@ -347,7 +347,7 @@ def test_registry_serves_srd_040_from_the_rulebook_and_keeps_python_versions():
         assert isinstance(registry.get("srd-5.2.1", version).rules, SRD521Rules)
     assert sorted(
         m.ruleset_version for m in registry.manifests() if m.ruleset_id == "srd-5.2.1"
-    ) == ["0.1.0", "0.2.0", "0.3.0", "0.4.0"]
+    ) == ["0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0"]
 
 
 @pytest.mark.parametrize(

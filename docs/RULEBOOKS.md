@@ -251,8 +251,9 @@ time, before dice.
 
 A world pins the rulebook `id` and `version` it was created with and keeps it for its whole
 life. Changing rules therefore means publishing a new `version`; old worlds keep replaying
-under the old one. Fix typos in prose freely; bump the version when numbers, formulas,
-actions, conditions or items change.
+under the old one. Any change to the file, even prose or `display`, needs a new version once
+the file has been shipped: the backend refuses a different file under a known version, and a
+module exported earlier must stay importable byte for byte.
 
 ## Shipping it as a RisuAI module
 

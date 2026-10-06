@@ -114,3 +114,12 @@ def test_stats_and_missing_values_render_gracefully():
     assert render_display(spec, state)["actors"] == [
         {"id": "player", "items": ["10/10", "armor_class 15", "athletics"]}
     ]
+
+
+def test_display_falls_back_to_a_declared_stat_default():
+    data = json.loads(rulebook_path("srd-5.2.1").read_text())
+    data["stats"]["mana"] = {"type": "integer", "range": [0, 99], "default": 5}
+    data["display"]["actor"] = ["mana", "armor_class"]
+    spec = parse_rulebook(data)
+    state = WorldState(world_id="w", actors={"player": ActorState(actor_id="player")})
+    assert render_display(spec, state)["actors"] == [{"id": "player", "items": ["mana 5"]}]

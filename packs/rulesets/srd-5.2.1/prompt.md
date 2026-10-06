@@ -1,6 +1,6 @@
 # SRD 5.2.1 example
 
-Selected system: SRD 5.2.1 example, version 0.4.0.
+Selected system: SRD 5.2.1 example, version 0.5.0.
 Use ability_check, saving_throw, or attack for rolls. Ability scores, proficiency, weapon data,
 and AC come from stored actor stats. The GM supplies the check difficulty and circumstances in
 validated input. Narrate the recorded resolution. Natural 1/20 overrides apply to attacks only.
