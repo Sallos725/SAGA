@@ -55,3 +55,6 @@ Thumbs.db
 rpack_map.bin
 *.risum
 *.charx
+
+# Local Claude Code worktrees; skills under .claude/skills are tracked
+.claude/worktrees/
