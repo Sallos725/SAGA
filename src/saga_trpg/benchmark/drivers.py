@@ -11,13 +11,13 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import httpx
-from pydantic import SecretStr
-
-from saga_trpg.adapters.narrator.vertex import MODEL, VertexNarrator
 from saga_trpg.benchmark.rulecheese import Observation
+
+if TYPE_CHECKING:  # provider extras are optional; only VertexDriver needs them
+    import httpx
+    from pydantic import SecretStr
 
 PROMPT_TEMPLATE_VERSION = "rulecheese-prompt-v1"
 STOP_WORD = "END"
@@ -104,6 +104,8 @@ class VertexDriver(PromptDriver):
     def __init__(
         self, account_json: SecretStr, *, transport: httpx.AsyncBaseTransport | None = None
     ) -> None:
+        from saga_trpg.adapters.narrator.vertex import MODEL, VertexNarrator
+
         self._narrator = VertexNarrator(account_json, transport=transport)
         super().__init__(self._generate, name=f"vertex:{MODEL}")
 
@@ -116,4 +118,8 @@ class VertexDriver(PromptDriver):
                 "maxOutputTokens": 256,
             },
         }
-        return await self._narrator.generate(body)
+        try:
+            return await self._narrator.generate(body)
+        except Exception as exc:
+            # Never retry (each call is billed) and never echo provider payloads or tokens.
+            raise ValueError(f"Vertex call failed: {type(exc).__name__}") from None

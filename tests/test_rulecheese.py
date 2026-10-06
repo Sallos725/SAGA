@@ -371,3 +371,55 @@ async def test_vertex_driver_uses_the_narrator_transport(monkeypatch):
     assert "one command" in body["systemInstruction"]["parts"][0]["text"].lower()
     assert "attack <target_id>" in body["contents"][-1]["parts"][0]["text"]
     assert run.driver["name"].startswith("vertex:")
+
+
+def test_prompt_driver_module_imports_without_provider_extras(monkeypatch):
+    import builtins
+    import importlib
+    import sys
+
+    real_import = builtins.__import__
+
+    def guarded(name, *args, **kwargs):
+        if name.startswith(("httpx", "google")):
+            raise ModuleNotFoundError(name)
+        return real_import(name, *args, **kwargs)
+
+    for module in [m for m in sys.modules if m.startswith("saga_trpg.benchmark.drivers")]:
+        del sys.modules[module]
+    monkeypatch.setattr(builtins, "__import__", guarded)
+    drivers = importlib.import_module("saga_trpg.benchmark.drivers")
+    assert drivers.PromptDriver
+
+
+@pytest.mark.asyncio
+async def test_vertex_driver_failures_become_a_sanitized_value_error(monkeypatch):
+    import json as _json
+    from types import SimpleNamespace
+
+    import httpx
+    from google.oauth2 import service_account
+    from pydantic import SecretStr
+
+    from saga_trpg.benchmark.drivers import VertexDriver
+
+    monkeypatch.setattr(
+        service_account.Credentials,
+        "from_service_account_info",
+        lambda info, *, scopes: SimpleNamespace(token="tok", refresh=lambda transport: None),
+    )
+
+    def remote(req):
+        raise httpx.ReadTimeout("slow", request=req)
+
+    account = {
+        "type": "service_account",
+        "project_id": "saga-test-project",
+        "client_email": "bench@saga-test-project.iam.gserviceaccount.com",
+        "private_key": "-----BEGIN PRIVATE KEY-----\nSECRETKEY\n-----END PRIVATE KEY-----\n",
+        "token_uri": "https://oauth2.googleapis.com/token",
+    }
+    driver = VertexDriver(SecretStr(_json.dumps(account)), transport=httpx.MockTransport(remote))
+    with pytest.raises(ValueError, match="Vertex") as info:
+        await RuleCheeseRunner().run(scenario(max_turns=1), driver=driver, model="g")
+    assert "SECRETKEY" not in str(info.value) and "tok" not in str(info.value)
