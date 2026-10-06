@@ -177,5 +177,6 @@ class RuleCheeseRunner:
             },
             validators=verdicts,
             outcome=outcome_label,
+            driver=driver.info() if hasattr(driver, "info") else {"name": type(driver).__name__},
             notes=notes,
         )

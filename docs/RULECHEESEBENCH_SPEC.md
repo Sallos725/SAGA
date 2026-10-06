@@ -77,7 +77,12 @@ C5 should normally trigger scenario review rather than reward the model.
   command; the runner parses it with the rulebook grammar and dispatches through the
   production `RuntimeEngine`. A rejected command never reaches the journal, counts as an
   illegal attempt and is shown to the driver as an error. `ScriptedDriver` plays a fixed
-  list; model drivers are the next step.
+  list. `benchmark/drivers.py`: `PromptDriver` renders the observation with
+  `rulecheese-prompt-v1` (setup text, budgets, rendered display, last command and its result
+  or rejection, the command list) and takes the last meaningful line of any async completion
+  as the command; `END` stops early. `VertexDriver` runs it through the narrator's bounded
+  Vertex path (same service-account JSON, Gemini). The artifact records the driver name,
+  template version, call count and early stop.
 - Artifact (`BenchmarkRun` v2): scenario and ruleset versions, runtime version, stochastic
   policy, initial world, full journal, event ids, final state and hash, metrics (turns,
   attempts, illegal attempts, valid-action rate, rolls), validator verdicts, outcome
@@ -88,8 +93,8 @@ C5 should normally trigger scenario review rather than reward the model.
   bounds decisions including rejected ones; both remaining budgets are in the observation.
 - Hidden validator state and the success/failure lists are never part of the observation.
 
-Not implemented: model drivers, judges, memory ablations, the report generator, cheese
-taxonomy labelling.
+Not implemented: judges, memory ablations, the report generator, cheese taxonomy
+labelling, drivers for other providers. No live Vertex benchmark run has been made yet.
 
 ## Long-horizon NMOS experiments
 

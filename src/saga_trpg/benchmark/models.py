@@ -161,4 +161,5 @@ class BenchmarkRun(BaseModel):
     metrics: dict[str, float | int | bool] = Field(default_factory=dict)
     validators: dict[str, bool] = Field(default_factory=dict)
     outcome: Literal["success", "partial", "failure"]
+    driver: dict[str, Any] = Field(default_factory=dict)
     notes: list[str] = Field(default_factory=list)

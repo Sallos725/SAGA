@@ -1,7 +1,11 @@
-"""Run a RuleCheeseBench scenario with a scripted policy and save the run artifact.
+"""Run a RuleCheeseBench scenario and save the run artifact.
 
     python -m saga_trpg.benchmark run benchmarks/scenarios/demo_cheese.json \
         --script commands.txt --model scripted --out runs/demo.json
+    python -m saga_trpg.benchmark run benchmarks/scenarios/demo_cheese.json \
+        --driver vertex --vertex-json path/to/service-account.json --out runs/gemini.json
+
+The Vertex driver makes one billed model call per decision; nothing is cached.
 """
 
 from __future__ import annotations
@@ -10,6 +14,8 @@ import argparse
 import asyncio
 import sys
 from pathlib import Path
+
+from pydantic import SecretStr
 
 from saga_trpg.benchmark.models import load_scenario
 from saga_trpg.benchmark.rulecheese import RuleCheeseRunner, ScriptedDriver
@@ -20,19 +26,32 @@ def main(argv: list[str] | None = None) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run", help="play a scenario with a scripted driver")
     run.add_argument("scenario")
-    run.add_argument("--script", required=True, help="one command per line; blank lines ignored")
-    run.add_argument("--model", default="scripted")
+    run.add_argument("--driver", choices=["scripted", "vertex"], default="scripted")
+    run.add_argument("--script", help="scripted driver: one command per line")
+    run.add_argument("--vertex-json", help="vertex driver: service-account JSON file")
+    run.add_argument("--model", default=None, help="label in the artifact")
     run.add_argument("--out", help="write the run artifact JSON here")
     args = parser.parse_args(argv)
     try:
         scenario = load_scenario(args.scenario)
-        lines = Path(args.script).read_text(encoding="utf-8").splitlines()
+        if args.driver == "scripted":
+            if not args.script:
+                raise ValueError("--script is required for the scripted driver")
+            lines = Path(args.script).read_text(encoding="utf-8").splitlines()
+            driver = ScriptedDriver([line.strip() for line in lines if line.strip()])
+            model = args.model or "scripted"
+        else:
+            if not args.vertex_json:
+                raise ValueError("--vertex-json is required for the vertex driver")
+            from saga_trpg.benchmark.drivers import VertexDriver
+
+            driver = VertexDriver(SecretStr(Path(args.vertex_json).read_text(encoding="utf-8")))
+            model = args.model or driver.name
     except (OSError, ValueError) as exc:
         print(f"cannot start: {exc}", file=sys.stderr)
         return 1
-    driver = ScriptedDriver([line.strip() for line in lines if line.strip()])
     try:
-        result = asyncio.run(RuleCheeseRunner().run(scenario, driver=driver, model=args.model))
+        result = asyncio.run(RuleCheeseRunner().run(scenario, driver=driver, model=model))
     except ValueError as exc:
         print(f"run aborted: {exc}", file=sys.stderr)
         return 1
