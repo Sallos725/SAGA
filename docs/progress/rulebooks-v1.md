@@ -19,7 +19,7 @@ writing. See [ADR 0007](../adr/0007-rulebooks-as-data.md) and the
   models from the file, validates stats on access, evaluates requirements, modifier, target
   and damage formulas before the first roll, merges advantage sources (inputs and condition
   effects) with one-cancels-one, grades through the outcome table, applies builtins.
-- `src/saga_trpg/rulebooks/data/srd-5.2.1.json`: the SRD example as data, version `0.4.0`,
+- `src/saga_trpg/rulebooks/bundled/srd-5.2.1.json`: the SRD example as data, version `0.4.0`,
   adding condition effects on rolls and `cannot_act` for incapacitating conditions. Exported
   to `packs/rulesets/srd-5.2.1/rulebook.json` beside the manifest.
 - Registry: `srd-5.2.1@0.4.0` is served from the rulebook; `0.1.0`–`0.3.0` stay as Python
@@ -46,6 +46,10 @@ writing. See [ADR 0007](../adr/0007-rulebooks-as-data.md) and the
   `input.proficiency != ""` without a null concept in the language.
 - Family stats (`proficient:*`) were the only SRD feature that did not map to a flat key; the
   `actor.family[key]` view keeps the stored key shape unchanged.
+
+- The bundled file first lived under `rulebooks/data/`, which `.dockerignore`'s `**/data`
+  rule (meant for saved games) silently dropped from the image; the 6131 runtime crashed on
+  start. The directory is `rulebooks/bundled/` for that reason.
 
 ## Unresolved
 

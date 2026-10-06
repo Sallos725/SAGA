@@ -166,7 +166,7 @@ _BUILTIN_PAYLOAD_INPUTS = {
 
 def rulebook_path(rulebook_id: str) -> Path:
     """Path of a rulebook bundled with the package."""
-    return Path(str(resources.files("saga_trpg.rulebooks") / "data" / f"{rulebook_id}.json"))
+    return Path(str(resources.files("saga_trpg.rulebooks") / "bundled" / f"{rulebook_id}.json"))
 
 
 def load_rulebook(path: Path | str) -> RulebookSpec:
