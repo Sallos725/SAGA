@@ -222,5 +222,17 @@ def create_app(
     def fork(world_id: str, request: ForkRequest) -> BranchInfo:
         return worlds.fork(world_id, **request.model_dump())
 
-    app.include_router(risu_router(risu_bridge or RisuBridge(worlds)))
+    if risu_bridge is None:
+        memory = None
+        nmos_url = os.getenv("SAGA_NMOS_URL", "").strip()
+        if nmos_url:
+            from saga_trpg.adapters.memory.nmos import NMOSAdapter
+
+            memory = NMOSAdapter(
+                base_url=nmos_url,
+                api_key=os.getenv("SAGA_NMOS_API_KEY") or None,
+                timeout_seconds=float(os.getenv("SAGA_NMOS_TIMEOUT_SECONDS", "2")),
+            )
+        risu_bridge = RisuBridge(worlds, memory=memory)
+    app.include_router(risu_router(risu_bridge))
     return app

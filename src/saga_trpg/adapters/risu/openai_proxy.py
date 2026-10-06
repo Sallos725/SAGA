@@ -17,6 +17,8 @@ from saga_trpg.adapters.intent.vertex import (
     VertexIntentTool,
     event_from_result,
 )
+from saga_trpg.adapters.memory.nmos import history_entry
+from saga_trpg.adapters.memory.null import NullMemory
 from saga_trpg.adapters.narrator.fallback import FallbackNarrator
 from saga_trpg.adapters.narrator.vertex import VertexNarrator
 from saga_trpg.adapters.storage.sqlite import (
@@ -30,6 +32,7 @@ from saga_trpg.domain.models import WorldState
 from saga_trpg.domain.tools import ToolCall
 from saga_trpg.modules.srd_5_2_1.rules import ROLL_ACTIONS
 from saga_trpg.ports.intent import IntentPort
+from saga_trpg.ports.memory import MemoryHit, MemoryPort, MemoryWrite
 from saga_trpg.ports.narrator import NarrationRequest, NarratorPort
 from saga_trpg.ports.tools import ToolExecutionPending
 from saga_trpg.rulebooks.commands import (
@@ -172,10 +175,13 @@ class RisuBridge:
         *,
         interpreter: IntentPort | None = None,
         narrator: NarratorPort | None = None,
+        memory: MemoryPort | None = None,
     ) -> None:
         self.repository = repository
         self.interpreter = interpreter or CommandInterpreter()
         self.narrator = narrator or FallbackNarrator()
+        # Semantic memory is optional and fail-soft: it never gates a commit or a response.
+        self.memory = memory or NullMemory()
 
     @staticmethod
     def world_id_for(turn: HostTurn, *, version: Literal[1, 2, 3] | None = None) -> str:
@@ -378,6 +384,42 @@ class RisuBridge:
                 return event_id, True
         raise RepositoryConflict("SAGA branch history conflicts with host action identities")
 
+    async def _remember(self, world_id: str, branch_id: str, saved: JournalEntry) -> None:
+        """Write the committed facts to memory with the branch's whole committed history.
+
+        The history lets a stateless adapter rebuild its manifest and serve any body a memory
+        service asks for. Exact numbers stay in the journal; memory only sees prose facts."""
+        try:
+            entries = self.repository.entries(world_id, branch_id=branch_id)
+            history = [
+                history_entry(entry.committed.event.event_id, " ".join(entry.result.facts))
+                for entry in entries
+                if entry.result.facts
+            ]
+            text = " ".join(saved.result.facts)
+            if not text:
+                return
+            await self.memory.remember(
+                MemoryWrite(
+                    world_id=world_id,
+                    event_id=saved.committed.event.event_id,
+                    text=text,
+                    metadata={"branch_id": branch_id, "history": history},
+                )
+            )
+        except Exception:
+            logger.warning("memory write failed after commit; continuing without it")
+
+    async def _recall(self, world_id: str, branch_id: str, query: str) -> list[MemoryHit]:
+        try:
+            hits = await self.memory.retrieve(
+                world_id=world_id, query=query, branch_id=branch_id, limit=4
+            )
+            return [MemoryHit.model_validate(hit.model_dump()) for hit in hits]
+        except Exception:
+            logger.warning("memory recall failed; narrating without memories")
+            return []
+
     async def complete(
         self, request: CompletionRequest, *, vertex_credentials: SecretStr | None = None
     ) -> dict:
@@ -523,10 +565,14 @@ class RisuBridge:
                 break
         branch_id, saved = saved
 
+        if not replayed:
+            await self._remember(world_id, branch_id, saved)
+        memories = await self._recall(world_id, branch_id, turn.actions[-1].text)
         narration = NarrationRequest(
             world_id=world_id,
             event=saved.committed.event.model_copy(deep=True),
             result=saved.result.model_copy(deep=True),
+            memories=memories,
             recent_dialogue=request.narration.context if request.narration else [],
         )
         try:

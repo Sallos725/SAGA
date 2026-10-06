@@ -944,3 +944,75 @@ def test_response_carries_rendered_display_lines_from_the_rulebook(tmp_path):
     if fate.json()["saga"]["resolution"]["outcome"] in {"success", "success_with_style"}:
         assert display["records"][0]["label"] == "fate_aspects"
         assert display["records"][0]["items"][0].startswith("Mapped route")
+
+
+class RecordingMemory:
+    def __init__(self, *, fail=False):
+        self.writes, self.queries, self.fail = [], [], fail
+
+    async def remember(self, item):
+        if self.fail:
+            raise RuntimeError("memory down")
+        self.writes.append(item)
+
+    async def retrieve(self, *, world_id, query, actor_scope=None, limit=8, **kwargs):
+        self.queries.append((world_id, query))
+        if self.fail:
+            raise RuntimeError("memory down")
+        from saga_trpg.ports.memory import MemoryHit
+
+        return [MemoryHit(text="The innkeeper is still owed 30 silver.")]
+
+
+class CapturingNarrator:
+    def __init__(self):
+        self.requests = []
+
+    async def render(self, request):
+        self.requests.append(request)
+        return "prose"
+
+
+def test_committed_facts_are_remembered_with_history_and_recalled_before_narration(tmp_path):
+    memory, narrator = RecordingMemory(), CapturingNarrator()
+    dice = CountingDice()
+    repo = SQLiteWorldRepository(tmp_path / "risu.sqlite3", dice=dice)
+    bridge = RisuBridge(repo, interpreter=CountingInterpreter(), narrator=narrator, memory=memory)
+    app = create_app(repository=repo, risu_bridge=bridge)
+    client = TestClient(app)
+    turns = [("u1", "attack opponent"), ("u2", "damage opponent 3")]
+    for index in range(2):
+        assert (
+            client.post("/v1/chat/completions", json=request(*turns[: index + 1])).status_code
+            == 200
+        )
+    assert [w.event_id for w in memory.writes] == [
+        RisuBridge.identities(CompletionRequest.model_validate(request(*turns[: i + 1])).saga)[1][
+            -1
+        ]
+        for i in range(2)
+    ]
+    assert memory.writes[1].world_id == memory.writes[0].world_id
+    assert len(memory.writes[1].metadata["history"]) == 2
+    assert memory.writes[1].metadata["history"][0]["event_id"] == memory.writes[0].event_id
+    assert memory.writes[1].text and "damage" in memory.writes[1].text
+    assert memory.writes[1].metadata["branch_id"] == "main"
+    assert memory.queries[-1][1] == "damage opponent 3"
+    assert [hit.text for hit in narrator.requests[-1].memories] == [
+        "The innkeeper is still owed 30 silver."
+    ]
+    # Regeneration recalls again for fresh prose but writes nothing new.
+    client.post("/v1/chat/completions", json=request(*turns))
+    assert len(memory.writes) == 2 and len(memory.queries) == 3
+
+
+def test_memory_failures_never_block_a_turn(tmp_path):
+    memory = RecordingMemory(fail=True)
+    dice = CountingDice()
+    repo = SQLiteWorldRepository(tmp_path / "risu.sqlite3", dice=dice)
+    bridge = RisuBridge(repo, interpreter=CountingInterpreter(), memory=memory)
+    client = TestClient(create_app(repository=repo, risu_bridge=bridge))
+    response = client.post("/v1/chat/completions", json=request())
+    assert response.status_code == 200, response.text
+    assert response.json()["saga"]["state"]["actors"]["opponent"]["hp"] <= 30
+    assert memory.queries

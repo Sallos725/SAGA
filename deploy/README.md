@@ -45,6 +45,10 @@ docker compose -f deploy/compose.risu-6011.yaml ps
 docker logs saga-runtime --tail 50
 ```
 
+Semantic memory is off unless `SAGA_NMOS_URL` points the runtime at an NMOS sidecar
+(`docs/NMOS_SIDECAR.md`); neither compose file sets it, because a playtest would create
+`saga/...` conversations in that sidecar's dashboard.
+
 The backend exposes the debug API only on `127.0.0.1:4851`; PocketRisu reaches
 `http://saga-runtime:4850` through the dedicated Docker network. Existing debug routes have
 no production authentication. Keep this network limited to trusted containers and do not

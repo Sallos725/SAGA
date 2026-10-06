@@ -42,7 +42,7 @@ flowchart TD
         bridge["RisuBridge<br/>turn → event id · regeneration detection"]:::done
         intent["IntentPort<br/>closed commands · Vertex natural language"]:::partial
         narr["NarratorPort<br/>fallback · Vertex"]:::done
-        mem["MemoryPort<br/>null today, NMOS later"]:::planned
+        mem["MemoryPort<br/>NMOS adapter · live unverified"]:::partial
         perf["Performance projection<br/>foundation only, not wired"]:::partial
     end
 
@@ -99,7 +99,7 @@ Where it is heading, in the recommended order rather than as strict dependencies
 flowchart LR
     p0["Phase 0<br/>Lock invariants"]:::done
     p1["Phase 1<br/>Persistent runtime<br/>left: trace ids"]:::done
-    p2["Phase 2<br/>NMOS adapter<br/>fail-soft semantic recall"]:::planned
+    p2["Phase 2<br/>NMOS adapter<br/>bound; live round trip left"]:::partial
     p3["Phase 3<br/>RisuAI adapter<br/>left: streaming, card/lore,<br/>live intent verification"]:::partial
     p4["Phase 4<br/>MCP / tool layer<br/>tape done; MCP binding,<br/>reconciliation left"]:::partial
     p5["Phase 5<br/>Modular rules<br/>left: inventory, conditions,<br/>clocks, quests, visibility"]:::partial
@@ -279,13 +279,15 @@ Implemented:
 - PocketRisu v3 provider and starter card for no-memory SRD commands and authoritative status
 - opt-in Vertex natural-language attack/check/save proposals on the existing durable tape
 - Vertex narration from the same service-account JSON input, after commit with bounded fallback
-- NMOS and MCP Dice ports/adapters with explicit TODO contracts
+- an NMOS sidecar 0.3.0 memory adapter (fail-soft, stateless, off unless `SAGA_NMOS_URL` is
+  set; see [docs/NMOS_SIDECAR.md](docs/NMOS_SIDECAR.md)) and an MCP Dice port with an explicit
+  TODO contract
 - benchmark result models and scenario shape
 - tests for the most important invariants
 
 Not implemented yet:
 
-- production NMOS API binding
+- a live NMOS round trip and actor-scoped recall
 - production MCP client binding
 - live checks/saves and broader language quality/scope for the limited intent adapter
 - general RisuAI card/lore compatibility and streaming (narration copies only bounded text context)

@@ -14,5 +14,6 @@ class NullMemory:
         query: str,
         actor_scope: str | None = None,
         limit: int = 8,
+        branch_id: str = "main",
     ) -> list[MemoryHit]:
         return []
