@@ -37,6 +37,7 @@ Problems are reported by entry, for example
   "items": { ... },        // 6. optional closed item list
   "records": { ... },      // 6b. optional typed record collections (aspects, boosts, clocks…)
   "example_world": { ... },// 7. a starting cast for demos and tests
+  "display": { ... },      // 8. what the status footer shows
   "implemented": [ ... ],  // plain-language scope, shown to the narrator and in docs
   "not_implemented": [ ... ],
   "narration": "..."       // instructions for the narrating model
@@ -210,6 +211,20 @@ Used by demos, tests and new PocketRisu worlds. Keep it small and valid against 
 Actor ids are lower-case identifiers so commands can address them (`attack opponent`);
 enum members may use any case and commands match them case-insensitively.
 Add `"flags": { "fate_aspects": {} }` to start record collections empty.
+
+### 8. `display` — what the status footer shows
+
+```json
+"display": {
+  "actor": ["hp", "conditions", "inventory"],   // per actor; or stat names, or a family such as "skill:*"
+  "records": ["fate_aspects"],                   // record collections to list (empty ones are skipped)
+  "world": ["time"]                              // world-level items; [] hides simulated time
+}
+```
+
+The backend renders these into plain strings with every response and the host footer prints
+them, so a Fate card shows skills and aspects instead of hit points without any host change.
+Defaults when omitted: `actor: ["hp", "conditions", "inventory"]`, `world: ["time"]`.
 
 ## Formulas
 

@@ -40,7 +40,7 @@
 - [x] RisuAI module export + backend import/pinning for rulebooks
 - [x] plugin forwards module rulebook; rulebook-derived commands in the bridge
 - [x] `.risum` / `.charx` export (RPack table supplied, not vendored)
-- [ ] rulebook `display` section driving the plugin footer
+- [x] rulebook `display` section driving the plugin footer
 - [x] PocketRisu bridge and commands on SRD `0.2.0` (new worlds; existing `0.1.0` worlds unchanged)
 - [ ] quest module
 - [ ] observation/knowledge module

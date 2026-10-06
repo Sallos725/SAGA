@@ -430,3 +430,20 @@ test("two different enabled rulebook modules are an error, the same one twice is
   assert.match(response.content, /a@1\.0\.0.*b@1\.0\.0|b@1\.0\.0.*a@1\.0\.0/);
   assert.equal(f.calls.length, 1);
 });
+
+test("footer prints the backend's display lines when present and falls back otherwise", async () => {
+  const f = fixture();
+  const base = await (await f.reply()).json();
+  f.reply = async () => ({ ok: true, status: 200, json: async () => ({ ...base, saga: { ...base.saga,
+    display: { actors: [{ id: "player", items: ["athletics +1, notice +3"] }],
+      records: [{ label: "fate_aspects", items: ["Mapped <route> (owner_id player, free_invokes 2)"] }],
+      world: [] } } }) });
+  const response = await f.send(await f.prepare());
+  const footer = response.content.slice(response.content.indexOf("<div"));
+  assert.match(footer, /<b>player<\/b> athletics \+1, notice \+3/);
+  assert.match(footer, /<b>fate_aspects<\/b> Mapped &lt;route&gt; \(owner_id player, free_invokes 2\)/);
+  assert.doesNotMatch(footer, /20\/20|⏱|🎒/);
+  f.reply = async () => ({ ok: true, status: 200, json: async () => base });
+  const legacy = await f.send(await f.prepare());
+  assert.match(legacy.content, /opponent<\/b> 22\/30/);
+});

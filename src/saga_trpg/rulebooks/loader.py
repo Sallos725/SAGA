@@ -166,6 +166,14 @@ class ExampleWorld(Closed):
     flags: dict[str, Any] = Field(default_factory=dict)
 
 
+class DisplaySpec(Closed):
+    """What a host status footer shows; the backend renders it, the host only prints it."""
+
+    actor: list[str] = Field(default_factory=lambda: ["hp", "conditions", "inventory"])
+    records: list[str] = Field(default_factory=list)
+    world: list[str] = Field(default_factory=lambda: ["time"])
+
+
 class RulebookSpec(Closed):
     schema_version: Literal[1]
     id: str = Field(pattern=r"^[a-z0-9][a-z0-9.-]{0,60}$")
@@ -182,6 +190,7 @@ class RulebookSpec(Closed):
     conditions: dict[str, ConditionSpec] = Field(default_factory=dict)
     items: dict[str, ItemSpec] = Field(default_factory=dict)
     example_world: ExampleWorld | None = None
+    display: DisplaySpec = Field(default_factory=DisplaySpec)
     implemented: list[str] = Field(default_factory=list)
     not_implemented: list[str] = Field(default_factory=list)
     narration: str = ""
@@ -426,6 +435,21 @@ def _cross_check(spec: RulebookSpec):  # noqa: C901
         if action.on_hit is not None:
             yield from _check_formula(f"actions.{key}.on_hit.dice", action.on_hit.dice, allowed)
             yield from _check_formula(f"actions.{key}.on_hit.bonus", action.on_hit.bonus, allowed)
+    builtin_actor = {"hp", "conditions", "inventory"}
+    for section, allowed in (
+        ("actor", builtin_actor | set(spec.stats)),
+        ("records", set(spec.records)),
+        ("world", {"time"}),
+    ):
+        entries = getattr(spec.display, section)
+        for entry in entries:
+            if entry not in allowed:
+                yield (
+                    f"display.{section}: {entry!r} is not available; choose from "
+                    f"{', '.join(sorted(allowed)) or 'nothing'}"
+                )
+        for duplicate in sorted({e for e in entries if entries.count(e) > 1}):
+            yield f"display.{section}: {duplicate!r} listed twice"
     if spec.example_world is not None:
         for actor_id, actor in spec.example_world.actors.items():
             if not re.fullmatch(r"^[a-z0-9][a-z0-9_.-]{0,60}$", actor_id):

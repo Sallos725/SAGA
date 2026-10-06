@@ -110,6 +110,8 @@
     "flags": { "fate_aspects": {}, "fate_boosts": {} }
   },
 
+  "display": {"actor": ["skill:*"], "records": ["fate_aspects", "fate_boosts"], "world": []},
+
   "implemented": [
     "overcome against static opposition",
     "four outcome grades",

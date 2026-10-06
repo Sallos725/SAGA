@@ -189,6 +189,11 @@ divergent action for an alternate line. The actor is fixed to `player`; the rule
 created on an earlier version keep that version, its exact action set and semantics, and
 reject newer commands with a validation error. Adding command verbs never changes existing
 command identities.
+Every response carries `saga.display` — actor, record and world lines rendered from the
+rulebook's `display` declaration — which plugin 0.7.0 prints in its footer without
+interpreting them; older plugins ignore the field and older backends' responses fall back to
+HP/conditions/inventory in the plugin.
+
 Commands are parsed by the world's rulebook (`saga_trpg.rulebooks.commands`): the action name
 or an alias, positional values in input order, `name=value`, quoted text, and the advantage
 flags for roll-twice checks. Closed choices are lower-cased; free text keeps its case. Worlds

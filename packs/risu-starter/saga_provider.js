@@ -1,7 +1,7 @@
 //@name saga_runtime
 //@display-name SAGA SRD Demo
 //@api 3.0
-//@version 0.6.0
+//@version 0.7.0
 //@arg server_url string SAGA URL (default http://saga-runtime:4850)
 //@arg host_instance_id string Stable host identity (set it explicitly; empty generates one via plugin storage, which hung on one host)
 //@arg vertex_service_account_json string {{name::Vertex 서비스 계정 JSON}}{{textarea}} JSON 전체를 붙여넣으세요. Gemini 3.8 Flash로 자연어 행동·서술; 비우면 명령·기본 서술.
@@ -57,7 +57,17 @@
     }
     return parts.join(" ");
   }
-  function statusFooter(state) {
+  // Lines come from the backend's rulebook-driven `display` when present (the host knows
+  // nothing about stats or records); older backends fall back to HP/conditions/inventory.
+  function displayLines(state) {
+    const display = state.display;
+    if (display && Array.isArray(display.actors)) {
+      const group = (label, items) => "<b>" + escapeHtml(label) + "</b> " + items.map(escapeHtml).join(", ");
+      const actors = display.actors.filter(a => a && typeof a.id === "string" && Array.isArray(a.items)).map(a => group(a.id, a.items));
+      const records = (Array.isArray(display.records) ? display.records : []).filter(r => r && typeof r.label === "string" && Array.isArray(r.items)).map(r => group(r.label, r.items));
+      const world = (Array.isArray(display.world) ? display.world : []).map(escapeHtml);
+      return actors.concat(world, records);
+    }
     const actors = Object.values(state.state.actors).map(actor => {
       const conditions = Array.isArray(actor.conditions) && actor.conditions.length ? " <i>" + escapeHtml(actor.conditions.join(", ")) + "</i>" : "";
       return "<b>" + escapeHtml(actor.actor_id) + "</b> " + escapeHtml(actor.hp) + "/" + escapeHtml(actor.max_hp) + conditions;
@@ -65,9 +75,12 @@
     const player = state.state.actors.player;
     const items = player && player.inventory && typeof player.inventory === "object"
       ? Object.entries(player.inventory).map(([key, count]) => escapeHtml(key) + "×" + escapeHtml(count)) : [];
-    const rolls = state.rolls.map(roll => escapeHtml(roll.expression) + " → [" + roll.raw.map(escapeHtml).join(", ") + "] = " + escapeHtml(roll.total));
     const time = formatTime(state.state.simulated_time);
-    const line1 = actors.concat(time === null ? [] : ["⏱ " + time], ["🎒 " + (items.length ? items.join(", ") : "—")]).join(" · ");
+    return actors.concat(time === null ? [] : ["⏱ " + time], ["🎒 " + (items.length ? items.join(", ") : "—")]);
+  }
+  function statusFooter(state) {
+    const rolls = state.rolls.map(roll => escapeHtml(roll.expression) + " → [" + roll.raw.map(escapeHtml).join(", ") + "] = " + escapeHtml(roll.total));
+    const line1 = displayLines(state).join(" · ");
     const line2 = ["🎲 " + (rolls.length ? rolls.join(" · ") : "주사위 없음"), "턴 " + escapeHtml(state.seq) + (state.replayed ? " · 기록 재사용" : ""),
       "<code>" + escapeHtml(state.event_id) + "</code>"].join(" · ");
     return '<div style="margin-top:0.75em;padding-top:0.4em;border-top:1px solid rgba(128,128,128,0.35);font-size:0.78em;line-height:1.6;opacity:0.85">' +

@@ -72,6 +72,14 @@ writing. See [ADR 0007](../adr/0007-rulebooks-as-data.md) and the
 - CLI: `rpack-map`, `risum`, `charx`. Verified with the 6131 host's real table: `.risum`
   files decode back to the module with the matching rulebook entry; host import pending.
 
+## Follow-up: rulebook-driven footer (same day)
+
+- Schema: optional `display` section (`actor`, `records`, `world`) validated against the
+  rulebook's stats and records; defaults reproduce the previous footer.
+- `rulebooks/display.py` renders plain strings; the bridge adds `saga.display` to every
+  response; plugin 0.7.0 prints them and falls back to the old rendering for older backends.
+  SRD shows HP/conditions/inventory and time; Fate shows skills and aspects, no HP.
+
 ## Verification
 
 - `pytest` 388 passed, `ruff` clean, `node --test` 23 passed, pack export check clean.
