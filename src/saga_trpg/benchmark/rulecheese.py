@@ -14,8 +14,13 @@ from typing import Any, Protocol
 from pydantic import BaseModel, Field
 
 from saga_trpg.adapters.storage.sqlite import RUNTIME_VERSION
-from saga_trpg.benchmark.dice import TapeDice
-from saga_trpg.benchmark.models import BenchmarkRun, BenchmarkScenario, SeedPolicy
+from saga_trpg.benchmark.dice import TapeDice, TapeExhausted
+from saga_trpg.benchmark.models import (
+    BenchmarkRun,
+    BenchmarkScenario,
+    SeedPolicy,
+    validate_scenario,
+)
 from saga_trpg.benchmark.validators import evaluate_validators
 from saga_trpg.domain.models import ActorState, WorldState
 from saga_trpg.modules.catalog import RulesetRegistry
@@ -36,6 +41,7 @@ class Observation(BaseModel):
     commands: str
     turn: int
     turns_left: int
+    attempts_left: int
     display: dict[str, Any]
     last_command: str | None = None
     last_facts: list[str] = Field(default_factory=list)
@@ -77,6 +83,7 @@ class RuleCheeseRunner:
         self.registry = registry or RulesetRegistry()
 
     async def run(self, scenario: BenchmarkScenario, *, driver: Driver, model: str) -> BenchmarkRun:
+        validate_scenario(scenario, self.registry)
         definition = self.registry.get(scenario.ruleset_id, scenario.ruleset_version)
         rules = definition.rules
         if not isinstance(rules, DataRules):
@@ -99,13 +106,15 @@ class RuleCheeseRunner:
         last_error: str | None = None
         turn = 0
         attempts = 0
-        while turn < scenario.max_turns:
+        budget = scenario.attempt_budget
+        while turn < scenario.max_turns and attempts < budget:
             observation = Observation(
                 scenario_id=scenario.scenario_id,
                 setup_text=scenario.setup_text,
                 commands=commands,
                 turn=turn + 1,
                 turns_left=scenario.max_turns - turn,
+                attempts_left=budget - attempts,
                 display=render_display(spec, engine.state),
                 last_command=last_command,
                 last_facts=list(last_facts),
@@ -119,14 +128,15 @@ class RuleCheeseRunner:
             try:
                 event = parse_command(spec, actor_id="player", text=command)
                 outcome = engine.dispatch(event.model_copy(update={"event_id": f"turn-{turn + 1}"}))
+            except TapeExhausted:
+                # The scenario's tape cannot serve this roll: the run is not comparable.
+                raise
             except (CommandError, ValueError) as exc:
                 # A rejected action never reaches the journal; the driver learns why.
                 illegal += 1
                 last_error = str(exc).split("\n")[0]
                 last_facts = []
                 notes.append(f"attempt {attempts} rejected: {command!r}: {last_error}")
-                if isinstance(dice, TapeDice) and "tape" in last_error:
-                    raise ValueError(last_error) from None
                 continue
             turn += 1
             last_facts = list(outcome.entry.result.facts)
@@ -134,19 +144,16 @@ class RuleCheeseRunner:
         verdicts = evaluate_validators(
             scenario.validators, state=engine.state, entries=entries, illegal_attempts=illegal
         )
-        succeeded = all(verdicts[name] for name in scenario.success)
         failed = any(not verdicts[name] for name in scenario.failure)
-        outcome_label = (
-            "failure"
-            if failed or (scenario.success and not succeeded and turn == 0)
-            else "success"
-            if succeeded and not failed
-            else "partial"
-            if not failed
-            else "failure"
-        )
+        if not scenario.success:
+            notes.append("no success criteria declared; outcome is unscored (partial)")
+        succeeded = bool(scenario.success) and all(verdicts[name] for name in scenario.success)
         if failed:
             outcome_label = "failure"
+        elif succeeded:
+            outcome_label = "success"
+        else:
+            outcome_label = "partial"
         return BenchmarkRun(
             scenario_id=scenario.scenario_id,
             scenario_version=scenario.version,

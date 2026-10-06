@@ -8,6 +8,10 @@ from saga_trpg.domain.models import RollRecord
 from saga_trpg.runtime.rng import parse_dice_expression
 
 
+class TapeExhausted(ValueError):
+    """The tape has no fitting entry for a requested roll; the run cannot continue fairly."""
+
+
 class TapeDice:
     """Rolls come from a tape keyed by dice expression, consumed in order.
 
@@ -24,10 +28,10 @@ class TapeDice:
         count, sides, modifier = parse_dice_expression(expression)
         queue = self._tape.get(expression)
         if not queue:
-            raise ValueError(f"tape has no remaining roll for {expression!r} ({roll_key})")
+            raise TapeExhausted(f"tape has no remaining roll for {expression!r} ({roll_key})")
         raw = list(queue.popleft())
         if len(raw) != count or any(not 1 <= value <= sides for value in raw):
-            raise ValueError(f"tape entry {raw} does not fit {expression!r}")
+            raise TapeExhausted(f"tape entry {raw} does not fit {expression!r}")
         self.consumed.append((event_id, roll_key, raw))
         return RollRecord(
             roll_key=roll_key,

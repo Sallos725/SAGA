@@ -156,15 +156,16 @@ def test_scenario_loader_rejects_unknown_rulesets_and_bad_validators(tmp_path):
     good = tmp_path / "s.json"
     good.write_text(json.dumps(SCENARIO))
     assert load_scenario(good).scenario_id == "drop-the-guard"
-    bad = dict(SCENARIO, ruleset_version="9.9.9")
+    bad = tmp_path / "bad.json"
+    bad.write_text(json.dumps(dict(SCENARIO, ruleset_version="9.9.9")))
     with pytest.raises(ValueError, match="9.9.9"):
-        BenchmarkScenario.model_validate(bad)
-    bad = dict(SCENARIO, validators=[{"id": "x", "kind": "telepathy"}])
+        load_scenario(bad)
     with pytest.raises(ValueError):
-        BenchmarkScenario.model_validate(bad)
-    bad = dict(SCENARIO, success=["missing"])
+        BenchmarkScenario.model_validate(
+            dict(SCENARIO, validators=[{"id": "x", "kind": "telepathy"}])
+        )
     with pytest.raises(ValueError, match="missing"):
-        BenchmarkScenario.model_validate(bad)
+        BenchmarkScenario.model_validate(dict(SCENARIO, success=["missing"]))
 
 
 def test_tape_dice_rejects_an_unknown_expression_and_tracks_consumption():
@@ -199,3 +200,87 @@ def test_cli_runs_a_script_and_writes_the_artifact(tmp_path, capsys):
     artifact = json.loads(out.read_text())
     assert artifact["schema_version"] == 2 and artifact["journal"]
     assert main(["run", str(tmp_path / "missing.json"), "--script", str(script)]) == 1
+
+
+@pytest.mark.asyncio
+async def test_attempt_budget_bounds_endless_illegal_commands_and_is_observable():
+    class Stubborn:
+        def __init__(self):
+            self.seen = []
+
+        async def decide(self, observation):
+            self.seen.append(observation.attempts_left)
+            return "dance"
+
+    driver = Stubborn()
+    run = await RuleCheeseRunner().run(scenario(max_turns=3), driver=driver, model="x")
+    assert run.metrics["attempts"] == 6 and run.metrics["turns"] == 0
+    assert driver.seen[0] == 6 and driver.seen[-1] == 1
+    # No failure validator fired and no success validator passed: unscored, not success.
+    assert run.outcome == "partial" and run.validators["no_illegal"] is False
+    custom = await RuleCheeseRunner().run(
+        scenario(max_turns=3, max_attempts=4), driver=Stubborn(), model="x"
+    )
+    assert custom.metrics["attempts"] == 4
+
+
+@pytest.mark.asyncio
+async def test_a_command_literally_named_tape_is_an_ordinary_rejection():
+    tape = {"mode": "tape", "rolls": {"1d20": [[15]], "1d8+3": [[4]]}}
+    run = await RuleCheeseRunner().run(
+        scenario(stochastic=tape), driver=ScriptedDriver(["tape", "attack guard"]), model="x"
+    )
+    assert run.metrics["illegal_attempts"] == 1 and run.metrics["turns"] == 1
+
+
+@pytest.mark.asyncio
+async def test_no_success_criteria_is_unscored_not_success():
+    run = await RuleCheeseRunner().run(
+        scenario(success=[]), driver=ScriptedDriver(["attack guard"]), model="x"
+    )
+    assert run.outcome == "partial"
+    assert any("no success criteria" in note for note in run.notes)
+
+
+def test_state_validator_distinguishes_missing_paths_from_stored_null():
+    from saga_trpg.benchmark.models import StateValidator
+    from saga_trpg.benchmark.validators import evaluate_validators
+    from saga_trpg.domain.models import WorldState
+
+    state = WorldState(world_id="w", flags={"present": None})
+    verdicts = evaluate_validators(
+        [
+            StateValidator(id="present", kind="state", path="flags.present", equals=None),
+            StateValidator(id="missing", kind="state", path="flags.typo", equals=None),
+        ],
+        state=state,
+        entries=[],
+        illegal_attempts=0,
+    )
+    assert verdicts == {"present": True, "missing": False}
+
+
+def test_scenarios_validate_against_the_runner_registry_including_imports(tmp_path):
+    import json as _json
+
+    from saga_trpg.benchmark.models import validate_scenario
+    from saga_trpg.modules.catalog import RulesetRegistry, rulebook_definition
+    from saga_trpg.rulebooks.loader import parse_rulebook, rulebook_path
+
+    data = _json.loads(rulebook_path("fate-condensed").read_text())
+    data["id"], data["version"] = "house-fate", "1.0.0"
+    registry = RulesetRegistry()
+    registry.add(rulebook_definition(parse_rulebook(data)))
+    spec = BenchmarkScenario.model_validate(
+        dict(
+            SCENARIO,
+            ruleset_id="house-fate",
+            ruleset_version="1.0.0",
+            validators=[],
+            success=[],
+            failure=[],
+        )
+    )
+    with pytest.raises(ValueError, match="house-fate"):
+        validate_scenario(spec, RulesetRegistry())
+    validate_scenario(spec, registry)

@@ -38,11 +38,14 @@ def _matches(match: EventMatch, entry: JournalEntry) -> bool:
     return all(event.payload.get(key) == value for key, value in match.payload.items())
 
 
+_MISSING = object()
+
+
 def _path(state: WorldState, path: str) -> Any:
     current: Any = state.model_dump(mode="json")
     for part in path.split("."):
         if not isinstance(current, dict) or part not in current:
-            return None
+            return _MISSING
         current = current[part]
     return current
 
@@ -71,7 +74,8 @@ def evaluate_validators(
             except TypeError:
                 verdicts[item.id] = False
         elif isinstance(item, StateValidator):
-            verdicts[item.id] = _path(state, item.path) == item.equals
+            found = _path(state, item.path)
+            verdicts[item.id] = found is not _MISSING and found == item.equals
         elif isinstance(item, EventCountValidator):
             count = sum(1 for entry in entries if _matches(item.match, entry))
             verdicts[item.id] = count >= item.min and (item.max is None or count <= item.max)

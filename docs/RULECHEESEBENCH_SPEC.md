@@ -82,6 +82,10 @@ C5 should normally trigger scenario review rather than reward the model.
   policy, initial world, full journal, event ids, final state and hash, metrics (turns,
   attempts, illegal attempts, valid-action rate, rolls), validator verdicts, outcome
   (`success` / `partial` / `failure`) and notes. `python -m saga_trpg.benchmark run` writes it.
+- Outcome: `failure` when any `failure` validator fails; `success` when `success` is non-empty
+  and all of it passes; otherwise `partial` (a scenario without success criteria is unscored).
+- Budgets: `max_turns` bounds committed turns and `max_attempts` (default 2 × `max_turns`)
+  bounds decisions including rejected ones; both remaining budgets are in the observation.
 - Hidden validator state and the success/failure lists are never part of the observation.
 
 Not implemented: model drivers, judges, memory ablations, the report generator, cheese

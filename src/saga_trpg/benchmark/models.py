@@ -101,18 +101,18 @@ class BenchmarkScenario(Closed):
         default_factory=lambda: SeedPolicy(mode="seed", seed="bench")
     )
     max_turns: int = Field(default=30, ge=1, le=1000)
+    max_attempts: int | None = Field(default=None, ge=1, le=10_000)
     validators: list[Validator] = Field(default_factory=list)
     success: list[str] = Field(default_factory=list)
     failure: list[str] = Field(default_factory=list)
 
+    @property
+    def attempt_budget(self) -> int:
+        """Decisions a driver may make, legal or not; default twice the turn budget."""
+        return self.max_attempts or self.max_turns * 2
+
     @model_validator(mode="after")
     def _consistent(self) -> BenchmarkScenario:
-        from saga_trpg.modules.catalog import RulesetRegistry
-
-        try:
-            RulesetRegistry().get(self.ruleset_id, self.ruleset_version)
-        except ValueError as exc:
-            raise ValueError(str(exc)) from None
         ids = [item.id for item in self.validators]
         if len(ids) != len(set(ids)):
             raise ValueError("validator ids must be unique")
@@ -123,8 +123,22 @@ class BenchmarkScenario(Closed):
         return self
 
 
-def load_scenario(path: Path | str) -> BenchmarkScenario:
-    return BenchmarkScenario.model_validate(json.loads(Path(path).read_text(encoding="utf-8")))
+def validate_scenario(scenario: BenchmarkScenario, registry: Any) -> BenchmarkScenario:
+    """Check the pinned ruleset against the registry the run will use (imports included)."""
+    try:
+        registry.get(scenario.ruleset_id, scenario.ruleset_version)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from None
+    return scenario
+
+
+def load_scenario(path: Path | str, registry: Any | None = None) -> BenchmarkScenario:
+    scenario = BenchmarkScenario.model_validate(json.loads(Path(path).read_text(encoding="utf-8")))
+    if registry is None:
+        from saga_trpg.modules.catalog import RulesetRegistry
+
+        registry = RulesetRegistry()
+    return validate_scenario(scenario, registry)
 
 
 class BenchmarkRun(BaseModel):
