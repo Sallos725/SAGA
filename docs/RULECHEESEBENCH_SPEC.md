@@ -93,8 +93,13 @@ C5 should normally trigger scenario review rather than reward the model.
   bounds decisions including rejected ones; both remaining budgets are in the observation.
 - Hidden validator state and the success/failure lists are never part of the observation.
 
-Not implemented: judges, memory ablations, the report generator, cheese taxonomy
-labelling, drivers for other providers. No live Vertex benchmark run has been made yet.
+- Report (`benchmark/report.py`, `python -m saga_trpg.benchmark report`): refuses artifacts
+  that differ in scenario, ruleset, runtime or dice policy; renders one Markdown table
+  (outcome, turns, attempts, illegal attempts, valid-action rate, rolls, verdicts, driver,
+  final state hash).
+
+Not implemented: judges, memory ablations, cheese taxonomy labelling, drivers for other
+providers. No live Vertex benchmark run has been made yet.
 
 ## Long-horizon NMOS experiments
 

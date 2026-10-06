@@ -423,3 +423,67 @@ async def test_vertex_driver_failures_become_a_sanitized_value_error(monkeypatch
     with pytest.raises(ValueError, match="Vertex") as info:
         await RuleCheeseRunner().run(scenario(max_turns=1), driver=driver, model="g")
     assert "SECRETKEY" not in str(info.value) and "tok" not in str(info.value)
+
+
+# --- reports ---------------------------------------------------------------------------------
+
+
+async def _two_runs(tmp_path):
+    runner = RuleCheeseRunner()
+    good = await runner.run(
+        scenario(),
+        driver=ScriptedDriver(
+            ["inflict guard prone", "attack guard", "attack guard", "attack guard"]
+        ),
+        model="careful",
+    )
+    sloppy = await runner.run(
+        scenario(),
+        driver=ScriptedDriver(["dance", "heal player 1", "attack guard"]),
+        model="sloppy",
+    )
+    paths = []
+    for run in (good, sloppy):
+        path = tmp_path / f"{run.model}.json"
+        path.write_text(run.model_dump_json())
+        paths.append(path)
+    return good, sloppy, paths
+
+
+@pytest.mark.asyncio
+async def test_report_compares_runs_of_one_scenario_and_refuses_incomparable_ones(tmp_path):
+    from saga_trpg.benchmark.report import IncomparableRuns, compare_runs, render_report
+
+    good, sloppy, paths = await _two_runs(tmp_path)
+    rows = compare_runs([good, sloppy])
+    assert [row.model for row in rows] == ["careful", "sloppy"]
+    assert rows[0].outcome == "success" and rows[1].outcome == "failure"
+    assert rows[1].illegal_attempts == 1
+    text = render_report([good, sloppy])
+    assert "| careful |" in text and "| sloppy |" in text
+    assert "guard_down" in text and "drop-the-guard" in text
+    assert "bench-seed-1" in text and good.runtime_version in text
+    other = good.model_copy(update={"ruleset_version": "0.4.0"})
+    with pytest.raises(IncomparableRuns, match="ruleset_version"):
+        compare_runs([good, other])
+    other = good.model_copy(update={"stochastic": {"mode": "seed", "seed": "else"}})
+    with pytest.raises(IncomparableRuns, match="stochastic"):
+        compare_runs([good, other])
+
+
+@pytest.mark.asyncio
+async def test_report_cli_prints_a_table_and_writes_markdown(tmp_path, capsys):
+    from saga_trpg.benchmark.__main__ import main
+
+    _, _, paths = await _two_runs(tmp_path)
+    out = tmp_path / "report.md"
+    assert main(["report", *map(str, paths), "--out", str(out)]) == 0
+    printed = capsys.readouterr().out
+    assert "careful" in printed and "sloppy" in printed
+    assert out.read_text().startswith("# RuleCheeseBench")
+    bad = tmp_path / "bad.json"
+    bad.write_text(
+        paths[0].read_text().replace('"ruleset_version":"0.5.0"', '"ruleset_version":"0.4.0"')
+    )
+    assert main(["report", str(paths[0]), str(bad)]) == 1
+    assert "ruleset_version" in capsys.readouterr().err

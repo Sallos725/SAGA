@@ -9,8 +9,9 @@ Agents should place phase handoff notes here, for example:
 
 Each note should capture completed work, tests, architectural deviations, unresolved risks, and the next recommended task.
 
-Current implementation checkpoint: [Rulebooks v1, data-driven rules](rulebooks-v1.md); the
-NMOS binding is recorded in [NMOS_SIDECAR.md](../NMOS_SIDECAR.md).
+Current implementation checkpoints: [Rulebooks v1, data-driven rules](rulebooks-v1.md) and
+[RuleCheeseBench v2](rulecheesebench-v2.md); the NMOS binding is recorded in
+[NMOS_SIDECAR.md](../NMOS_SIDECAR.md).
 Current live checkpoint: [SRD 0.2.0 state actions on the 6131 test host](srd-state-actions.md).
 Prior live checkpoint: [Natural attack and regeneration on 6011](risu-natural-intent-live.md).
 Implementation and offline evidence: [Risu natural-language intent](risu-natural-intent.md).

@@ -5,6 +5,8 @@
     python -m saga_trpg.benchmark run benchmarks/scenarios/demo_cheese.json \
         --driver vertex --vertex-json path/to/service-account.json --out runs/gemini.json
 
+    python -m saga_trpg.benchmark report runs/*.json --out runs/report.md
+
 The Vertex driver makes one billed model call per decision; nothing is cached.
 """
 
@@ -18,6 +20,7 @@ from pathlib import Path
 from pydantic import SecretStr
 
 from saga_trpg.benchmark.models import load_scenario
+from saga_trpg.benchmark.report import IncomparableRuns, load_runs, render_report
 from saga_trpg.benchmark.rulecheese import RuleCheeseRunner, ScriptedDriver
 
 
@@ -31,7 +34,21 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--vertex-json", help="vertex driver: service-account JSON file")
     run.add_argument("--model", default=None, help="label in the artifact")
     run.add_argument("--out", help="write the run artifact JSON here")
+    report = commands.add_parser("report", help="compare run artifacts of one scenario")
+    report.add_argument("artifacts", nargs="+")
+    report.add_argument("--out", help="write the Markdown report here")
     args = parser.parse_args(argv)
+    if args.command == "report":
+        try:
+            text = render_report(load_runs(args.artifacts))
+        except (OSError, ValueError, IncomparableRuns) as exc:
+            print(f"cannot compare: {exc}", file=sys.stderr)
+            return 1
+        print(text, end="")
+        if args.out:
+            Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.out).write_text(text, encoding="utf-8")
+        return 0
     try:
         scenario = load_scenario(args.scenario)
         if args.driver == "scripted":

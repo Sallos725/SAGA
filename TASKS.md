@@ -55,7 +55,7 @@
 - [ ] first live Vertex benchmark run and its report
 - [x] fixed stochastic conditions (seed / tape)
 - [x] run artifacts
-- [ ] report generator
+- [x] report generator (comparability-checked Markdown table)
 - [ ] NMOS ablation suite
 
 ## P4 — Authoring

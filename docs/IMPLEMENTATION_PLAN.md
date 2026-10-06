@@ -135,7 +135,7 @@ Only after those are stable:
 - [x] action legality validator (rejected commands counted, never journaled)
 - [x] model driver (prompt template v1; Vertex/Gemini via the narrator path)
 - [x] run artifact format (`BenchmarkRun` v2 with journal, final state hash, metrics)
-- [ ] replay viewer/report
+- [x] report (comparability check + Markdown table); no viewer
 - [ ] long-horizon memory ablations
 
 Recommended ablations:
