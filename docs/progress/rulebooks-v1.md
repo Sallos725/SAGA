@@ -60,6 +60,18 @@ writing. See [ADR 0007](../adr/0007-rulebooks-as-data.md) and the
 - Plugin 0.6.0 finds the `saga:rulebook:` entry among enabled lorebooks, verifies its sha256
   and forwards it. Starter guide and integration contract updated.
 
+## Follow-up: `.risum` and `.charx` writers (same day)
+
+- `rulebooks/risum.py`: the host's legacy binary module layout and `RPackMap` (validated
+  512-byte inverse pair); `extract_rpack_map` reads the table from the host's shipped bundle
+  on the user's machine. The table is not bundled and produced files are not committed,
+  because a `.risum` of known JSON reveals the table.
+- `rulebooks/charx.py`: CCv3 `card.json` lifted from the v2 starter card, a generated PNG
+  icon at `assets/icon/image/main.png`, optional `module.risum`. A card with the rulebook
+  module inside carries the rulebook as its own lorebook.
+- CLI: `rpack-map`, `risum`, `charx`. Verified with the 6131 host's real table: `.risum`
+  files decode back to the module with the matching rulebook entry; host import pending.
+
 ## Verification
 
 - `pytest` 388 passed, `ruff` clean, `node --test` 23 passed, pack export check clean.
@@ -88,8 +100,8 @@ writing. See [ADR 0007](../adr/0007-rulebooks-as-data.md) and the
 
 ## Unresolved
 
-- Live verification of a Fate module on the 6131 host is pending; `.risum`/`.charx` export
-  needs the host's RPack table, which is not vendored (license), so it must be supplied.
+- Live verification on the 6131 host of a Fate module (JSON or `.risum`) and of a `.charx`
+  import is pending.
 - Spending free invokes, expiring boosts, opposed rolls and resource pools remain outside the
   schema; they would need either new builtins or the scripted layer.
 - Item effects, durations, multi-step procedures and opposed rolls are out of schema v1.

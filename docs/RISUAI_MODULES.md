@@ -77,3 +77,25 @@ sha256 in the comment lets the plugin skip resending a rulebook the backend alre
 lets the backend refuse a changed file that reuses an existing `<id>@<version>`.
 
 Nothing in the module executes: no `cjs`, no triggers, no regex scripts. Rules stay data.
+
+## Binary shapes: `.risum` and `.charx`
+
+`saga_trpg.rulebooks.risum` writes the legacy `.risum` layout above and `saga_trpg.rulebooks.charx`
+writes a `.charx` zip (`card.json` as `chara_card_v3`, `assets/icon/image/main.png`, optional
+`module.risum`). A card whose `module.risum` carries a rulebook module gets that rulebook as the
+character's own lorebook on import, so one `.charx` is a complete, pinned card.
+
+Both need the host's RPack table. It is the host's, so SAGA does not bundle it; extract it once
+from the host's shipped bundle on your machine (it is inlined there as a 512-byte data URL):
+
+```bash
+docker cp <pocketrisu container>:/app/dist/assets ./host-assets
+python -m saga_trpg.rulebooks rpack-map ./host-assets --out rpack_map.bin
+python -m saga_trpg.rulebooks risum packs/rulesets/fate-condensed/rulebook.json --rpack-map rpack_map.bin
+python -m saga_trpg.rulebooks charx packs/risu-starter/saga-srd-demo.card.json \
+  --rulebook packs/rulesets/srd-5.2.1/rulebook.json --rpack-map rpack_map.bin
+```
+
+Do not commit `rpack_map.bin` or the produced `.risum`/`.charx` files: a `.risum` encodes known
+JSON, so the table can be read back from it. The plain JSON module (`risu-module.json`) needs
+no table and is the shape kept in the repository.
