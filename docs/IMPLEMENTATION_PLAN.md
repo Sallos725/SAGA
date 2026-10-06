@@ -129,12 +129,12 @@ Only after those are stable:
 
 ## Phase 6 — RuleCheeseBench
 
-- [ ] scenario schema
-- [ ] hidden validators
-- [ ] fixed-seed/pre-recorded roll mode
-- [ ] action legality validator
-- [ ] model driver
-- [ ] run artifact format
+- [x] scenario schema (v2, pinned ruleset, public setup text)
+- [x] hidden validators (actor, state, event_count, event_order, illegal_attempts, record)
+- [x] fixed-seed/pre-recorded roll mode (`seed` / `tape`)
+- [x] action legality validator (rejected commands counted, never journaled)
+- [ ] model driver (scripted driver only)
+- [x] run artifact format (`BenchmarkRun` v2 with journal, final state hash, metrics)
 - [ ] replay viewer/report
 - [ ] long-horizon memory ablations
 

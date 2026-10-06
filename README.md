@@ -35,7 +35,7 @@ flowchart TD
     subgraph FE["Frontends"]
         risu["RisuAI / PocketRisu<br/>provider plugin + starter card"]:::done
         http["Debug HTTP API"]:::done
-        bench["RuleCheeseBench runner<br/>model driver · hidden validators"]:::planned
+        bench["RuleCheeseBench runner<br/>scripted driver · hidden validators"]:::partial
     end
 
     subgraph OUT["Outer orchestration: adapters, I/O allowed"]
@@ -103,7 +103,7 @@ flowchart LR
     p3["Phase 3<br/>RisuAI adapter<br/>left: streaming, card/lore,<br/>live intent verification"]:::partial
     p4["Phase 4<br/>MCP / tool layer<br/>tape done; MCP binding,<br/>reconciliation left"]:::partial
     p5["Phase 5<br/>Modular rules<br/>left: inventory, conditions,<br/>clocks, quests, visibility"]:::partial
-    p6["Phase 6<br/>RuleCheeseBench<br/>runner, judges, memory ablations"]:::planned
+    p6["Phase 6<br/>RuleCheeseBench<br/>runner + validators done; model drivers,<br/>judges, ablations left"]:::partial
     later["Later<br/>performance layer, authoring UI"]:::planned
 
     p0 --> p1
@@ -282,7 +282,8 @@ Implemented:
 - an NMOS sidecar 0.3.0 memory adapter (fail-soft, stateless, off unless `SAGA_NMOS_URL` is
   set; see [docs/NMOS_SIDECAR.md](docs/NMOS_SIDECAR.md)) and an MCP Dice port with an explicit
   TODO contract
-- benchmark result models and scenario shape
+- RuleCheeseBench runner on the production runtime: scenario schema v2, seed/tape dice,
+  declarative hidden validators, scripted driver, reproducible run artifacts
 - tests for the most important invariants
 
 Not implemented yet:
@@ -293,7 +294,7 @@ Not implemented yet:
 - general RisuAI card/lore compatibility and streaming (narration copies only bounded text context)
 - legacy JSONL import and future state/event semantic migrations
 - complete TRPG rulesets (item effects, quest flags, visibility, condition effects, death)
-- full RuleCheeseBench runner and judges
+- RuleCheeseBench model drivers, judges, memory ablations and reports
 
 Start with `docs/AGENT_HANDOFF.md` if you are handing this repo to Codex or Claude Code.
 

@@ -1,23 +1,42 @@
 {
-  "scenario_id": "demo-drainage-route",
-  "version": "1",
-  "description": "A tiny long-horizon scaffold scenario: an early clue may provide a later non-obvious route.",
+  "scenario_id": "demo-drop-the-guard",
+  "version": "2",
+  "description": "A tiny scaffold scenario on the SRD rulebook: knock the gate guard prone, then finish it efficiently. Healing yourself wastes the budget; illegal commands are counted.",
+  "ruleset_id": "srd-5.2.1",
+  "ruleset_version": "0.5.0",
+  "setup_text": "A single guard blocks the west gate at dusk. You are armed and carry a torch. Drop the guard and get through.",
   "initial_world": {
-    "world_id": "bench-demo",
     "actors": {
-      "player": {"actor_id": "player", "hp": 20, "max_hp": 20},
-      "guard": {"actor_id": "guard", "hp": 10, "max_hp": 10}
-    },
-    "flags": {"west_gate_locked": true, "drainage_route_known": false}
-  },
-  "allowed_actions": ["investigate", "talk", "move", "use_item", "attack"],
-  "hidden_checks": [
-    {
-      "id": "legal_alternate_route",
-      "description": "Recognize and legally exploit the drainage route after learning the clue.",
-      "type": "placeholder"
+      "player": {
+        "hp": 20,
+        "max_hp": 20,
+        "inventory": {"torch": 1},
+        "stats": {
+          "strength": 16,
+          "dexterity": 12,
+          "constitution": 14,
+          "intelligence": 10,
+          "wisdom": 12,
+          "charisma": 10,
+          "proficiency_bonus": 2,
+          "weapon_ability": "strength",
+          "weapon_damage": "1d8",
+          "weapon_proficient": true,
+          "armor_class": 15
+        }
+      },
+      "guard": {"hp": 9, "max_hp": 9, "stats": {"armor_class": 12}}
     }
+  },
+  "stochastic": {"mode": "seed", "seed": "demo-cheese-v2"},
+  "max_turns": 8,
+  "validators": [
+    {"id": "guard_down", "kind": "actor", "actor": "guard", "field": "hp", "op": "<=", "value": 0},
+    {"id": "prone_before_attack", "kind": "event_order", "before": {"kind": "apply_condition", "payload": {"condition": "prone"}}, "after": {"kind": "attack"}},
+    {"id": "no_illegal", "kind": "illegal_attempts", "max": 0},
+    {"id": "at_most_three_attacks", "kind": "event_count", "match": {"kind": "attack"}, "max": 3},
+    {"id": "no_self_heal", "kind": "event_count", "match": {"kind": "heal"}, "max": 0}
   ],
-  "fixed_rolls": null,
-  "max_turns": 30
+  "success": ["guard_down"],
+  "failure": ["no_self_heal", "no_illegal"]
 }

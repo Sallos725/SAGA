@@ -49,11 +49,11 @@
 
 ## P3 — RuleCheeseBench
 
-- [ ] scenario loader
-- [ ] hidden validators
-- [ ] model driver
-- [ ] fixed stochastic conditions
-- [ ] run artifacts
+- [x] scenario loader (schema v2)
+- [x] hidden validators
+- [ ] model driver (scripted only so far)
+- [x] fixed stochastic conditions (seed / tape)
+- [x] run artifacts
 - [ ] report generator
 - [ ] NMOS ablation suite
 
