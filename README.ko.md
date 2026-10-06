@@ -41,7 +41,7 @@ flowchart TD
         bridge["RisuBridge<br/>턴 → 이벤트 id · 재생성 감지"]:::done
         intent["IntentPort<br/>닫힌 명령 · Vertex 자연어"]:::partial
         narr["NarratorPort<br/>폴백 · Vertex"]:::done
-        mem["MemoryPort<br/>지금은 null, 이후 NMOS"]:::planned
+        mem["MemoryPort<br/>NMOS 어댑터 · 라이브 미검증"]:::partial
         perf["퍼포먼스 프로젝션<br/>기반만 있음, 미연결"]:::partial
     end
 
@@ -97,7 +97,7 @@ flowchart TD
 flowchart LR
     p0["Phase 0<br/>불변 조건 고정"]:::done
     p1["Phase 1<br/>영속 런타임<br/>남은 것: 트레이스 id"]:::done
-    p2["Phase 2<br/>NMOS 어댑터<br/>fail-soft 의미 기억 회상"]:::planned
+    p2["Phase 2<br/>NMOS 어댑터<br/>바인딩 완료; 라이브 왕복 남음"]:::partial
     p3["Phase 3<br/>RisuAI 어댑터<br/>남은 것: 스트리밍, 카드/로어,<br/>자연어 의도 라이브 검증"]:::partial
     p4["Phase 4<br/>MCP / 도구 계층<br/>테이프 완료; MCP 바인딩,<br/>재조정 남음"]:::partial
     p5["Phase 5<br/>모듈형 규칙<br/>남은 것: 인벤토리, 상태 이상,<br/>시계, 퀘스트, 가시성"]:::partial
@@ -278,13 +278,14 @@ docs/
 - 메모리 없이 SRD 명령을 실행하고 확정 상태를 표시하는 PocketRisu v3 프로바이더와 시작 카드
 - 기존 도구 테이프에 저장하는 선택적 Vertex 자연어 공격·능력 판정·내성 해석
 - 같은 서비스 계정 JSON으로 사용하는 Vertex 서술, 확정 후 호출과 제한 시간·기본 서술 대체
-- 미구현 부분의 계약을 TODO로 명시한 NMOS 및 MCP Dice 포트·어댑터
+- NMOS 사이드카 0.3.0 메모리 어댑터(fail-soft, 무상태, `SAGA_NMOS_URL` 미설정 시 비활성;
+  [docs/NMOS_SIDECAR.md](docs/NMOS_SIDECAR.md))와 TODO 계약을 명시한 MCP Dice 포트
 - 벤치마크 결과 모델과 시나리오 구조
 - 핵심 불변 조건을 검증하는 테스트
 
 아직 구현되지 않은 기능:
 
-- 실제 서비스용 NMOS API 연동
+- 실제 사이드카와의 라이브 왕복, 액터별 회상 범위
 - 실제 서비스용 MCP 클라이언트 연동
 - 자연어 능력 판정·내성 및 일반적인 표현의 실제 모델 검증과 지원 범위 확장
 - 일반적인 RisuAI 카드·로어 호환과 스트리밍(모델 서술에는 제한된 텍스트 문맥만 전달)

@@ -32,15 +32,16 @@ First inspect the current NMOS repository/API. Do not guess old endpoints.
 
 Implement:
 
-- [ ] health/capability detection
-- [ ] `remember(MemoryWrite)`
-- [ ] `retrieve(...)`
-- [ ] world scoping
-- [ ] actor/epistemic scoping
-- [ ] source event id metadata
-- [ ] timeout + fail-soft behavior
-- [ ] duplicate-write/idempotency behavior
-- [ ] tests with a fake NMOS server/adapter
+- [x] health/capability detection (`GET /v1/health`)
+- [x] `remember(MemoryWrite)` (bodies + then_reconcile with the branch's manifest)
+- [x] `retrieve(...)` (packet text as one hit)
+- [x] world scoping (one conversation per world branch)
+- [ ] actor/epistemic scoping (not offered by sidecar 0.3.0; ignored and documented)
+- [x] source event id metadata (`host_logical_id` = event id)
+- [x] timeout + fail-soft behavior
+- [x] duplicate-write/idempotency behavior (revision hash)
+- [x] tests with a fake NMOS server/adapter
+- [ ] live round trip against a real sidecar (operator decision; see `docs/NMOS_SIDECAR.md`)
 
 Do not:
 

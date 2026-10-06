@@ -13,9 +13,10 @@
 
 ## P1 — NMOS + RisuAI
 
-- [ ] current NMOS API audit
-- [ ] NMOS adapter
-- [ ] actor visibility model
+- [x] current NMOS API audit (`docs/NMOS_SIDECAR.md`, sidecar 0.3.0)
+- [x] NMOS adapter (fail-soft, stateless; bridge writes facts after commit and recalls before narration)
+- [ ] actor visibility model (sidecar has no actor-scoped retrieval yet)
+- [ ] live NMOS round trip on a sidecar the operator designates
 - [x] RisuAI request audit (pinned PocketRisu 1.13.0 provider subset)
 - [x] RisuAI world/session mapping
 - [x] rerender detection
