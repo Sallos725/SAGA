@@ -498,6 +498,33 @@ class SQLiteWorldRepository:
                 connection, world_id, branch_id, through_seq=through_seq, use_snapshots=False
             )
 
+    def discard_empty_branch(self, world_id: str, branch_id: str) -> None:
+        """Remove a fork that never committed anything of its own.
+
+        The copied prefix, its snapshot and the branch row go together in one write
+        transaction. A branch with its own entries or a pending tool claim is never removed;
+        the name becomes free for a fresh fork from the same point."""
+        if branch_id == "main":
+            raise RepositoryConflict("main is never discarded")
+        with self._transaction(write=True) as connection:
+            self._world(connection, world_id)
+            branch = self._branch(connection, world_id, branch_id)
+            committed = connection.execute(
+                "SELECT 1 FROM entries WHERE world_id = ? AND branch_id = ? AND seq > ?",
+                (world_id, branch_id, branch.fork_seq),
+            ).fetchone()
+            pending = connection.execute(
+                "SELECT 1 FROM tool_events WHERE world_id = ? AND branch_id = ?",
+                (world_id, branch_id),
+            ).fetchone()
+            if committed or pending:
+                raise RepositoryConflict("branch holds committed or pending actions")
+            for table in ("entries", "snapshots", "branches"):
+                connection.execute(
+                    f"DELETE FROM {table} WHERE world_id = ? AND branch_id = ?",
+                    (world_id, branch_id),
+                )
+
     def branches(self, world_id: str) -> list[BranchInfo]:
         with self._transaction() as connection:
             self._world(connection, world_id)

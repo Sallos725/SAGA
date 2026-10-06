@@ -6,7 +6,11 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from saga_trpg.adapters.storage.sqlite import SQLiteWorldRepository
+from saga_trpg.adapters.storage.sqlite import (
+    RepositoryConflict,
+    RepositoryNotFound,
+    SQLiteWorldRepository,
+)
 from saga_trpg.domain.events import GameEvent
 from saga_trpg.domain.models import ActorState, WorldState
 from saga_trpg.runtime.rng import DeterministicDice
@@ -195,7 +199,11 @@ def test_process_exit_mid_transaction_recovers_committed_prefix(repository):
     before = repository.get_state("test")
     code = """
 import os, sqlite3, sys
-from saga_trpg.adapters.storage.sqlite import SQLiteWorldRepository
+from saga_trpg.adapters.storage.sqlite import (
+    RepositoryConflict,
+    RepositoryNotFound,
+    SQLiteWorldRepository,
+)
 from saga_trpg.domain.events import GameEvent
 from saga_trpg.modules.generic_fantasy.rules import GenericFantasyRules
 class CrashRules(GenericFantasyRules):
@@ -237,7 +245,11 @@ repo.dispatch('test', GameEvent(event_id='uncommitted', kind='time_advance', act
 def test_exit_after_commit_before_response_retry_reuses_tools(repository):
     code = """
 import os, sys
-from saga_trpg.adapters.storage.sqlite import SQLiteWorldRepository
+from saga_trpg.adapters.storage.sqlite import (
+    RepositoryConflict,
+    RepositoryNotFound,
+    SQLiteWorldRepository,
+)
 from saga_trpg.domain.events import GameEvent
 repo = SQLiteWorldRepository(sys.argv[1])
 repo.dispatch('test', GameEvent(kind='attack', actor_id='player', idempotency_key='lost-response',
@@ -341,7 +353,11 @@ def test_concurrent_processes_do_not_repeat_committed_dice(repository, tmp_path)
     code = """
 import sys
 from pathlib import Path
-from saga_trpg.adapters.storage.sqlite import SQLiteWorldRepository
+from saga_trpg.adapters.storage.sqlite import (
+    RepositoryConflict,
+    RepositoryNotFound,
+    SQLiteWorldRepository,
+)
 from saga_trpg.runtime.rng import DeterministicDice
 from saga_trpg.domain.events import GameEvent
 class LoggedDice(DeterministicDice):
@@ -370,7 +386,11 @@ def test_recovery_in_fresh_process_with_different_hash_seed(repository):
     repository.dispatch("conditions", attack())
     code = """
 import sys
-from saga_trpg.adapters.storage.sqlite import SQLiteWorldRepository
+from saga_trpg.adapters.storage.sqlite import (
+    RepositoryConflict,
+    RepositoryNotFound,
+    SQLiteWorldRepository,
+)
 repo = SQLiteWorldRepository(sys.argv[1])
 assert repo.get_state('conditions') == repo.replay('conditions')
 assert repo.get_state('conditions').seq == 1
@@ -392,3 +412,25 @@ def test_initial_state_read_ignores_moving_heads_and_snapshots(repository):
     assert reread == original
     reread.actors["goblin"].hp = 0
     assert repository.get_initial_state("test") == original
+
+
+def test_discard_empty_branch_removes_only_uncommitted_forks(repository):
+    repository.dispatch("test", attack(event_id="first"))
+    repository.fork("test", branch_id="empty", at_event_id="first")
+    repository.fork("test", branch_id="used", at_event_id="first")
+    repository.dispatch("test", attack(event_id="second"), branch_id="used")
+    with pytest.raises(RepositoryConflict):
+        repository.discard_empty_branch("test", "used")
+    with pytest.raises(RepositoryConflict):
+        repository.discard_empty_branch("test", "main")
+    with pytest.raises(RepositoryNotFound):
+        repository.discard_empty_branch("test", "missing")
+    repository.discard_empty_branch("test", "empty")
+    assert [item.branch_id for item in repository.branches("test")] == ["main", "used"]
+    assert len(repository.entries("test", branch_id="used")) == 2
+    assert repository.get_state("test", branch_id="main") == repository.get_state(
+        "test", branch_id="main"
+    )
+    # The name is free again and a new fork from the same point starts clean.
+    repository.fork("test", branch_id="empty", at_event_id="first")
+    assert len(repository.entries("test", branch_id="empty")) == 1

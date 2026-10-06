@@ -2,7 +2,13 @@
 
 Copy the prompt below into Codex or Claude Code from the repository root.
 
-Current checkpoint (2026-10-04): SAGA foundation hardening is implemented on
+Current checkpoint (2026-10-06): SRD `0.2.0` state actions (damage, heal, conditions, time)
+and their PocketRisu commands are merged. Read [ADR 0006](adr/0006-ruleset-versions-and-state-actions.md)
+and [the state-actions report](progress/srd-state-actions.md) first: ruleset versions are
+pinned per world and registered side by side, new worlds take the latest, nothing happens
+automatically at 0 HP, and the 6011 runtime still runs the older image.
+
+Earlier checkpoint (2026-10-04): SAGA foundation hardening is implemented on
 `codex/saga-foundation-hardening`. Read [the hardening report](progress/saga-foundation-hardening.md),
 [the persistence contract](PERSISTENCE.md), and [ADR 0005](adr/0005-durable-tool-results.md)
 before continuing. Package/import names are `saga-trpg` / `saga_trpg`; storage v1 requires an

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import logging
 import re
 from typing import Annotated, Literal
@@ -313,8 +314,10 @@ class RisuBridge:
             return None
         return entries
 
-    def _branch_for(self, world_id: str, identities: list[str]) -> str:
+    def _branch_for(self, world_id: str, identities: list[str]) -> tuple[str, bool]:
         """Continue the branch whose head is the parent; fork only when history diverges.
+
+        Returns the branch and whether this call created it.
 
         Explicit event ids are branch scoped, so a branch merely containing the parent id is
         not trusted: the branch written to, or forked from, must hold the exact parent prefix.
@@ -336,7 +339,7 @@ class RisuBridge:
         heads.sort(key=lambda item: (item.pending_event_id != event_id, item.branch_id))
         for item in heads:
             if self._matching(world_id, item, prefix) is not None:
-                return item.branch_id
+                return item.branch_id, False
         for item in found:
             if self._matching(world_id, item, prefix) is not None:
                 self.repository.fork(
@@ -347,7 +350,7 @@ class RisuBridge:
                     # A racing identical request may have committed since this request read.
                     unless_committed=event_id,
                 )
-                return event_id
+                return event_id, True
         raise RepositoryConflict("SAGA branch history conflicts with host action identities")
 
     async def complete(
@@ -453,8 +456,9 @@ class RisuBridge:
                 saved = self._read_prefix(world_id, identities)
                 if saved is not None:
                     break
+                forked = False
                 try:
-                    branch_id = self._branch_for(world_id, identities)
+                    branch_id, forked = self._branch_for(world_id, identities)
                     outcome = self.repository.dispatch(
                         world_id,
                         event,
@@ -466,6 +470,14 @@ class RisuBridge:
                     if attempt == 2:
                         raise
                     continue
+                except ValueError:
+                    # The rules rejected the edited action before any commit; do not leave
+                    # the fork made for it behind. A racing identical request that already
+                    # used the branch keeps it, because discard refuses committed branches.
+                    if forked:
+                        with contextlib.suppress(RepositoryConflict, RepositoryNotFound):
+                            self.repository.discard_empty_branch(world_id, branch_id)
+                    raise
                 saved, replayed = (branch_id, outcome.entry), outcome.replayed
                 break
         branch_id, saved = saved

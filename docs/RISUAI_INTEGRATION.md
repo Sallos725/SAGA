@@ -186,6 +186,10 @@ the branch that committed the action: `main` for an unedited chat, or the id of 
 divergent action for an alternate line. The actor is fixed to `player`; the ruleset is
 `srd-5.2.1`, pinned per world at creation (`0.2.0` for new worlds; earlier worlds keep `0.1.0`
 and their exact action set). Adding command verbs never changes existing command identities.
+If the rules reject a divergent edit before any commit, the fork created for it is discarded
+again, so the host can retry with a corrected edit on the same message without leftover
+branches. Set `host_instance_id` explicitly; see the starter guide for the storage hang
+observed on one host when it was empty.
 
 The synchronous closed-command parser normalizes case, whitespace and numeric DC formatting
 before hashing. For the same message id and ancestry, `attack opponent`, `Attack  opponent`

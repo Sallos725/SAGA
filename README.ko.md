@@ -259,6 +259,8 @@ docs/
 - 닫힌 행동 스키마와 버전 관리를 갖춘, 선택 가능한 SRD 5.2.1 및 Fate Condensed 예제 모듈
 - SRD 5.2.1 `0.2.0` 상태 행동: GM이 선언하는 피해/회복, 명시적 상태 이상, 시뮬레이션 시간.
   `0.1.0` 월드는 기존 행동 집합을 그대로 유지
+  ([ADR 0006](docs/adr/0006-ruleset-versions-and-state-actions.md),
+  [진행 보고서](docs/progress/srd-state-actions.md))
 - 그 행동들을 위한 PocketRisu 명령(`damage`, `heal`, `inflict`, `cure`, `wait`).
   새 브리지 월드는 `0.2.0`에 고정되고, 기존 `0.1.0` 월드는 변경 없이 거부
 - 리플레이 가능한 범용 판타지 공격 규칙

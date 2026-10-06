@@ -150,6 +150,12 @@ prompt context, while the selected handler owns actual mechanics. The persistent
 pins selection; neither chat text nor event payloads replace it. These examples implement
 declared subsets, not entire rulebooks. See [the module packs](../packs/rulesets/README.md).
 
+A ruleset may register several versions at once. Each version exposes its own closed action
+set from one rules class, so a world created on an earlier version keeps exactly those actions
+and semantics; new worlds pin the latest. State-only actions (damage, healing, conditions,
+time) are explicit events that roll nothing and never trigger implicit effects such as
+unconsciousness at 0 HP. See [ADR 0006](adr/0006-ruleset-versions-and-state-actions.md).
+
 ## Optional narrative performance
 
 The local `presentation/` foundation projects completed narrative text and optional validated

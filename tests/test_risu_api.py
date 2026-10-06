@@ -736,3 +736,24 @@ def test_malformed_state_commands_never_create_worlds(tmp_path, command):
     world_id, _ = RisuBridge.identities(CompletionRequest.model_validate(request()).saga)
     with pytest.raises(RepositoryNotFound):
         repo.ruleset_for_world(world_id)
+
+
+def test_rejected_divergent_edit_leaves_no_empty_fork_and_a_valid_edit_still_forks(tmp_path):
+    repo, dice, _, client = setup(tmp_path)
+    turns = [("u1", "attack opponent"), ("u2", "check strength 10")]
+    for index in range(2):
+        saved = client.post("/v1/chat/completions", json=request(*turns[: index + 1])).json()
+    world_id = saved["saga"]["world_id"]
+    before = repo.branches(world_id), dice.calls
+    # Editing u2 diverges, but the rule rejects it before any commit.
+    rejected = client.post(
+        "/v1/chat/completions", json=request(turns[0], ("u2", "cure opponent prone"))
+    )
+    assert rejected.status_code == 422, rejected.text
+    assert (repo.branches(world_id), dice.calls) == before
+    accepted = client.post(
+        "/v1/chat/completions", json=request(turns[0], ("u2", "inflict opponent prone"))
+    )
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["saga"]["branch_id"] != "main"
+    assert len(repo.branches(world_id)) == 2
