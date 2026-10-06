@@ -311,7 +311,11 @@ test("narration and failure fallback retain the independent authoritative status
   assert.equal(first.success, true);
   assert.equal(second.success, true);
   assert.notEqual(first.content, second.content);
-  assert.equal(first.content.split("\n\n---\n\n")[1], second.content.split("\n\n---\n\n")[1]);
+  const footerOf = content => { const at = content.indexOf("<div"); assert.ok(at > 0); return content.slice(at); };
+  assert.equal(footerOf(first.content), footerOf(second.content));
+  assert.match(footerOf(first.content), /opponent<\/b> 22\/30/);
+  assert.match(footerOf(first.content), /1d20 → \[12\] = 12/);
+  assert.match(footerOf(first.content), /event-1/);
   assert.deepEqual(f.calls[0].body, f.calls[1].body);
 });
 
