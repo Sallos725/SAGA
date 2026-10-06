@@ -22,7 +22,8 @@ these licensed-source examples.
 - `<module>/events.json`: example validated action proposals.
 
 The exported `srd-5.2.1` pack describes the latest version. A world pins one version at
-creation and never changes it; the PocketRisu bridge still creates `0.1.0` worlds. State
+creation and never changes it; the PocketRisu bridge creates new worlds on the latest version
+and leaves existing `0.1.0` worlds as they are. State
 actions (`damage`, `heal`, `apply_condition`, `remove_condition`, `advance_time`) roll no dice,
 clamp HP to `0..max_hp`, reject applying a condition that is already present or removing one
 that is absent, and count simulated time in seconds with six-second rounds. Nothing happens

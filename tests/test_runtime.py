@@ -53,3 +53,17 @@ def test_replay_uses_recorded_results() -> None:
     )
     rebuilt = replay_recorded_results(initial, engine.journal.entries())
     assert rebuilt == engine.state
+
+
+def test_conditions_serialize_in_sorted_order_regardless_of_insertion() -> None:
+    names = ["prone", "poisoned", "blinded", "stunned", "charmed"]
+    dumps = set()
+    for start in range(len(names)):
+        rotated = names[start:] + names[:start]
+        actor = ActorState(actor_id="a", conditions=set())
+        for name in rotated:
+            actor.conditions.add(name)
+        dumps.add(actor.model_dump_json())
+        assert actor.model_dump(mode="json")["conditions"] == sorted(names)
+    assert len(dumps) == 1
+    assert ActorState.model_validate_json(dumps.pop()).conditions == set(names)

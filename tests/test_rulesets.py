@@ -321,13 +321,17 @@ def test_srd_010_worlds_keep_rejecting_020_actions(kind, payload):
     assert engine.journal.entries() == []
 
 
-def test_srd_020_attack_behaves_exactly_like_010():
+def test_srd_020_attack_mechanics_match_010_and_only_the_trace_names_the_version():
     results = []
     for version in ("0.1.0", "0.2.0"):
         dice = ScriptedDice(("1d20", [20], 0), ("2d8+3", [4, 5], 3))
         engine = engine_for("srd-5.2.1", dice, version)
         results.append(engine.dispatch(event("attack", {"target_id": "opponent"})).entry.result)
-    assert results[0].state == results[1].state
-    assert results[0].rolls == results[1].rolls
-    assert results[0].patches == results[1].patches
-    assert results[0].resolution == results[1].resolution
+    old, new = results
+    assert old.state == new.state
+    assert old.rolls == new.rolls
+    assert old.patches == new.patches
+    assert old.resolution == new.resolution
+    assert old.facts == new.facts
+    assert old.trace[1:] == new.trace[1:]
+    assert (old.trace[0], new.trace[0]) == ("srd-5.2.1@0.1.0.attack", "srd-5.2.1@0.2.0.attack")

@@ -258,6 +258,8 @@ Implemented:
 - selectable, versioned SRD 5.2.1 and Fate Condensed example modules with closed action schemas
 - SRD 5.2.1 `0.2.0` state actions: GM-declared damage/heal, explicit named conditions,
   and simulated time; `0.1.0` worlds keep their exact action set
+- PocketRisu commands for those actions (`damage`, `heal`, `inflict`, `cure`, `wait`);
+  new bridge worlds pin `0.2.0`, existing `0.1.0` worlds reject them without changing
 - replayable generic-fantasy attack rule
 - FastAPI debug endpoints
 - a versioned OpenAI-shaped Risu completion adapter with immutable host-turn mapping
@@ -276,7 +278,6 @@ Not implemented yet:
 - general RisuAI card/lore compatibility and streaming (narration copies only bounded text context)
 - legacy JSONL import and future state/event semantic migrations
 - complete TRPG rulesets (inventory, quest flags, visibility, condition effects, death)
-- PocketRisu commands for the new SRD `0.2.0` actions (the bridge still pins `0.1.0`)
 - full RuleCheeseBench runner and judges
 
 Start with `docs/AGENT_HANDOFF.md` if you are handing this repo to Codex or Claude Code.
