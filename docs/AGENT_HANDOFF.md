@@ -15,7 +15,9 @@ rulebook with each turn, and commands are derived from the world's rulebook
 (`saga_trpg.rulebooks.commands`). The NMOS sidecar 0.3.0 is bound behind `MemoryPort`
 (`docs/NMOS_SIDECAR.md`): the bridge writes committed facts after each commit and recalls
 before narration, fail-soft, off unless `SAGA_NMOS_URL` is set; a live round trip is an
-operator decision. To write
+operator decision. RuleCheeseBench runs on the production runtime with scripted and Vertex
+drivers and a comparability-checked report ([progress](progress/rulecheesebench-v2.md)); no
+live model run yet. To write
 or extend a rulebook with a creator, use the `rulebook-author` skill in `.claude/skills/`.
 
 Earlier checkpoint (2026-10-06): SRD `0.2.0` state actions (damage, heal, conditions, time)
