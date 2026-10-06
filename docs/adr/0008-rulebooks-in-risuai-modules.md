@@ -1,6 +1,6 @@
 # ADR 0008: Rulebooks travel inside RisuAI modules as lorebook entries
 
-Status: accepted (2026-10-06); the plugin side (sending the entry with a turn) is not built yet.
+Status: accepted (2026-10-06); plugin forwarding and rulebook-derived commands followed the same day.
 
 ## Problem
 
@@ -37,9 +37,10 @@ replay after a restart.
   re-sending and lets the backend detect tampering.
 - Storage stays at schema v2: imported rulebooks are files beside the database, covered by
   the same backup instructions. They are not world data and never need migration.
-- Still open: the plugin forwarding the entry with each turn, and a command vocabulary that
-  is not SRD-shaped (today's `attack opponent` commands are hard-coded verbs; a Fate module
-  needs `overcome`/`create_advantage`). Both are the next slice.
+- Plugin 0.6.0 forwards the verified entry as `saga.rulebook`; the bridge pins a new world
+  to it and parses commands with the world's rulebook (`<action> <values…> [name=value…]`),
+  so a Fate module gets `overcome`/`create_advantage` without any bridge change. SRD
+  shorthands remain as aliases and keep their identities.
 - If the host changes its module format, `RISUAI_MODULES.md` and `build_module` change
   together; the rulebook file itself does not.
 

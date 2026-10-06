@@ -15,6 +15,7 @@ from saga_trpg.adapters.storage.sqlite import RepositoryNotFound, SQLiteWorldRep
 from saga_trpg.api.app import create_app
 from saga_trpg.domain.events import GameEvent
 from saga_trpg.modules.catalog import SRD_LATEST
+from saga_trpg.rulebooks.loader import rulebook_path
 from saga_trpg.runtime.hashing import stable_value_hash
 
 
@@ -826,3 +827,81 @@ def test_bridge_worlds_on_040_apply_condition_effects_from_the_rulebook(tmp_path
     d20s = [roll for roll in result["rolls"] if roll["roll_key"].startswith("attack:")]
     assert len(d20s) == 2
     assert any("prone" in line for line in result["trace"])
+
+
+FATE_TEXT = rulebook_path("fate-condensed").read_text(encoding="utf-8")
+
+
+def fate_request(*actions, instance="fate-host", chat="chat-1", rulebook=FATE_TEXT):
+    body = request(*actions, instance=instance, chat=chat)
+    if rulebook is not None:
+        body["saga"]["rulebook"] = {"content": rulebook}
+    return body
+
+
+def test_attached_rulebook_pins_a_new_world_and_its_commands_come_from_it(tmp_path):
+    repo, dice, _, client = setup(tmp_path)
+    response = client.post(
+        "/v1/chat/completions", json=fate_request(("u1", "overcome investigate 2"))
+    )
+    assert response.status_code == 200, response.text
+    saved = response.json()["saga"]
+    assert repo.ruleset_for_world(saved["world_id"]).ruleset_id == "fate-condensed"
+    assert saved["resolution"]["outcome"] in {"failure", "tie", "success", "success_with_style"}
+    assert dice.calls == 1
+    again = client.post("/v1/chat/completions", json=fate_request(("u1", "overcome investigate 2")))
+    assert again.json()["saga"] == {**saved, "replayed": True} and dice.calls == 1
+    second = client.post(
+        "/v1/chat/completions",
+        json=fate_request(
+            ("u1", "overcome investigate 2"), ("u2", 'create_advantage notice 1 "Mapped route"')
+        ),
+    )
+    assert second.status_code == 200, second.text
+    assert second.json()["saga"]["state"]["flags"]["fate_aspects"] or second.json()["saga"][
+        "resolution"
+    ]["outcome"] in {"failure", "tie"}
+    rejected = client.post(
+        "/v1/chat/completions",
+        json=fate_request(("u1", "overcome investigate 2"), ("u2", "attack opponent")),
+    )
+    assert rejected.status_code == 422 and "unknown action" in rejected.json()["detail"]
+    # The world stays pinned even when a later turn arrives without the attachment.
+    bare = client.post(
+        "/v1/chat/completions",
+        json=fate_request(("u1", "overcome investigate 2"), rulebook=None),
+    )
+    assert bare.status_code == 200 and bare.json()["saga"]["replayed"]
+
+
+def test_existing_world_ignores_a_different_attached_rulebook(tmp_path):
+    repo, _, _, client = setup(tmp_path)
+    first = client.post("/v1/chat/completions", json=request()).json()["saga"]
+    assert repo.ruleset_for_world(first["world_id"]).ruleset_id == "srd-5.2.1"
+    body = fate_request(("u1", "attack opponent"), ("u2", "damage opponent 3"), instance="host-1")
+    response = client.post("/v1/chat/completions", json=body)
+    assert response.status_code == 200, response.text
+    assert repo.ruleset_for_world(first["world_id"]).ruleset_id == "srd-5.2.1"
+
+
+def test_invalid_attached_rulebook_is_rejected_before_any_world_exists(tmp_path):
+    repo, dice, _, client = setup(tmp_path)
+    broken = FATE_TEXT.replace('"roll": "4d3-8"', '"roll": "4dX"')
+    response = client.post(
+        "/v1/chat/completions", json=fate_request(("u1", "overcome investigate 2"), rulebook=broken)
+    )
+    assert response.status_code == 422, response.text
+    assert "checks.fate.roll" in response.json()["detail"]
+    assert dice.calls == 0
+    world_id = RisuBridge.world_id_for(
+        CompletionRequest.model_validate(fate_request(("u1", "overcome investigate 2"))).saga
+    )
+    with pytest.raises(RepositoryNotFound):
+        repo.ruleset_for_world(world_id)
+
+
+def test_error_message_lists_the_rulebook_commands(tmp_path):
+    _, _, _, client = setup(tmp_path)
+    response = client.post("/v1/chat/completions", json=fate_request(("u1", "dance")))
+    assert response.status_code == 422
+    assert "overcome <skill> <difficulty>" in response.json()["detail"]

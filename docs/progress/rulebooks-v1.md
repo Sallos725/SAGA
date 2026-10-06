@@ -49,6 +49,17 @@ writing. See [ADR 0007](../adr/0007-rulebooks-as-data.md) and the
   files are registered on every start; a world pinned to an imported rulebook replays after
   a restart (tested). See [ADR 0008](../adr/0008-rulebooks-in-risuai-modules.md).
 
+## Follow-up: rulebook-derived commands and plugin forwarding (same day)
+
+- `saga_trpg.rulebooks.commands`: `<action> <positional…> [name=value…] [advantage|disadvantage]`
+  with SRD aliases; pure and canonical, so SRD command identities are unchanged (tested
+  against the old shapes). `command_help` lists a rulebook's commands for error messages.
+- Bridge: the turn may carry `rulebook: {content}`; a new world is pinned to it (validated and
+  registered first, 422 before any world write on failure), an existing world ignores it.
+  Commands are parsed with the world's rulebook; natural language stays SRD-only.
+- Plugin 0.6.0 finds the `saga:rulebook:` entry among enabled lorebooks, verifies its sha256
+  and forwards it. Starter guide and integration contract updated.
+
 ## Verification
 
 - `pytest` 388 passed, `ruff` clean, `node --test` 23 passed, pack export check clean.
@@ -77,7 +88,8 @@ writing. See [ADR 0007](../adr/0007-rulebooks-as-data.md) and the
 
 ## Unresolved
 
-- The plugin does not yet forward a module's rulebook entry; the bridge still pins SRD latest.
+- Live verification of a Fate module on the 6131 host is pending; `.risum`/`.charx` export
+  needs the host's RPack table, which is not vendored (license), so it must be supplied.
 - Spending free invokes, expiring boosts, opposed rolls and resource pools remain outside the
   schema; they would need either new builtins or the scripted layer.
 - Item effects, durations, multi-step procedures and opposed rolls are out of schema v1.
@@ -85,7 +97,6 @@ writing. See [ADR 0007](../adr/0007-rulebooks-as-data.md) and the
 
 ## Next recommended task
 
-Plugin side of the module path: find the rulebook entry among enabled lorebooks, send it
-(or its sha256) with the turn, and let the bridge pin a new world to it. That needs a command
-vocabulary derived from the rulebook rather than the SRD verbs, so a Fate module gets
-`overcome`/`create_advantage` commands. Then a "rulebook author" skill for AI-assisted creators.
+Import the Fate module on the 6131 host and play a new chat through it live. Then `.risum`
+and `.charx` export with a supplied RPack table, and a "rulebook author" skill for AI-assisted
+creators.

@@ -6,7 +6,6 @@ import asyncio
 import base64
 import contextlib
 import logging
-import re
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Header
@@ -29,15 +28,19 @@ from saga_trpg.adapters.storage.sqlite import (
 from saga_trpg.domain.events import GameEvent
 from saga_trpg.domain.models import WorldState
 from saga_trpg.domain.tools import ToolCall
-from saga_trpg.modules.catalog import SRD_LATEST
-from saga_trpg.modules.srd_5_2_1.rules import (
-    INVENTORY_ACTIONS,
-    ROLL_ACTIONS,
-    STATE_ACTIONS,
-)
+from saga_trpg.modules.srd_5_2_1.rules import ROLL_ACTIONS
 from saga_trpg.ports.intent import IntentPort
 from saga_trpg.ports.narrator import NarrationRequest, NarratorPort
 from saga_trpg.ports.tools import ToolExecutionPending
+from saga_trpg.rulebooks.commands import (
+    CommandError,
+    command_help,
+    command_verbs,
+    parse_command,
+    rules_for,
+)
+from saga_trpg.rulebooks.engine import DataRules
+from saga_trpg.rulebooks.loader import RulebookSpec, load_rulebook, rulebook_path
 from saga_trpg.runtime.hashing import stable_model_hash, stable_value_hash
 from saga_trpg.runtime.journal import JournalEntry
 
@@ -55,6 +58,12 @@ class HostAction(ClosedModel):
     context_hidden: bool = False
 
 
+class RulebookAttachment(ClosedModel):
+    """A rulebook carried by an enabled RisuAI module; pins a world when it is created."""
+
+    content: str = Field(min_length=2, max_length=2_000_000)
+
+
 class HostTurn(ClosedModel):
     schema_version: Literal[1, 2, 3]
     host_instance_id: Identity
@@ -62,6 +71,7 @@ class HostTurn(ClosedModel):
     actor_id: Literal["player"]
     purpose: Literal["action"]
     actions: list[HostAction] = Field(min_length=1, max_length=256)
+    rulebook: RulebookAttachment | None = None
 
     @model_validator(mode="after")
     def distinct_messages(self) -> HostTurn:
@@ -101,70 +111,38 @@ class CompletionRequest(ClosedModel):
         return self
 
 
-COMMAND_VERBS = frozenset(
-    {"attack", "check", "save", "damage", "heal", "inflict", "cure", "wait", "give", "take"}
-)
-COMMAND_ACTIONS = {**ROLL_ACTIONS, **STATE_ACTIONS, **INVENTORY_ACTIONS}
-SUPPORTED_COMMANDS = (
-    "Supported commands: attack opponent; check strength 10; save dexterity 12; "
-    "damage opponent 5; heal player 3; inflict opponent prone; cure opponent prone; "
-    "wait 2 rounds; give player torch 1; take player torch 1. "
-)
-_NUMBER = re.compile(r"[0-9]{1,6}")
+# The bundled SRD rulebook is the default for new worlds without an attached rulebook, and the
+# command grammar for worlds pinned to the hand-written SRD versions (same payload shapes).
+DEFAULT_SPEC = load_rulebook(rulebook_path("srd-5.2.1"))
 
 
-def canonical_command(*, actor_id: str, text: str) -> GameEvent:
+def supported_commands(spec: RulebookSpec) -> str:
+    return (
+        f"Supported commands for {spec.id}@{spec.version}:\n{command_help(spec)}\n"
+        "Values fill the inputs in order; name=value sets one by name; quote text with spaces. "
+    )
+
+
+def canonical_command(*, actor_id: str, text: str, spec: RulebookSpec = DEFAULT_SPEC) -> GameEvent:
     """Pure v2 identity contract; never call an injected/remote interpreter to derive an id."""
-    words = text.strip().lower().split()
-    circumstances = {}
-    if words and words[-1] in {"advantage", "disadvantage"}:
-        circumstances[words.pop()] = True
-    if len(words) == 2 and words[0] == "attack":
-        kind, payload = "attack", {"target_id": words[1], **circumstances}
-    elif (
-        len(words) == 3 and words[0] in {"check", "save"} and re.fullmatch(r"[0-9]{1,3}", words[2])
-    ):
-        kind = "ability_check" if words[0] == "check" else "saving_throw"
-        payload = {"ability": words[1], "difficulty": int(words[2]), **circumstances}
-    elif (
-        len(words) == 3
-        and words[0] in {"damage", "heal"}
-        and _NUMBER.fullmatch(words[2])
-        and not circumstances
-    ):
-        kind, payload = words[0], {"target_id": words[1], "amount": int(words[2])}
-    elif len(words) == 3 and words[0] in {"inflict", "cure"} and not circumstances:
-        kind = "apply_condition" if words[0] == "inflict" else "remove_condition"
-        payload = {"target_id": words[1], "condition": words[2]}
-    elif (
-        len(words) == 4
-        and words[0] in {"give", "take"}
-        and _NUMBER.fullmatch(words[3])
-        and not circumstances
-    ):
-        kind = words[0]
-        payload = {"target_id": words[1], "item": words[2], "amount": int(words[3])}
-    elif (
-        len(words) == 3 and words[0] == "wait" and _NUMBER.fullmatch(words[1]) and not circumstances
-    ):
-        kind = "advance_time"
-        payload = {"amount": int(words[1]), "unit": words[2].removesuffix("s")}
-    else:
+    try:
+        return parse_command(spec, actor_id=actor_id, text=text)
+    except CommandError as exc:
         raise ValueError(
-            SUPPORTED_COMMANDS + "Optionally append advantage or disadvantage to rolls. "
+            f"{exc}. {supported_commands(spec)}"
             "Natural language requires protocol 3 and Vertex JSON."
-        )
-    validated = COMMAND_ACTIONS[kind].model_validate(payload)
-    return GameEvent(kind=kind, actor_id=actor_id, payload=validated.model_dump())
+        ) from None
 
 
-def command_for(action: HostAction, actor_id: str, *, natural: bool) -> GameEvent | None:
+def command_for(
+    action: HostAction, actor_id: str, *, natural: bool, spec: RulebookSpec = DEFAULT_SPEC
+) -> GameEvent | None:
     """Preserve v2 command identities; raw text is a separate explicit v3 contract."""
     try:
-        return canonical_command(actor_id=actor_id, text=action.text)
-    except ValueError:
+        return canonical_command(actor_id=actor_id, text=action.text, spec=spec)
+    except ValueError as exc:
         words = action.text.strip().lower().split()
-        if natural and words and words[0] not in COMMAND_VERBS:
+        if natural and words and words[0] not in command_verbs(spec):
             if action.text.strip().lower() != "*says nothing*":
                 return None
         if action.context_hidden:
@@ -173,16 +151,17 @@ def command_for(action: HostAction, actor_id: str, *, natural: bool) -> GameEven
                 "Restore it for review; hidden drafts are never executed automatically."
             ) from None
         raise ValueError(
-            SUPPORTED_COMMANDS
-            + "Empty actions and malformed commands are not interpreted automatically."
+            f"{exc} Empty actions and malformed commands are not interpreted automatically."
         ) from None
 
 
 class CommandInterpreter:
-    """Closed SRD demo commands, deliberately independent of generated prose."""
+    """Closed rulebook commands, deliberately independent of generated prose."""
 
-    async def interpret(self, *, world_id: str, actor_id: str, text: str) -> GameEvent:
-        return canonical_command(actor_id=actor_id, text=text)
+    async def interpret(
+        self, *, world_id: str, actor_id: str, text: str, spec: RulebookSpec = DEFAULT_SPEC
+    ) -> GameEvent:
+        return canonical_command(actor_id=actor_id, text=text, spec=spec)
 
 
 class RisuBridge:
@@ -198,21 +177,29 @@ class RisuBridge:
         self.narrator = narrator or FallbackNarrator()
 
     @staticmethod
-    def identities(
-        turn: HostTurn, *, version: Literal[1, 2, 3] | None = None
-    ) -> tuple[str, list[str]]:
+    def world_id_for(turn: HostTurn, *, version: Literal[1, 2, 3] | None = None) -> str:
         version = version or (3 if turn.schema_version == 3 else 2)
         world_version = 1 if version == 1 else 2
-        world_id = "risu-" + stable_value_hash(
+        return "risu-" + stable_value_hash(
             [f"saga-risu-v{world_version}", turn.host_instance_id, turn.chat_id]
         )
+
+    @staticmethod
+    def identities(
+        turn: HostTurn,
+        *,
+        version: Literal[1, 2, 3] | None = None,
+        spec: RulebookSpec = DEFAULT_SPEC,
+    ) -> tuple[str, list[str]]:
+        version = version or (3 if turn.schema_version == 3 else 2)
+        world_id = RisuBridge.world_id_for(turn, version=version)
         identities = []
         parent = None
         for action in turn.actions:
             content: str | dict = action.text
             action_version = version
             if version != 1:
-                event = command_for(action, turn.actor_id, natural=version == 3)
+                event = command_for(action, turn.actor_id, natural=version == 3, spec=spec)
                 if event is None:
                     content = {
                         "kind": "natural_language",
@@ -240,20 +227,33 @@ class RisuBridge:
             identities.append(parent)
         return world_id, identities
 
-    def _ensure_world(self, world_id: str) -> WorldState:
-        # New worlds pin the latest SRD version; existing worlds keep the version they were
+    def _spec_for(self, world_id: str, turn: HostTurn) -> RulebookSpec:
+        """The rulebook that governs this world's commands.
+
+        An existing world keeps the rulebook it was created with. A new world takes the
+        attached rulebook (validated and registered first) or the bundled SRD. Worlds pinned
+        to a hand-written SRD version parse commands with the bundled SRD grammar, whose
+        payload shapes are identical for the actions those versions have."""
+        try:
+            selection = self.repository.ruleset_for_world(world_id)
+        except RepositoryNotFound:
+            if turn.rulebook is None:
+                return DEFAULT_SPEC
+            manifest, _ = self.repository.register_rulebook(turn.rulebook.content)
+            selection = manifest
+        rules = self.repository.registry.get(selection.ruleset_id, selection.ruleset_version).rules
+        return rules.spec if isinstance(rules, DataRules) else DEFAULT_SPEC
+
+    def _ensure_world(self, world_id: str, spec: RulebookSpec) -> WorldState:
+        # New worlds pin the given rulebook; existing worlds keep the version they were
         # created with, so their action set and semantics never change under them.
-        definition = self.repository.registry.get("srd-5.2.1", SRD_LATEST)
-        initial = definition.example_world(world_id)
+        definition = self.repository.registry.get(spec.id, spec.version)
         self.repository.create_world(
-            initial,
+            definition.example_world(world_id),
             if_missing=True,
-            ruleset_id="srd-5.2.1",
-            ruleset_version=SRD_LATEST,
+            ruleset_id=spec.id,
+            ruleset_version=spec.version,
         )
-        selection = self.repository.ruleset_for_world(world_id)
-        if selection.ruleset_id != "srd-5.2.1":
-            raise RepositoryConflict("host world has an incompatible ruleset")
         return self.repository.get_initial_state(world_id)
 
     async def _natural_intent(
@@ -264,7 +264,7 @@ class RisuBridge:
         parent: JournalEntry | None,
         vertex: VertexNarrator,
     ) -> GameEvent:
-        initial = self._ensure_world(world_id)
+        initial = self._ensure_world(world_id, DEFAULT_SPEC)
         # A branch head can move while inference runs. Only the verified committed prefix
         # (or immutable ruleset genesis) supplies the snapshot bound to this interpretation.
         state = parent.result.state if parent else initial
@@ -376,6 +376,7 @@ class RisuBridge:
         )
         turn = request.saga
         replayed = True
+        spec = DEFAULT_SPEC
         legacy_world, legacy_ids = self.identities(turn, version=1)
         try:
             self.repository.ruleset_for_world(legacy_world)
@@ -397,9 +398,11 @@ class RisuBridge:
                 raise RepositoryConflict(
                     "Bridge v1 is read-only. Update the plugin to protocol v2 for new chats."
                 )
-            world_id, identities = self.identities(turn)
+            spec = self._spec_for(self.world_id_for(turn), turn)
+            world_id, identities = self.identities(turn, spec=spec)
             if turn.schema_version == 3 and any(
-                command_for(action, turn.actor_id, natural=True) is None for action in turn.actions
+                command_for(action, turn.actor_id, natural=True, spec=spec) is None
+                for action in turn.actions
             ):
                 identity_version = 3
             for index, action in enumerate(turn.actions):
@@ -422,9 +425,14 @@ class RisuBridge:
                     "changed user turn and generate there before adding later actions."
                 )
             expected = command_for(
-                turn.actions[-1], turn.actor_id, natural=turn.schema_version == 3
+                turn.actions[-1], turn.actor_id, natural=turn.schema_version == 3, spec=spec
             )
             if expected is None:
+                if spec.id != DEFAULT_SPEC.id:
+                    raise ValueError(
+                        "Natural-language actions are only interpreted for the SRD demo "
+                        "rulebook; use this rulebook's commands."
+                    )
                 if vertex_credentials is None:
                     raise ValueError(
                         "자연어 행동에는 Vertex 서비스 계정 JSON이 필요합니다. "
@@ -438,12 +446,18 @@ class RisuBridge:
                     narrator,
                 )
             else:
-                proposed = await self.interpreter.interpret(
-                    world_id=world_id, actor_id=turn.actor_id, text=turn.actions[-1].text
-                )
+                arguments = {
+                    "world_id": world_id,
+                    "actor_id": turn.actor_id,
+                    "text": turn.actions[-1].text,
+                }
+                if isinstance(self.interpreter, CommandInterpreter):
+                    arguments["spec"] = spec
+                proposed = await self.interpreter.interpret(**arguments)
                 proposed = GameEvent.model_validate(proposed.model_dump())
-            # Natural-language proposals stay limited to roll actions; commands cover the rest.
-            allowed = COMMAND_ACTIONS if expected is not None else ROLL_ACTIONS
+            # Natural-language proposals stay limited to SRD roll actions; commands cover the
+            # whole rulebook.
+            allowed = rules_for(spec).payload_models if expected is not None else ROLL_ACTIONS
             payload_model = allowed.get(proposed.kind)
             if payload_model is None or proposed.actor_id != turn.actor_id:
                 raise ValueError("intent must select a supported action for the identified actor")
@@ -460,7 +474,7 @@ class RisuBridge:
                 kind=proposed.kind,
                 payload=payload.model_dump(),
             )
-            self._ensure_world(world_id)
+            self._ensure_world(world_id, spec)
             # Racing requests may move a head, create the fork or commit this action first.
             # Every commit is guarded in its own transaction, so reselect instead of guessing.
             for attempt in range(3):

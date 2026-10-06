@@ -40,9 +40,9 @@ automatically at 0 HP; the GM proposes `apply_condition` explicitly.
 The backend catalog is the generation source. Run `python scripts/export_rulesets.py` after
 changing it; `python scripts/export_rulesets.py --check` detects missing or stale exports.
 `risu-module.json` is a RisuAI-native module import file; the rest are reviewable source packs.
-The plugin does not yet forward an imported module's rulebook to the backend, so enabling the
-module today only adds its narration text to the prompt. Pasting the prompt alone does not
-execute this backend or make model-written state authoritative.
+With plugin 0.6.0, enabling the module before starting a new chat pins that chat to the
+rulebook and its commands. Pasting the prompt alone does not execute this backend or make
+model-written state authoritative.
 
 ## Run a campaign through the debug API
 

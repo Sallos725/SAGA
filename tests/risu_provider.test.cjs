@@ -5,7 +5,7 @@ const vm = require("node:vm");
 const { test } = require("node:test");
 
 const source = fs.readFileSync(path.join(__dirname, "../packs/risu-starter/saga_provider.js"), "utf8");
-const sandbox = { console: { warn() {}, error() {} }, URL, TextEncoder, btoa: value => Buffer.from(value, "binary").toString("base64"), setTimeout, clearTimeout };
+const sandbox = { console: { warn() {}, error() {} }, URL, TextEncoder, crypto: require("node:crypto").webcrypto, btoa: value => Buffer.from(value, "binary").toString("base64"), setTimeout, clearTimeout };
 vm.runInNewContext(source, sandbox);
 const { createClient, snapshotOf } = sandbox.SagaRisu;
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -385,4 +385,28 @@ test("status footer is one compact block with conditions, time, inventory and es
   assert.match(footer, /턴 4/);
   assert.match(footer, /기록 재사용/);
   assert.doesNotMatch(footer, /<x>/);
+});
+
+test("an enabled module's rulebook entry is attached to the turn; others are ignored", async () => {
+  const f = fixture();
+  const rulebook = "{\"schema_version\": 1}";
+  const digest = require("node:crypto").createHash("sha256").update(rulebook, "utf8").digest("hex");
+  f.api.getCurrentLorebookEntries = () => [
+    { comment: "saga:narration:fate-condensed@0.2.0", content: "narration", alwaysActive: true },
+    { comment: "saga:rulebook:fate-condensed@0.2.0:" + "0".repeat(64), content: "tampered" },
+    { comment: "saga:rulebook:fate-condensed@0.2.0:" + digest, content: rulebook },
+    { comment: "unrelated", content: "x" },
+  ];
+  await f.send(await f.prepare());
+  assert.deepEqual(f.calls[0].body.saga.rulebook, { content: rulebook });
+});
+
+test("without a rulebook entry the turn carries no attachment", async () => {
+  const f = fixture();
+  f.api.getCurrentLorebookEntries = () => [{ comment: "unrelated", content: "x" }];
+  await f.send(await f.prepare());
+  assert.equal("rulebook" in f.calls[0].body.saga, false);
+  delete f.api.getCurrentLorebookEntries;
+  await f.send(await f.prepare());
+  assert.equal("rulebook" in f.calls[1].body.saga, false);
 });
