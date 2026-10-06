@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from saga_trpg.domain.models import StatePatch
 from saga_trpg.modules.fate_condensed.rules import FateCondensedRules
 from saga_trpg.modules.fate_condensed.rules import example_world as fate_world
 from saga_trpg.rulebooks.engine import DataRules
@@ -18,11 +19,11 @@ def fate_rules():
 
 def test_fate_rulebook_loads_with_records_and_graded_outcomes():
     spec = load_rulebook(FATE_PATH)
-    assert (spec.id, spec.version) == ("fate-condensed", "0.3.0")
+    assert (spec.id, spec.version) == ("fate-condensed", "0.4.0")
     assert set(spec.records) == {"fate_aspects", "fate_boosts"}
     assert spec.records["fate_aspects"].unique == ["name"]
     rules = fate_rules()
-    assert set(rules.payload_models) == {"overcome", "create_advantage"}
+    assert set(rules.payload_models) == {"overcome", "create_advantage", "invoke", "use_boost"}
     schema = rules.payload_models["overcome"].model_json_schema()
     assert schema["properties"]["boost_name"]["default"] == "Temporary advantage"
     assert "advantage" not in schema["properties"]
@@ -174,3 +175,177 @@ def test_unique_rule_values_must_match_the_field_type(tmp_path):
     with pytest.raises(ValueError, match="name"):
         engine.dispatch(event("create_advantage", {**ADVANTAGE}))
     assert dice.calls == []
+
+
+# --- record builtins (fate 0.4.0) -----------------------------------------------------------
+
+
+def fate_040():
+    return DataRules(load_rulebook(rulebook_path("fate-condensed", "0.4.0")))
+
+
+def aspect_world(*, invokes=2, boosts=()):
+    state = fate_world("sample")
+    state.flags["fate_aspects"]["a1"] = {
+        "name": "Mapped route",
+        "owner_id": "player",
+        "free_invokes": invokes,
+    }
+    for index, name in enumerate(boosts):
+        state.flags["fate_boosts"][f"b{index}"] = {"name": name, "owner_id": "player"}
+    return state
+
+
+def test_invoke_spends_one_free_invoke_without_dice_and_replays():
+    dice = ScriptedDice()
+    engine = engine_for(fate_040(), dice, state=aspect_world(invokes=2))
+    initial = engine.state.model_copy(deep=True)
+    result = engine.dispatch(event("invoke", {"name": "Mapped route"})).entry.result
+    assert engine.state.flags["fate_aspects"]["a1"]["free_invokes"] == 1
+    assert result.patches == [
+        StatePatch(path="flags.fate_aspects.a1.free_invokes", before=2, after=1)
+    ]
+    assert result.rolls == [] and dice.calls == []
+    engine.dispatch(event("invoke", {"name": "Mapped route", "amount": 1}, "i2"))
+    assert engine.state.flags["fate_aspects"]["a1"]["free_invokes"] == 0
+    with pytest.raises(ValueError, match="free_invokes"):
+        engine.dispatch(event("invoke", {"name": "Mapped route"}, "i3"))
+    with pytest.raises(ValueError, match="no fate_aspects"):
+        engine.dispatch(event("invoke", {"name": "Unknown"}, "i4"))
+    assert replay_recorded_results(initial, engine.journal.entries()) == engine.state
+
+
+def test_use_boost_removes_the_record_and_rejects_unknown_names():
+    engine = engine_for(fate_040(), ScriptedDice(), state=aspect_world(boosts=["Opening"]))
+    result = engine.dispatch(event("use_boost", {"name": "Opening"})).entry.result
+    assert engine.state.flags["fate_boosts"] == {}
+    assert result.patches[0].path == "flags.fate_boosts.b0"
+    assert result.patches[0].before["name"] == "Opening" and result.patches[0].after is None
+    with pytest.raises(ValueError, match="no fate_boosts"):
+        engine.dispatch(event("use_boost", {"name": "Opening"}, "again"))
+
+
+def test_duplicate_unique_record_is_rejected_before_any_roll():
+    dice = ScriptedDice()
+    engine = engine_for(fate_040(), dice, state=aspect_world(boosts=["Temporary advantage"]))
+    with pytest.raises(ValueError, match="Temporary advantage"):
+        engine.dispatch(event("overcome", {"skill": "athletics", "difficulty": 0}))
+    assert dice.calls == []
+    dice = ScriptedDice(("4d3-8", [3, 3, 3, 3], -8))
+    engine = engine_for(fate_040(), dice, state=aspect_world(boosts=["Temporary advantage"]))
+    engine.dispatch(
+        event("overcome", {"skill": "athletics", "difficulty": 0, "boost_name": "Other"})
+    )
+    assert {b["name"] for b in engine.state.flags["fate_boosts"].values()} == {
+        "Temporary advantage",
+        "Other",
+    }
+
+
+def test_record_commands_come_from_the_rulebook():
+    from saga_trpg.rulebooks.commands import command_help, parse_command
+
+    spec = load_rulebook(rulebook_path("fate-condensed", "0.4.0"))
+    event_ = parse_command(spec, actor_id="player", text='invoke "Mapped route"')
+    assert (event_.kind, event_.payload) == ("invoke", {"name": "Mapped route", "amount": 1})
+    event_ = parse_command(spec, actor_id="player", text="use_boost Opening")
+    assert (event_.kind, event_.payload) == ("use_boost", {"name": "Opening"})
+    assert "invoke <name> [amount=…]" in command_help(spec)
+    assert "use_boost <name>" in command_help(spec)
+
+
+@pytest.mark.parametrize(
+    "mutate,message",
+    [
+        (lambda d: d["actions"]["invoke"].update(record="ghosts"), "invoke.record"),
+        (lambda d: d["actions"]["invoke"].update(field="name"), "invoke.field"),
+        (lambda d: d["records"]["fate_boosts"].update(unique=[]), "use_boost.record"),
+        (lambda d: d["actions"]["invoke"].pop("sign"), "invoke.sign"),
+    ],
+)
+def test_record_builtins_are_validated_by_entry(tmp_path, mutate, message):
+    data = json.loads(rulebook_path("fate-condensed", "0.4.0").read_text())
+    mutate(data)
+    with pytest.raises(RulebookError, match=message):
+        load_rulebook(write_spec(tmp_path, data))
+
+
+def test_record_keys_keep_their_declared_type_and_enum_spelling(tmp_path):
+    data = json.loads(rulebook_path("fate-condensed", "0.4.0").read_text())
+    data["records"]["clocks"] = {
+        "fields": {
+            "kind": {"type": "text", "enum": ["Open", "Closed"]},
+            "ticks": {"type": "integer", "range": [0, 8]},
+        },
+        "unique": ["kind"],
+    }
+    data["records"]["flags"] = {
+        "fields": {"armed": {"type": "boolean"}, "count": {"type": "integer", "range": [0, 9]}},
+        "unique": ["armed"],
+    }
+    data["actions"]["tick"] = {
+        "builtin": "record_adjust",
+        "record": "clocks",
+        "field": "ticks",
+        "sign": 1,
+    }
+    data["actions"]["bump"] = {
+        "builtin": "record_adjust",
+        "record": "flags",
+        "field": "count",
+        "sign": 1,
+    }
+    spec = load_rulebook(write_spec(tmp_path, data))
+    from saga_trpg.rulebooks.commands import parse_command
+
+    assert parse_command(spec, actor_id="player", text="tick open").payload == {
+        "kind": "Open",
+        "amount": 1,
+    }
+    assert parse_command(spec, actor_id="player", text="bump true 2").payload == {
+        "armed": True,
+        "amount": 2,
+    }
+    state = fate_world("s")
+    state.flags["clocks"] = {"c1": {"kind": "Open", "ticks": 0}}
+    state.flags["flags"] = {"f1": {"armed": True, "count": 0}}
+    engine = engine_for(DataRules(spec), ScriptedDice(), state=state)
+    engine.dispatch(event("tick", {"kind": "Open"}))
+    engine.dispatch(event("bump", {"armed": True}, "b"))
+    assert engine.state.flags["clocks"]["c1"]["ticks"] == 1
+    assert engine.state.flags["flags"]["f1"]["count"] == 1
+
+
+def test_record_builtins_refuse_ambiguous_or_malformed_collections_and_unique_collisions(
+    tmp_path,
+):
+    data = json.loads(rulebook_path("fate-condensed", "0.4.0").read_text())
+    data["records"]["counters"] = {
+        "fields": {"value": {"type": "integer", "range": [0, 9]}},
+        "unique": ["value"],
+    }
+    data["actions"]["grow"] = {
+        "builtin": "record_adjust",
+        "record": "counters",
+        "field": "value",
+        "sign": 1,
+    }
+    spec = load_rulebook(write_spec(tmp_path, data))
+    state = fate_world("s")
+    state.flags["counters"] = {"a": {"value": 1}, "b": {"value": 2}}
+    engine = engine_for(DataRules(spec), ScriptedDice(), state=state)
+    with pytest.raises(ValueError, match="already"):
+        engine.dispatch(event("grow", {"value": 1}))
+    state = fate_world("s")
+    state.flags["fate_boosts"] = {
+        "x": {"name": "Dup", "owner_id": "player"},
+        "y": {"name": "Dup", "owner_id": "player"},
+    }
+    engine = engine_for(DataRules(spec), ScriptedDice(), state=state)
+    with pytest.raises(ValueError, match="more than one"):
+        engine.dispatch(event("use_boost", {"name": "Dup"}))
+    state = fate_world("s")
+    state.flags["fate_boosts"] = ["not", "a", "dict"]
+    engine = engine_for(DataRules(spec), ScriptedDice(), state=state)
+    with pytest.raises(ValueError, match="fate_boosts"):
+        engine.dispatch(event("use_boost", {"name": "Dup"}))

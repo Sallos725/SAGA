@@ -150,6 +150,11 @@ A **builtin action** changes state without dice and needs no formulas:
 
 Their inputs are fixed: `target_id` plus `amount` (1..1000) for HP and items, `condition`
 (one of your `conditions`) for conditions, `item` for items, `amount` plus `unit` for time.
+Two more work on `records`: `{ "builtin": "record_adjust", "record": "fate_aspects",
+"field": "free_invokes", "sign": -1 }` changes an integer field of the record named by the
+collection's first `unique` field (input `<unique field>` plus optional `amount`, rejected when
+the result leaves the field's range), and `{ "builtin": "record_remove", "record":
+"fate_boosts" }` deletes the named record. A collection must declare `unique` for either.
 HP is clamped to `0..max_hp`; adding a present condition or removing an absent one is
 rejected; taking more than is held is rejected. Nothing happens automatically at 0 HP unless
 your actions say so.
@@ -193,7 +198,8 @@ set: `"torch": { "name": "Torch" }`. Items have no effect in schema v1.
 
 Records live in `flags.<name>` keyed by the event that created them. Existing records are
 validated against the field types before any roll, so a hand-edited world cannot corrupt a
-session silently. `unique` lists the fields a `requires.unique` rule may guard; guarding any
+session silently. An `on_outcome` write that would duplicate a `unique` field is rejected
+before any roll, so unique really means unique. `unique` lists the fields a `requires.unique` rule may guard; guarding any
 other field is rejected. Within one outcome, each record collection may be written once.
 
 ### 7. `example_world`
@@ -278,8 +284,8 @@ card with the rulebook inside. Both need the host's RPack table once
 ## Not in schema v1
 
 Item effects and equipment, spells, initiative and action economy, multi-step procedures such
-as death saves, condition durations, opposed rolls, spending or expiring records (invokes,
-boosts) and resource pools. Describe them under
+as death saves, condition durations, opposed rolls, invoke effects on rolls and resource
+pools. Describe them under
 `not_implemented` so the narrator does not improvise them. A later schema version or a
 scripted layer (see ADR 0007) may add them.
 

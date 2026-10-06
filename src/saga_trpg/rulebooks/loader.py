@@ -32,6 +32,8 @@ Builtin = Literal[
     "time_advance",
     "inventory_add",
     "inventory_remove",
+    "record_adjust",
+    "record_remove",
 ]
 
 
@@ -139,6 +141,8 @@ class BuiltinAction(Closed):
     builtin: Builtin
     sign: Literal[1, -1] | None = None
     units: dict[str, int] | None = None
+    record: str | None = None
+    field: str | None = None
 
 
 class ConditionSpec(Closed):
@@ -349,6 +353,21 @@ def _cross_check(spec: RulebookSpec):  # noqa: C901
                             yield f"actions.{key}.units.{unit}: unit keys match {KEY}, seconds >= 1"
             if action.builtin in ("condition_add", "condition_remove") and not spec.conditions:
                 yield f"actions.{key}: {action.builtin} needs at least one entry in conditions"
+            if action.builtin.startswith("record_"):
+                record = spec.records.get(action.record or "")
+                if record is None:
+                    yield f"actions.{key}.record: unknown record {action.record!r}"
+                elif not record.unique:
+                    yield (
+                        f"actions.{key}.record: {action.record} needs a unique field so a "
+                        "command can name one record"
+                    )
+                if action.builtin == "record_adjust":
+                    field = record.fields.get(action.field or "") if record else None
+                    if field is None or field.type != "integer":
+                        yield f"actions.{key}.field: must name an integer field of {action.record}"
+                    if action.sign is None:
+                        yield f"actions.{key}.sign: record_adjust needs sign 1 or -1"
             continue
         if action.check not in spec.checks:
             defined = ", ".join(spec.checks) or "none"

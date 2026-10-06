@@ -265,7 +265,7 @@ Implemented:
   no item effects
 - **Rulebooks as data**: a closed JSON schema plus a small formula language, one generic
   engine, a `check` command with errors by entry; `srd-5.2.1@0.4.0` and `fate-condensed@0.2.0`
-  are bundled rulebooks (now `0.5.0` / `0.3.0` with a `display` declaration; older bundled
+  are bundled rulebooks (now `0.5.0` / `0.4.0`, with `display` and record builtins; older bundled
   versions stay registered byte for byte); rulebooks ship as RisuAI modules and import at
   `POST /rulebooks`
   ([guide](docs/RULEBOOKS.md), [module format](docs/RISUAI_MODULES.md),

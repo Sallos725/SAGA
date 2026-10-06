@@ -53,7 +53,7 @@ def test_module_round_trips_through_the_lorebook_finder():
     ]
     found = find_rulebook_entries(entries)
     assert [(item.rulebook_id, item.version, item.sha256) for item in found] == [
-        ("fate-condensed", "0.3.0", sha(FATE_TEXT))
+        ("fate-condensed", "0.4.0", sha(FATE_TEXT))
     ]
     assert found[0].content == FATE_TEXT
     assert load_rulebook_text(found[0].content).id == "fate-condensed"
@@ -82,12 +82,12 @@ def test_module_command_writes_a_file(tmp_path, capsys):
 def test_store_persists_validated_rulebooks_and_refuses_conflicting_content(tmp_path):
     store = RulebookStore(tmp_path / "rulebooks")
     spec, created = store.register(FATE_TEXT)
-    assert created and (spec.id, spec.version) == ("fate-condensed", "0.3.0")
-    assert (tmp_path / "rulebooks" / "fate-condensed@0.3.0.json").read_text("utf-8") == FATE_TEXT
+    assert created and (spec.id, spec.version) == ("fate-condensed", "0.4.0")
+    assert (tmp_path / "rulebooks" / "fate-condensed@0.4.0.json").read_text("utf-8") == FATE_TEXT
     spec_again, created_again = store.register(FATE_TEXT)
-    assert not created_again and spec_again.version == "0.3.0"
+    assert not created_again and spec_again.version == "0.4.0"
     changed = FATE_TEXT.replace('"title": "Fate Condensed example"', '"title": "Fate (edited)"')
-    with pytest.raises(RepositoryConflict, match="fate-condensed@0.3.0"):
+    with pytest.raises(RepositoryConflict, match="fate-condensed@0.4.0"):
         store.register(changed)
     with pytest.raises(RulebookError):
         store.register("{not json")
@@ -95,7 +95,7 @@ def test_store_persists_validated_rulebooks_and_refuses_conflicting_content(tmp_
         store.register(json.dumps({"schema_version": 1, "id": "x", "version": "0.1.0"}))
     assert [
         (item.id, item.version) for item in RulebookStore(tmp_path / "rulebooks").load_all()
-    ] == [("fate-condensed", "0.3.0")]
+    ] == [("fate-condensed", "0.4.0")]
 
 
 def test_store_refuses_to_shadow_a_bundled_rulebook_version(tmp_path):

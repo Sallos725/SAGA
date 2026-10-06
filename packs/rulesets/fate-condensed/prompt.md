@@ -1,20 +1,21 @@
 # Fate Condensed example
 
-Selected system: Fate Condensed example, version 0.3.0.
+Selected system: Fate Condensed example, version 0.4.0.
 Use overcome or create_advantage against static opposition, with a stored skill:<name> rating.
 Four journaled d3 faces map 1/2/3 to -1/0/+1. The recorded total includes the skill rating.
 An overcome failure/tie, or failed advantage, leaves a fictional choice pending; do not state that
 a cost or adverse aspect was applied. Successful new aspects and boosts are stored in world flags.
-Free invokes are recorded but spending invokes and expiring boosts are not automated in this slice.
+Use invoke to spend one free invoke on a named aspect (rejected at zero) and use_boost to
+remove a named boost; neither changes a roll in this example, only the recorded counts.
 Do not use generic HP or SRD combat mechanics to fill in unsupported Fate rules.
 
 ## Scope
 
 This is a partial example implementation.
 
-Implemented: overcome against static opposition; four outcome grades; create a new situation aspect; one/two free invokes on new aspects; boost records.
+Implemented: overcome against static opposition; four outcome grades; create a new situation aspect; one/two free invokes on new aspects; boost records; spending free invokes on an aspect; using (removing) a boost.
 
-Not implemented: character creation and advancement; paid/free invocations and rerolls; stunts and compels; attack, defend, stress and consequences; opposed rolls and existing-aspect advantages; applying costs and boost expiry.
+Not implemented: character creation and advancement; rerolls; stunts and compels; attack, defend, stress and consequences; opposed rolls and existing-aspect advantages; paid invocations, invoke effects on rolls, and applying costs.
 
 ## Source and attribution
 
