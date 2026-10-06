@@ -47,9 +47,11 @@ test("provider forwards stable identity out of band and renders authoritative st
   const f = fixture();
   const response = await f.send(await f.prepare());
   assert.equal(response.success, true);
-  assert.match(response.content, /opponent HP 22\/30/);
+  assert.match(response.content, /opponent<\/b> 22\/30/);
   assert.match(response.content, /1d20 → \[12\] = 12/);
   assert.match(response.content, /event-1/);
+  assert.match(response.content, /^Resolved attack\.\n\n<div style="[^"]*font-size:[^"]*">/);
+  assert.doesNotMatch(response.content, /\n---\n/);
   assert.equal(f.calls.length, 1);
   assert.equal(f.calls[0].networkRoute, "local_network");
   assert.equal(f.calls[0].url, "http://saga-runtime:4850/v1/chat/completions");
@@ -309,7 +311,11 @@ test("narration and failure fallback retain the independent authoritative status
   assert.equal(first.success, true);
   assert.equal(second.success, true);
   assert.notEqual(first.content, second.content);
-  assert.equal(first.content.split("\n\n---\n\n")[1], second.content.split("\n\n---\n\n")[1]);
+  const footerOf = content => { const at = content.indexOf("<div"); assert.ok(at > 0); return content.slice(at); };
+  assert.equal(footerOf(first.content), footerOf(second.content));
+  assert.match(footerOf(first.content), /opponent<\/b> 22\/30/);
+  assert.match(footerOf(first.content), /1d20 → \[12\] = 12/);
+  assert.match(footerOf(first.content), /event-1/);
   assert.deepEqual(f.calls[0].body, f.calls[1].body);
 });
 
@@ -355,4 +361,28 @@ test("natural language keeps raw action identity and accepts protocol 3 results"
   assert.equal(f.calls[0].body.saga.schema_version, 3);
   assert.equal(f.calls[0].requestTimeoutMs, 65000);
   assert.equal(f.calls.length, 1);
+});
+
+test("status footer is one compact block with conditions, time, inventory and escaping", async () => {
+  const f = fixture();
+  f.reply = async () => ({ ok: true, status: 200, json: async () => ({
+    choices: [{ message: { content: "Prose." } }],
+    saga: { schema_version: 3, identity_version: 2, legacy_read_only: false,
+      event_id: "event-9", seq: 4, replayed: true, rolls: [],
+      state: { simulated_time: 3725, actors: {
+        player: { actor_id: "player", hp: 13, max_hp: 20, conditions: [], inventory: { "silver_key": 1, "torch": 3 } },
+        "<x>": { actor_id: "<x>", hp: 0, max_hp: 30, conditions: ["prone", "unconscious"], inventory: {} } } } },
+  }) });
+  const response = await f.send(await f.prepare());
+  assert.equal(response.success, true);
+  const footer = response.content.slice(response.content.indexOf("<div"));
+  assert.equal((footer.match(/<div/g) || []).length, 1);
+  assert.match(footer, /player<\/b> 13\/20/);
+  assert.match(footer, /silver_key×1, torch×3/);
+  assert.match(footer, /&lt;x&gt;<\/b> 0\/30 <i>prone, unconscious<\/i>/);
+  assert.match(footer, /1h 2m 5s/);
+  assert.match(footer, /주사위 없음/);
+  assert.match(footer, /턴 4/);
+  assert.match(footer, /기록 재사용/);
+  assert.doesNotMatch(footer, /<x>/);
 });
