@@ -221,7 +221,8 @@ Two selectable system examples are available: **SRD 5.2.1** (CC BY 4.0) and **Fa
 (CC BY 3.0). Each includes typed action handlers, a module manifest, the shared bot description,
 a system prompt, sample actors/actions, and attribution. See
 [the ruleset examples](packs/rulesets/README.md) for creation commands and exact supported scope.
-These are partial runtime/source-pack examples; native RisuAI module importing is not yet wired.
+These are partial examples. Each ships as a RisuAI module (`risu-module.json`); enable it in
+PocketRisu and a new chat plays by that rulebook (see [the module format](docs/RISUAI_MODULES.md)).
 
 ## Project map
 
@@ -264,10 +265,9 @@ Implemented:
 - SRD 5.2.1 `0.3.0` inventory: exact per-actor item counts with closed keys (`give`/`take`),
   no item effects
 - **Rulebooks as data**: a closed JSON schema plus a small formula language, one generic
-  engine, a `check` command with errors by entry; `srd-5.2.1@0.4.0` and `fate-condensed@0.2.0`
-  are bundled rulebooks (now `0.5.0` / `0.4.0`, with `display` and record builtins; older bundled
-  versions stay registered byte for byte); rulebooks ship as RisuAI modules and import at
-  `POST /rulebooks`
+  engine, a `check` command with errors by entry; `srd-5.2.1@0.5.0` and `fate-condensed@0.4.0`
+  are the bundled rulebooks (older bundled versions stay registered byte for byte); rulebooks
+  ship as RisuAI modules, import at `POST /rulebooks`, and drive commands and the footer
   ([guide](docs/RULEBOOKS.md), [module format](docs/RISUAI_MODULES.md),
   [ADR 0007](docs/adr/0007-rulebooks-as-data.md))
 - PocketRisu commands for those actions (`damage`, `heal`, `inflict`, `cure`, `wait`,

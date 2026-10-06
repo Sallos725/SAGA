@@ -7,10 +7,11 @@ The [starter](../packs/risu-starter/README.md) implements a small playable path 
 repository → fallback or optional Vertex narration → authoritative status. It uses
 deterministic commands, optional bounded natural-language intent, local seeded dice and no
 memory provider. Streaming, arbitrary card/lore integration and a complete ruleset remain open.
-Plugin/card 0.4.0 and protocol 3 are verified offline. Backend/plugin 0.4.0 are now deployed
-to 6011; one natural attack and one regeneration passed live. The existing host card was
-retained, so importing the 0.4.0 starter card remains unverified. See the
-[live report](progress/risu-natural-intent-live.md).
+Plugin 0.7.0 and protocol 3 are current: the plugin forwards an enabled module's rulebook,
+commands derive from the world's rulebook and the footer prints `saga.display`. Backend/plugin
+0.4.0 remain deployed to 6011 (one natural attack and one regeneration passed live there; see
+the [live report](progress/risu-natural-intent-live.md)); the 6131 test host runs `main` and
+`scripts/smoke_plugin.cjs` exercises the plugin path there without the UI.
 
 The current installation uses the **SAGA SRD Demo** plugin provider, rather than configuring
 an ordinary Custom API URL: stable host identities and a main-generation guard are required.
