@@ -24,6 +24,7 @@ from saga_trpg.rulebooks.loader import (
     BuiltinAction,
     CheckAction,
     InputSpec,
+    RecordField,
     RulebookSpec,
     StatSpec,
 )
@@ -64,6 +65,8 @@ class _ActorView(Mapping[str, Any]):
         self.families = {key[:-2]: spec for key, spec in stats.items() if key.endswith(":*")}
 
     def __getitem__(self, key: str) -> Any:
+        if key == "id":
+            return self.actor.actor_id
         if key == "hp":
             return self.actor.hp
         if key == "max_hp":
@@ -74,13 +77,13 @@ class _ActorView(Mapping[str, Any]):
         return _validated(self.actor, key, spec, self.actor.stats.get(key, spec.default))
 
     def __contains__(self, key: object) -> bool:
-        return key in ("hp", "max_hp") or key in self.families or key in self.stats
+        return key in ("id", "hp", "max_hp") or key in self.families or key in self.stats
 
     def __iter__(self) -> Iterator[str]:
-        return iter(["hp", "max_hp", *self.families, *self.stats])
+        return iter(["id", "hp", "max_hp", *self.families, *self.stats])
 
     def __len__(self) -> int:
-        return 2 + len(self.families) + len(self.stats)
+        return 3 + len(self.families) + len(self.stats)
 
 
 class _ModView(Mapping[str, int]):
@@ -138,10 +141,12 @@ def _input_field(spec: InputSpec) -> tuple[Any, Any]:
     else:
         annotation = str
         constraints = {"pattern": spec.pattern}
+    if spec.default is not None:
+        return annotation, Field(default=spec.default, **constraints)
     if not spec.optional:
         return annotation, Field(**constraints)
     if spec.type == "boolean":
-        return bool, Field(default=bool(spec.default), **constraints)
+        return bool, Field(default=False, **constraints)
     return annotation | None, Field(default=None, **constraints)
 
 
@@ -159,7 +164,7 @@ class DataRules:
         }
         self.formulas: dict[str, dict[str, Expression]] = {}
         self.outcome_rules = {
-            key: [(compile_expression(rule.when), rule.outcome) for rule in rules]
+            key: [(compile_expression(rule.when), rule.outcome, rule.pending) for rule in rules]
             for key, rules in spec.outcomes.items()
         }
         self.payload_models: dict[str, type[ClosedPayload]] = {}
@@ -171,7 +176,14 @@ class DataRules:
                     "target": compile_expression(action.target),
                 }
                 for index, requirement in enumerate(action.requires):
-                    formulas[f"requires.{index}"] = compile_expression(requirement.when)
+                    source = requirement.when or requirement.unique.value
+                    formulas[f"requires.{index}"] = compile_expression(source)
+                for outcome, effects in action.on_outcome.items():
+                    for index, effect in enumerate(effects):
+                        for name, formula in effect.fields.items():
+                            formulas[f"on_outcome.{outcome}.{index}.{name}"] = compile_expression(
+                                formula
+                            )
                 if action.on_hit is not None:
                     formulas["on_hit.dice"] = compile_expression(action.on_hit.dice)
                     formulas["on_hit.bonus"] = compile_expression(action.on_hit.bonus)
@@ -221,7 +233,8 @@ class DataRules:
                     inventory=dict(actor.inventory),
                     conditions=set(actor.conditions),
                 )
-        return WorldState(world_id=world_id, actors=actors)
+        flags = dict(self.spec.example_world.flags) if self.spec.example_world else {}
+        return WorldState(world_id=world_id, actors=actors, flags=flags)
 
     # -- dispatch ----------------------------------------------------------------------------
 
@@ -277,9 +290,24 @@ class DataRules:
             target_view = _ActorView(target, self.spec.stats)
             scope["target"] = target_view
             scope["target_mod"] = _ModView(target_view, self.modifiers)
+        for collection, record in self.spec.records.items():
+            existing = state.flags.get(collection, {})
+            if not isinstance(existing, dict):
+                raise ValueError(f"flags.{collection} must hold structured records")
+            for key, item in existing.items():
+                _validate_record(f"flags.{collection}.{key}", item, record.fields)
         try:
             for index, requirement in enumerate(action.requires):
-                if not formulas[f"requires.{index}"].evaluate(scope):
+                value = formulas[f"requires.{index}"].evaluate(scope)
+                if requirement.unique is not None:
+                    rule = requirement.unique
+                    taken = any(
+                        item.get(rule.field) == value
+                        for item in state.flags.get(rule.record, {}).values()
+                    )
+                    if taken:
+                        raise ValueError(f"{requirement.error} ({rule.field} {value!r} exists)")
+                elif not value:
                     raise ValueError(requirement.error)
             modifier = _as_int(formulas["modifier"].evaluate(scope), "modifier")
             target_value = _as_int(formulas["target"].evaluate(scope), "target")
@@ -335,10 +363,10 @@ class DataRules:
         values = [roll.total for roll in rolls]
         selected = max(values) if advantage and not disadvantage else min(values)
         total = selected + modifier
-        outcome = None
-        for rule, name in self.outcome_rules[action.outcomes]:
+        outcome, pending = None, False
+        for rule, name, flagged in self.outcome_rules[action.outcomes]:
             if rule.evaluate({"die": selected, "total": total, "target": target_value}):
-                outcome = name
+                outcome, pending = name, flagged
                 break
         if outcome is None:
             raise ValueError(f"no outcome rule in {action.outcomes!r} matched")
@@ -363,8 +391,22 @@ class DataRules:
             patches.append(
                 StatePatch(path=f"actors.{target.actor_id}.hp", before=target.hp, after=remaining)
             )
+        for index, effect in enumerate(action.on_outcome.get(outcome, [])):
+            record = {
+                name: formulas[f"on_outcome.{outcome}.{index}.{name}"].evaluate(scope)
+                for name in effect.fields
+            }
+            _validate_record(
+                f"on_outcome.{outcome}[{index}]", record, self.spec.records[effect.record].fields
+            )
+            next_state.flags.setdefault(effect.record, {})[event.event_id] = record
+            patches.append(StatePatch(path=f"flags.{effect.record}.{event.event_id}", after=record))
         subject = f" against {target.actor_id}" if target is not None else ""
         facts = [f"{event.actor_id}: {event.kind} {outcome}{subject} ({total} vs {target_value})."]
+        if pending:
+            facts.append(
+                "The GM must adjudicate the cost or alternative outcome; none was applied."
+            )
         if damage:
             remaining_hp = next_state.actors[target.actor_id].hp
             facts.append(f"{target.actor_id} takes {damage} damage; HP {remaining_hp}.")
@@ -378,7 +420,11 @@ class DataRules:
             rolls=rolls,
             patches=patches,
             resolution=RuleResolution(
-                outcome=outcome, total=total, target=target_value, damage=damage
+                outcome=outcome,
+                total=total,
+                target=target_value,
+                damage=damage,
+                pending_adjudication=pending,
             ),
             facts=facts,
             trace=trace,
@@ -463,6 +509,26 @@ class DataRules:
             facts=[fact],
             trace=self._trace(event, f"builtin={action.builtin}"),
         )
+
+
+def _validate_record(label: str, item: Any, fields: Mapping[str, RecordField]) -> None:
+    if not isinstance(item, dict) or set(item) != set(fields):
+        raise ValueError(f"{label}: record must have exactly the fields {', '.join(fields)}")
+    for name, field in fields.items():
+        value = item[name]
+        if field.type == "integer":
+            if type(value) is not int or not field.range[0] <= value <= field.range[1]:
+                raise ValueError(f"{label}.{name}: must be an integer in range")
+        elif field.type == "boolean":
+            if type(value) is not bool:
+                raise ValueError(f"{label}.{name}: must be true or false")
+        else:
+            if not isinstance(value, str) or not value:
+                raise ValueError(f"{label}.{name}: must be non-empty text")
+            if field.enum is not None and value not in field.enum:
+                raise ValueError(f"{label}.{name}: must be one of {', '.join(field.enum)}")
+            if field.pattern is not None and not re.fullmatch(field.pattern, value):
+                raise ValueError(f"{label}.{name}: must match {field.pattern}")
 
 
 def _as_int(value: Any, label: str) -> int:

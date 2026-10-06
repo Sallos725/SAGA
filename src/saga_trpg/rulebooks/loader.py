@@ -65,13 +65,14 @@ class StatSpec(Closed):
 
 class CheckSpec(Closed):
     # Schema v1 advertises exactly what the standard dice path can roll (1..100 dice).
-    roll: str = Field(pattern=r"^([1-9]|[1-9][0-9]|100)d(4|6|8|10|12|20|100)$")
+    roll: str = Field(pattern=r"^([1-9]|[1-9][0-9]|100)d(3|4|6|8|10|12|20|100)([+-][0-9]{1,3})?$")
     advantage: Literal["roll_twice", "none"] = "none"
 
 
 class OutcomeRule(Closed):
     when: str
     outcome: str
+    pending: bool = False
 
 
 class InputSpec(Closed):
@@ -80,12 +81,40 @@ class InputSpec(Closed):
     enum: list[str] | None = None
     pattern: str | None = None
     optional: bool = False
-    default: bool | None = None
+    default: bool | int | str | None = None
+
+
+class UniqueRule(Closed):
+    record: str
+    field: str
+    value: str
 
 
 class Requirement(Closed):
-    when: str
+    """Either a formula that must be true or a uniqueness rule over a record collection."""
+
+    when: str | None = None
+    unique: UniqueRule | None = None
     error: str = Field(min_length=1)
+
+
+class RecordField(Closed):
+    type: Literal["integer", "text", "actor", "boolean"]
+    range: tuple[int, int] | None = None
+    enum: list[str] | None = None
+    pattern: str | None = None
+
+
+class RecordSpec(Closed):
+    """A collection in `flags[<name>]`, keyed by event id, with typed fields."""
+
+    fields: dict[str, RecordField]
+    unique: list[str] = Field(default_factory=list)
+
+
+class RecordEffect(Closed):
+    record: str
+    fields: dict[str, str]
 
 
 class OnHit(Closed):
@@ -103,6 +132,7 @@ class CheckAction(Closed):
     target: str
     outcomes: str
     on_hit: OnHit | None = None
+    on_outcome: dict[str, list[RecordEffect]] = Field(default_factory=dict)
 
 
 class BuiltinAction(Closed):
@@ -133,6 +163,7 @@ class ExampleActor(Closed):
 
 class ExampleWorld(Closed):
     actors: dict[str, ExampleActor]
+    flags: dict[str, Any] = Field(default_factory=dict)
 
 
 class RulebookSpec(Closed):
@@ -146,6 +177,7 @@ class RulebookSpec(Closed):
     stats: dict[str, StatSpec] = Field(default_factory=dict)
     checks: dict[str, CheckSpec] = Field(default_factory=dict)
     outcomes: dict[str, list[OutcomeRule]] = Field(default_factory=dict)
+    records: dict[str, RecordSpec] = Field(default_factory=dict)
     actions: dict[str, CheckAction | BuiltinAction]
     conditions: dict[str, ConditionSpec] = Field(default_factory=dict)
     items: dict[str, ItemSpec] = Field(default_factory=dict)
@@ -257,6 +289,16 @@ def _cross_check(spec: RulebookSpec):  # noqa: C901
     for key in spec.conditions:
         if not re.fullmatch(KEY, key):
             yield f"conditions.{key}: key must match {KEY}"
+    for key, record in spec.records.items():
+        if not re.fullmatch(KEY, key):
+            yield f"records.{key}: key must match {KEY}"
+        for name, field in record.fields.items():
+            if not re.fullmatch(KEY, name):
+                yield f"records.{key}.fields.{name}: key must match {KEY}"
+            yield from _check_typed(f"records.{key}.fields.{name}", field)
+        for name in record.unique:
+            if name not in record.fields:
+                yield f"records.{key}.unique: {name!r} is not a field of this record"
     for key in spec.items:
         if not re.fullmatch(ITEM_KEY, key):
             yield f"items.{key}: key must match {ITEM_KEY}"
@@ -306,6 +348,19 @@ def _cross_check(spec: RulebookSpec):  # noqa: C901
                     re.compile(item.pattern)
                 except re.error as exc:
                     yield f"actions.{key}.input.{name}.pattern: {exc}"
+            if item.default is not None:
+                kind = "actor" if item.type == "actor" else item.type
+                if _kind_of(item.default) != ("text" if kind == "actor" else kind):
+                    yield f"actions.{key}.input.{name}.default: must be a {item.type}"
+                elif item.type == "text":
+                    if item.enum is not None and item.default not in item.enum:
+                        choices = ", ".join(item.enum)
+                        yield f"actions.{key}.input.{name}.default: not one of {choices}"
+                    if item.pattern is not None and not re.fullmatch(item.pattern, item.default):
+                        yield f"actions.{key}.input.{name}.default: does not match {item.pattern}"
+                elif item.type == "integer" and item.range is not None:
+                    if not item.range[0] <= item.default <= item.range[1]:
+                        yield f"actions.{key}.input.{name}.default: outside the range"
         if action.role == "attack" and not has_target:
             yield f"actions.{key}.input: an attack needs a target_id input of type actor"
         if action.on_hit is not None and action.role != "attack":
@@ -316,9 +371,38 @@ def _cross_check(spec: RulebookSpec):  # noqa: C901
         yield from _check_formula(f"actions.{key}.modifier", action.modifier, allowed)
         yield from _check_formula(f"actions.{key}.target", action.target, allowed)
         for index, requirement in enumerate(action.requires):
-            yield from _check_formula(
-                f"actions.{key}.requires[{index}].when", requirement.when, allowed
-            )
+            location = f"actions.{key}.requires[{index}]"
+            if (requirement.when is None) == (requirement.unique is None):
+                yield f"{location}: give exactly one of when or unique"
+            if requirement.when is not None:
+                yield from _check_formula(f"{location}.when", requirement.when, allowed)
+            if requirement.unique is not None:
+                rule = requirement.unique
+                record = spec.records.get(rule.record)
+                if record is None:
+                    yield f"{location}.unique.record: unknown record {rule.record!r}"
+                elif rule.field not in record.fields:
+                    yield f"{location}.unique.field: {rule.field!r} is not a field of {rule.record}"
+                yield from _check_formula(f"{location}.unique.value", rule.value, allowed)
+        for outcome, effects in action.on_outcome.items():
+            location = f"actions.{key}.on_outcome.{outcome}"
+            if outcome not in OUTCOMES:
+                yield f"{location}: {outcome!r} is not one of {', '.join(OUTCOMES)}"
+            for index, effect in enumerate(effects):
+                record = spec.records.get(effect.record)
+                if record is None:
+                    yield f"{location}[{index}].record: unknown record {effect.record!r}"
+                    continue
+                missing = sorted(set(record.fields) - set(effect.fields))
+                extra = sorted(set(effect.fields) - set(record.fields))
+                if missing:
+                    yield f"{location}[{index}].fields: missing {', '.join(missing)}"
+                if extra:
+                    yield f"{location}[{index}].fields: {', '.join(extra)} not in {effect.record}"
+                for name, formula in effect.fields.items():
+                    yield from _check_formula(
+                        f"{location}[{index}].fields.{name}", formula, allowed
+                    )
         if action.on_hit is not None:
             yield from _check_formula(f"actions.{key}.on_hit.dice", action.on_hit.dice, allowed)
             yield from _check_formula(f"actions.{key}.on_hit.bonus", action.on_hit.bonus, allowed)
@@ -332,6 +416,26 @@ def _cross_check(spec: RulebookSpec):  # noqa: C901
                     )
             if not 0 <= actor.hp <= actor.max_hp or actor.max_hp <= 0:
                 yield f"example_world.actors.{actor_id}: hp must be within 0..max_hp"
+
+
+def _check_typed(location: str, field: RecordField):
+    if field.type == "integer":
+        if field.range is None:
+            yield f"{location}.range: integer fields need a [min, max] range"
+        elif field.range[0] > field.range[1]:
+            yield f"{location}.range: min is greater than max"
+    elif field.range is not None:
+        yield f"{location}: range applies to integer fields only"
+    if field.type == "text":
+        if field.enum is None and field.pattern is None:
+            yield f"{location}: text fields need an enum or a pattern"
+        if field.pattern is not None:
+            try:
+                re.compile(field.pattern)
+            except re.error as exc:
+                yield f"{location}.pattern: {exc}"
+    elif field.enum is not None or field.pattern is not None:
+        yield f"{location}: enum and pattern apply to text fields only"
 
 
 def _check_default(location: str, stat: StatSpec):
