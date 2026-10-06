@@ -133,6 +133,18 @@ def _advantage(d):
         (lambda d: _advantage(d)["on_outcome"]["success"][0]["fields"].pop("owner_id"), "owner_id"),
         (lambda d: _advantage(d)["requires"][0]["unique"].update(field="colour"), "colour"),
         (lambda d: d["records"]["fate_aspects"].update(unique=["size"]), "size"),
+        (lambda d: d["records"]["fate_aspects"].update(unique=[]), "requires\\[0\\].unique.field"),
+        (lambda d: _advantage(d)["on_outcome"].update(hit=[]), "on_outcome.hit"),
+        (
+            lambda d: _advantage(d)["on_outcome"]["success"].append(
+                dict(_advantage(d)["on_outcome"]["success"][0])
+            ),
+            "fate_aspects twice",
+        ),
+        (
+            lambda d: _advantage(d)["input"]["aspect_name"].update(type="actor", default=""),
+            "aspect_name.default",
+        ),
     ],
 )
 def test_record_and_outcome_effects_are_validated_by_entry(tmp_path, mutate, message):
@@ -150,3 +162,15 @@ def test_registry_serves_fate_020_from_the_rulebook():
     assert isinstance(latest.rules, DataRules)
     assert isinstance(registry.get("fate-condensed", "0.1.0").rules, FateCondensedRules)
     assert latest.example_world("w") == fate_world("w")
+
+
+def test_unique_rule_values_must_match_the_field_type(tmp_path):
+    data = json.loads(FATE_PATH.read_text())
+    _advantage(data)["requires"][0]["unique"]["value"] = "input.difficulty"
+    dice = ScriptedDice()
+    engine = engine_for(
+        DataRules(load_rulebook(write_spec(tmp_path, data))), dice, state=fate_world("s")
+    )
+    with pytest.raises(ValueError, match="name"):
+        engine.dispatch(event("create_advantage", {**ADVANTAGE}))
+    assert dice.calls == []

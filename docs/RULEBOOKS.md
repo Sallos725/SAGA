@@ -192,7 +192,8 @@ set: `"torch": { "name": "Torch" }`. Items have no effect in schema v1.
 
 Records live in `flags.<name>` keyed by the event that created them. Existing records are
 validated against the field types before any roll, so a hand-edited world cannot corrupt a
-session silently. `unique` lists fields a `requires.unique` rule may guard.
+session silently. `unique` lists the fields a `requires.unique` rule may guard; guarding any
+other field is rejected. Within one outcome, each record collection may be written once.
 
 ### 7. `example_world`
 

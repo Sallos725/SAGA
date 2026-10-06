@@ -301,6 +301,8 @@ class DataRules:
                 value = formulas[f"requires.{index}"].evaluate(scope)
                 if requirement.unique is not None:
                     rule = requirement.unique
+                    field = self.spec.records[rule.record].fields[rule.field]
+                    _validate_field(f"requires[{index}].unique.{rule.field}", value, field)
                     taken = any(
                         item.get(rule.field) == value
                         for item in state.flags.get(rule.record, {}).values()
@@ -511,24 +513,27 @@ class DataRules:
         )
 
 
+def _validate_field(label: str, value: Any, field: RecordField) -> None:
+    if field.type == "integer":
+        if type(value) is not int or not field.range[0] <= value <= field.range[1]:
+            raise ValueError(f"{label}: must be an integer in range")
+    elif field.type == "boolean":
+        if type(value) is not bool:
+            raise ValueError(f"{label}: must be true or false")
+    else:
+        if not isinstance(value, str) or not value:
+            raise ValueError(f"{label}: must be non-empty text")
+        if field.enum is not None and value not in field.enum:
+            raise ValueError(f"{label}: must be one of {', '.join(field.enum)}")
+        if field.pattern is not None and not re.fullmatch(field.pattern, value):
+            raise ValueError(f"{label}: must match {field.pattern}")
+
+
 def _validate_record(label: str, item: Any, fields: Mapping[str, RecordField]) -> None:
     if not isinstance(item, dict) or set(item) != set(fields):
         raise ValueError(f"{label}: record must have exactly the fields {', '.join(fields)}")
     for name, field in fields.items():
-        value = item[name]
-        if field.type == "integer":
-            if type(value) is not int or not field.range[0] <= value <= field.range[1]:
-                raise ValueError(f"{label}.{name}: must be an integer in range")
-        elif field.type == "boolean":
-            if type(value) is not bool:
-                raise ValueError(f"{label}.{name}: must be true or false")
-        else:
-            if not isinstance(value, str) or not value:
-                raise ValueError(f"{label}.{name}: must be non-empty text")
-            if field.enum is not None and value not in field.enum:
-                raise ValueError(f"{label}.{name}: must be one of {', '.join(field.enum)}")
-            if field.pattern is not None and not re.fullmatch(field.pattern, value):
-                raise ValueError(f"{label}.{name}: must match {field.pattern}")
+        _validate_field(f"{label}.{name}", item[name], field)
 
 
 def _as_int(value: Any, label: str) -> int:

@@ -352,6 +352,8 @@ def _cross_check(spec: RulebookSpec):  # noqa: C901
                 kind = "actor" if item.type == "actor" else item.type
                 if _kind_of(item.default) != ("text" if kind == "actor" else kind):
                     yield f"actions.{key}.input.{name}.default: must be a {item.type}"
+                elif item.type == "actor" and not item.default:
+                    yield f"actions.{key}.input.{name}.default: an actor id cannot be empty"
                 elif item.type == "text":
                     if item.enum is not None and item.default not in item.enum:
                         choices = ", ".join(item.enum)
@@ -383,11 +385,25 @@ def _cross_check(spec: RulebookSpec):  # noqa: C901
                     yield f"{location}.unique.record: unknown record {rule.record!r}"
                 elif rule.field not in record.fields:
                     yield f"{location}.unique.field: {rule.field!r} is not a field of {rule.record}"
+                elif rule.field not in record.unique:
+                    yield (
+                        f"{location}.unique.field: {rule.field!r} is not declared in "
+                        f"records.{rule.record}.unique"
+                    )
                 yield from _check_formula(f"{location}.unique.value", rule.value, allowed)
+        produced = {rule.outcome for rule in spec.outcomes.get(action.outcomes, [])}
         for outcome, effects in action.on_outcome.items():
             location = f"actions.{key}.on_outcome.{outcome}"
             if outcome not in OUTCOMES:
                 yield f"{location}: {outcome!r} is not one of {', '.join(OUTCOMES)}"
+            elif outcome not in produced:
+                yield (
+                    f"{location}: the {action.outcomes!r} table never produces {outcome!r}; "
+                    f"it produces {', '.join(sorted(produced)) or 'nothing'}"
+                )
+            targets = [effect.record for effect in effects]
+            for duplicate in sorted({name for name in targets if targets.count(name) > 1}):
+                yield f"{location}: writes {duplicate} twice; records are keyed by event id"
             for index, effect in enumerate(effects):
                 record = spec.records.get(effect.record)
                 if record is None:
