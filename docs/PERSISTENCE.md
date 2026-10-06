@@ -101,6 +101,10 @@ branch with its own entries, any tool event or tape record, and a branch that ha
 the rules reject the edited action a fork was just created for, so failed edits do not
 accumulate empty branches; a racing identical request that already committed keeps its branch.
 
+Imported rulebooks are files beside the database (`<data dir>/rulebooks/<id>@<version>.json`),
+written only after validation, registered on every start, and immutable per version. Back them
+up with the database; a world pinned to an imported rulebook cannot replay without its file.
+
 Copies make this implementation simple and independently replayable, at the cost of storage
 proportional to the copied prefix. Large histories may later need shared immutable prefixes,
 compact patches, indexes, and paginated history reads; none are silently approximated here.

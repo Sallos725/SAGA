@@ -64,6 +64,18 @@ SRD_VERSIONS = ("0.1.0", "0.2.0", "0.3.0")
 SRD_LATEST = "0.4.0"
 FATE_LATEST = "0.2.0"
 BUNDLED_RULEBOOKS = {"srd-5.2.1": SRD_LATEST, "fate-condensed": FATE_LATEST}
+
+
+def bundled_digests() -> dict[tuple[str, str], str]:
+    """sha256 of each bundled rulebook file, so an import cannot shadow one."""
+    from saga_trpg.rulebooks.risu_module import sha256_text
+
+    return {
+        (rulebook_id, version): sha256_text(rulebook_path(rulebook_id).read_text(encoding="utf-8"))
+        for rulebook_id, version in BUNDLED_RULEBOOKS.items()
+    }
+
+
 _SRD_ROLL_SCOPE = [
     "ability checks",
     "saving throws",
@@ -275,6 +287,11 @@ Do not use generic HP or SRD combat mechanics to fill in unsupported Fate rules.
             ),
         ]
         self._definitions = {(item.rules.name, item.rules.version): item for item in definitions}
+
+    def add(self, definition: RulesetDefinition) -> None:
+        """Register an imported rulebook; an existing id/version is left untouched."""
+        key = (definition.rules.name, definition.rules.version)
+        self._definitions.setdefault(key, definition)
 
     def get(self, ruleset_id: str, version: str) -> RulesetDefinition:
         try:

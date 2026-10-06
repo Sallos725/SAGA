@@ -237,6 +237,20 @@ life. Changing rules therefore means publishing a new `version`; old worlds keep
 under the old one. Fix typos in prose freely; bump the version when numbers, formulas,
 actions, conditions or items change.
 
+## Shipping it as a RisuAI module
+
+```bash
+python -m saga_trpg.rulebooks module my-system.json --out my-system.module.json
+```
+
+Import the file in PocketRisu under Settings → Modules → Import and enable the module. It
+holds two lorebook entries: your `narration` text (always inserted into the prompt) and the
+rulebook itself (never inserted; the SAGA plugin reads it and sends it to the backend, which
+validates and pins it). The backend keeps one file per `<id>@<version>`; to change rules,
+bump `version` and export again. See [RISUAI_MODULES.md](RISUAI_MODULES.md) for the host
+format and [ADR 0008](adr/0008-rulebooks-in-risuai-modules.md) for the contract. A backend
+can also receive a rulebook directly: `POST /rulebooks` with `{"content": "<the JSON text>"}`.
+
 ## Not in schema v1
 
 Item effects and equipment, spells, initiative and action economy, multi-step procedures such
