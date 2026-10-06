@@ -62,6 +62,35 @@ C5 should normally trigger scenario review rather than reward the model.
 - failure conditions
 - optional memory injections/distractors
 
+## Implemented (2026-10-06): scenario v2, scripted driver, validators, artifacts
+
+- `benchmarks/scenarios/*.json` (schema v2, `saga_trpg.benchmark.models`): pinned
+  `ruleset_id`/`ruleset_version` (must be registered), `initial_world`, public `setup_text`,
+  `stochastic` (`seed` → seeded deterministic dice; `tape` → pre-recorded raw results per
+  expression so different policies face identical physical outcomes), `max_turns`,
+  declarative `validators` and the `success` / `failure` lists.
+- Validators (`benchmark/validators.py`): `actor` field comparisons, `state` paths,
+  `event_count`, `event_order`, `illegal_attempts`, `record`. They read only the final
+  state, the journal and the illegal-attempt count.
+- Runner (`benchmark/rulecheese.py`): a `Driver` sees an `Observation` (setup text, the
+  rulebook's command list, turn budget, rendered display, last facts/error) and returns a
+  command; the runner parses it with the rulebook grammar and dispatches through the
+  production `RuntimeEngine`. A rejected command never reaches the journal, counts as an
+  illegal attempt and is shown to the driver as an error. `ScriptedDriver` plays a fixed
+  list; model drivers are the next step.
+- Artifact (`BenchmarkRun` v2): scenario and ruleset versions, runtime version, stochastic
+  policy, initial world, full journal, event ids, final state and hash, metrics (turns,
+  attempts, illegal attempts, valid-action rate, rolls), validator verdicts, outcome
+  (`success` / `partial` / `failure`) and notes. `python -m saga_trpg.benchmark run` writes it.
+- Outcome: `failure` when any `failure` validator fails; `success` when `success` is non-empty
+  and all of it passes; otherwise `partial` (a scenario without success criteria is unscored).
+- Budgets: `max_turns` bounds committed turns and `max_attempts` (default 2 × `max_turns`)
+  bounds decisions including rejected ones; both remaining budgets are in the observation.
+- Hidden validator state and the success/failure lists are never part of the observation.
+
+Not implemented: model drivers, judges, memory ablations, the report generator, cheese
+taxonomy labelling.
+
 ## Long-horizon NMOS experiments
 
 Useful controlled comparisons:
