@@ -113,7 +113,8 @@ Start tiny.
 - [x] rulebook data format v1, formula language, generic engine and `check` command
 - [x] condition effects on rolls, as rulebook data (SRD `0.4.0`)
 - [x] Fate Condensed as data (`0.2.0`: graded outcomes, pending costs, records)
-- [ ] RisuAI module container import: validate and pin a rulebook from a module
+- [x] RisuAI module export (plain JSON shape) and backend import/pinning (`POST /rulebooks`)
+- [ ] plugin forwards the module's rulebook entry; rulebook-derived command vocabulary
 
 Only after those are stable:
 

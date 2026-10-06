@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field
 
 from saga_trpg.adapters.risu.openai_proxy import RisuBridge
 from saga_trpg.adapters.risu.openai_proxy import router as risu_router
@@ -24,11 +25,26 @@ from saga_trpg.domain.models import ActorState, WorldState
 from saga_trpg.domain.rulesets import CreateWorldRequest, RulesetContext, RulesetManifest
 from saga_trpg.modules.catalog import COMMON_BOT_DESCRIPTION
 from saga_trpg.ports.tools import ToolExecutionPending, ToolIdentityConflict
+from saga_trpg.rulebooks.loader import RulebookError
+from saga_trpg.rulebooks.risu_module import sha256_text
 from saga_trpg.runtime.engine import IdempotencyConflict
 from saga_trpg.runtime.journal import JournalEntry
 from saga_trpg.runtime.replay import ReplayError
 
 logger = logging.getLogger(__name__)
+
+
+class RulebookImport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    content: str = Field(min_length=2, max_length=2_000_000)
+
+
+class RulebookImported(BaseModel):
+    ruleset_id: str
+    ruleset_version: str
+    sha256: str
+    created: bool
 
 
 def create_app(
@@ -106,6 +122,30 @@ def create_app(
         ruleset_id: str, version: str = Query("0.1.0", min_length=1)
     ) -> RulesetManifest:
         return worlds.registry.get(ruleset_id, version).manifest.model_copy(deep=True)
+
+    @app.get("/rulebooks")
+    def list_rulebooks() -> list[RulesetManifest]:
+        return worlds.registry.manifests()
+
+    @app.get("/rulebooks/{ruleset_id}")
+    def describe_rulebook(
+        ruleset_id: str, version: str = Query(..., min_length=1)
+    ) -> RulesetManifest:
+        return worlds.registry.get(ruleset_id, version).manifest.model_copy(deep=True)
+
+    @app.post("/rulebooks", status_code=201)
+    def import_rulebook(request: RulebookImport) -> RulebookImported:
+        """Validate and register a rulebook (for example one carried by a RisuAI module)."""
+        try:
+            manifest, created = worlds.register_rulebook(request.content)
+        except RulebookError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return RulebookImported(
+            ruleset_id=manifest.ruleset_id,
+            ruleset_version=manifest.ruleset_version,
+            sha256=sha256_text(request.content),
+            created=created,
+        )
 
     @app.post("/worlds/{world_id}", status_code=201)
     def create_world(world_id: str, request: CreateWorldRequest) -> WorldState:

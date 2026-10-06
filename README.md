@@ -265,7 +265,8 @@ Implemented:
   no item effects
 - **Rulebooks as data**: a closed JSON schema plus a small formula language, one generic
   engine, a `check` command with errors by entry; `srd-5.2.1@0.4.0` and `fate-condensed@0.2.0`
-  are bundled rulebooks ([guide](docs/RULEBOOKS.md),
+  are bundled rulebooks; rulebooks ship as RisuAI modules and import at `POST /rulebooks`
+  ([guide](docs/RULEBOOKS.md), [module format](docs/RISUAI_MODULES.md),
   [ADR 0007](docs/adr/0007-rulebooks-as-data.md))
 - PocketRisu commands for those actions (`damage`, `heal`, `inflict`, `cure`, `wait`,
   `give`, `take`) and a compact read-only status footer; new bridge worlds pin the latest

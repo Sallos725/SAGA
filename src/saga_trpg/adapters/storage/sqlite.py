@@ -6,17 +6,23 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from saga_trpg.adapters.dice.recorded import RecordedDice, ToolResultRequired
-from saga_trpg.adapters.storage.database import RepositoryVersionError, SQLiteDatabase
+from saga_trpg.adapters.storage.database import (
+    RepositoryConflict,
+    RepositoryNotFound,
+    RepositoryVersionError,
+    SQLiteDatabase,
+)
 from saga_trpg.adapters.storage.tool_tape import SQLiteToolResultTape
 from saga_trpg.domain.branches import BranchInfo, ForkRequest
 from saga_trpg.domain.events import GameEvent
 from saga_trpg.domain.models import WorldState
-from saga_trpg.domain.rulesets import RulesetReference
+from saga_trpg.domain.rulesets import RulesetManifest, RulesetReference
 from saga_trpg.modules.base import RuleModule
-from saga_trpg.modules.catalog import RulesetRegistry
+from saga_trpg.modules.catalog import RulesetRegistry, bundled_digests, rulebook_definition
 from saga_trpg.modules.generic_fantasy.rules import GenericFantasyRules
 from saga_trpg.ports.dice import DicePort
 from saga_trpg.ports.tools import ToolBinding, ToolExecutionPending
+from saga_trpg.rulebooks.store import RulebookStore
 from saga_trpg.runtime.engine import DispatchOutcome, RuntimeEngine, validate_event_retry
 from saga_trpg.runtime.hashing import stable_model_hash, stable_value_hash
 from saga_trpg.runtime.journal import JournalEntry
@@ -24,14 +30,6 @@ from saga_trpg.runtime.replay import ReplayError, replay_recorded_results
 from saga_trpg.runtime.rng import DeterministicDice
 
 RUNTIME_VERSION = "0.2.0"
-
-
-class RepositoryConflict(ValueError):
-    """The requested world or branch already exists."""
-
-
-class RepositoryNotFound(LookupError):
-    """The requested world, branch, or fork event does not exist."""
 
 
 @dataclass(frozen=True)
@@ -127,6 +125,10 @@ class SQLiteWorldRepository:
         self.rules = rules if rules is not None else GenericFantasyRules()
         self._explicit_rules = rules
         self.registry = RulesetRegistry()
+        # Imported rulebooks live beside the database and are registered on every start.
+        self.rulebooks = RulebookStore(self.path.parent / "rulebooks")
+        for spec in self.rulebooks.load_all():
+            self.registry.add(rulebook_definition(spec))
         self.dice = dice
         self.external_dice = external_dice
         self.tool_tape = SQLiteToolResultTape(self.path)
@@ -153,7 +155,19 @@ class SQLiteWorldRepository:
             if (ruleset_id, version) != (self._explicit_rules.name, self._explicit_rules.version):
                 raise ValueError("ruleset/version differs from the explicitly injected rules")
             return self._explicit_rules
-        return self.registry.get(ruleset_id, version).rules
+        return self._definition(ruleset_id, version).rules
+
+    def _definition(self, ruleset_id: str, version: str):
+        """Registry lookup that refreshes imported rulebooks on a miss.
+
+        Another process may have imported a rulebook since this one started; stored files are
+        the durable truth, so a miss re-reads them before failing."""
+        try:
+            return self.registry.get(ruleset_id, version)
+        except ValueError:
+            for spec in self.rulebooks.load_all():
+                self.registry.add(rulebook_definition(spec))
+            return self.registry.get(ruleset_id, version)
 
     def ruleset_for_world(self, world_id: str) -> RulesetReference:
         with self._transaction() as connection:
@@ -181,6 +195,16 @@ class SQLiteWorldRepository:
                 stable_model_hash(state),
             ),
         )
+
+    def register_rulebook(self, text: str) -> tuple[RulesetManifest, bool]:
+        """Validate, persist and register a rulebook; returns its manifest and whether new."""
+        bundled = bundled_digests()
+        reserved = [key for key in self.registry.builtin_identities() if key not in bundled]
+        spec, created = self.rulebooks.register(
+            text, bundled=bundled, reserved=reserved, build=rulebook_definition
+        )
+        self.registry.add(rulebook_definition(spec))
+        return self.registry.get(spec.id, spec.version).manifest, created
 
     def create_world(
         self,

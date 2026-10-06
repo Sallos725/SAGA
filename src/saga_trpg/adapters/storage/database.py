@@ -10,6 +10,14 @@ class RepositoryVersionError(ValueError):
     """Stored data requires a different runtime or an explicit migration."""
 
 
+class RepositoryConflict(ValueError):
+    """The requested world, branch or rulebook already exists with different content."""
+
+
+class RepositoryNotFound(LookupError):
+    """The requested world, branch, or fork event does not exist."""
+
+
 class SQLiteDatabase:
     def __init__(self, path: str | Path) -> None:
         if str(path) == ":memory:":

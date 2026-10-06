@@ -37,7 +37,8 @@
 - [x] rulebook schema v1 + formula language + generic engine; SRD `0.4.0` as data
 - [x] condition effects on rolls from the conditions table
 - [x] Fate Condensed as a rulebook (graded outcomes, pending adjudication, records)
-- [ ] RisuAI module container import for rulebooks
+- [x] RisuAI module export + backend import/pinning for rulebooks
+- [ ] plugin forwards module rulebook; rulebook-derived commands in the bridge
 - [x] PocketRisu bridge and commands on SRD `0.2.0` (new worlds; existing `0.1.0` worlds unchanged)
 - [ ] quest module
 - [ ] observation/knowledge module

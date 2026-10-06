@@ -295,6 +295,8 @@ def _cross_check(spec: RulebookSpec):  # noqa: C901
         for name, field in record.fields.items():
             if not re.fullmatch(KEY, name):
                 yield f"records.{key}.fields.{name}: key must match {KEY}"
+            if _reserved_name(name):
+                yield f"records.{key}.fields.{name}: this name is reserved; choose another"
             yield from _check_typed(f"records.{key}.fields.{name}", field)
         for name in record.unique:
             if name not in record.fields:
@@ -333,6 +335,8 @@ def _cross_check(spec: RulebookSpec):  # noqa: C901
         for name, item in action.input.items():
             if not re.fullmatch(KEY, name):
                 yield f"actions.{key}.input.{name}: key must match {KEY}"
+            if _reserved_name(name):
+                yield f"actions.{key}.input.{name}: this name is reserved; choose another"
             if name in ("advantage", "disadvantage"):
                 yield (
                     f"actions.{key}.input.{name}: reserved; set the check frame's advantage instead"
@@ -432,6 +436,16 @@ def _cross_check(spec: RulebookSpec):  # noqa: C901
                     )
             if not 0 <= actor.hp <= actor.max_hp or actor.max_hp <= 0:
                 yield f"example_world.actors.{actor_id}: hp must be within 0..max_hp"
+
+
+_RESERVED_NAMES = frozenset(
+    {"schema", "dict", "json", "copy", "validate", "construct", "fields", "parse_obj"}
+)
+
+
+def _reserved_name(name: str) -> bool:
+    # Payload models are pydantic classes; these names collide with its own attributes.
+    return name.startswith("model_") or name in _RESERVED_NAMES
 
 
 def _check_typed(location: str, field: RecordField):

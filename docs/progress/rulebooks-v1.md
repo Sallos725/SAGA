@@ -36,6 +36,19 @@ writing. See [ADR 0007](../adr/0007-rulebooks-as-data.md) and the
   the roll key (`overcome:0` instead of `overcome`). Duplicate aspect names and malformed
   existing records are rejected before dice.
 
+## Follow-up: RisuAI module export and backend import (same day)
+
+- Read the host's module format from the PocketRisu 1.13.0 source maps and recorded it in
+  [RISUAI_MODULES.md](../RISUAI_MODULES.md): plain JSON `{type: "risuModule"}` is an
+  accepted import shape; plugins read enabled modules' lorebooks without permission; a
+  regex key `(?!)` keeps an entry out of the prompt.
+- `python -m saga_trpg.rulebooks module` writes that shape with a narration entry and a
+  rulebook entry (`saga:rulebook:<id>@<version>:<sha256>`); packs export `risu-module.json`.
+- `POST /rulebooks` validates, stores `<data dir>/rulebooks/<id>@<version>.json`, registers
+  the definition and refuses a different file under an existing or bundled version. Stored
+  files are registered on every start; a world pinned to an imported rulebook replays after
+  a restart (tested). See [ADR 0008](../adr/0008-rulebooks-in-risuai-modules.md).
+
 ## Verification
 
 - `pytest` 388 passed, `ruff` clean, `node --test` 23 passed, pack export check clean.
@@ -64,7 +77,7 @@ writing. See [ADR 0007](../adr/0007-rulebooks-as-data.md) and the
 
 ## Unresolved
 
-- No import path from a RisuAI module container yet; rulebooks are bundled with the package.
+- The plugin does not yet forward a module's rulebook entry; the bridge still pins SRD latest.
 - Spending free invokes, expiring boosts, opposed rolls and resource pools remain outside the
   schema; they would need either new builtins or the scripted layer.
 - Item effects, durations, multi-step procedures and opposed rolls are out of schema v1.
@@ -72,7 +85,7 @@ writing. See [ADR 0007](../adr/0007-rulebooks-as-data.md) and the
 
 ## Next recommended task
 
-Build the RisuAI module import path: first read the PocketRisu 1.13.0 module export format
-from the host source, then define how a rulebook travels inside a module (lorebook text plus a
-data asset) and how SAGA validates and pins it. A "rulebook author" skill for AI-assisted
-creators can sit on top of the creator guide now that the schema has survived two systems.
+Plugin side of the module path: find the rulebook entry among enabled lorebooks, send it
+(or its sha256) with the turn, and let the bridge pin a new world to it. That needs a command
+vocabulary derived from the rulebook rather than the SRD verbs, so a Fate module gets
+`overcome`/`create_advantage` commands. Then a "rulebook author" skill for AI-assisted creators.

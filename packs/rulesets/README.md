@@ -21,6 +21,8 @@ these licensed-source examples.
 - `<module>/rulebook.json`: the creator-facing source the engine interprets; copy the one
   closest to your system (SRD for d20-style, Fate for graded results and records) to start your
   own. See [the creator guide](../../docs/RULEBOOKS.md).
+- `<module>/risu-module.json`: the same rulebook packaged as a RisuAI module for
+  Settings → Modules → Import ([how it travels](../../docs/RISUAI_MODULES.md)).
 - `<module>/module.json`: identity/version, source/license/attribution, supported event schemas,
   narrator instructions, and explicit implementation boundaries.
 - `<module>/prompt.md`: readable ruleset instructions and attribution.
@@ -37,9 +39,10 @@ automatically at 0 HP; the GM proposes `apply_condition` explicitly.
 
 The backend catalog is the generation source. Run `python scripts/export_rulesets.py` after
 changing it; `python scripts/export_rulesets.py --check` detects missing or stale exports.
-These are reviewable source packs, **not RisuAI-native `.risum`/card export files**. The actual
-RisuAI Custom API and import format integration remain future work. Pasting the prompt alone
-does not execute this backend or make model-written state authoritative.
+`risu-module.json` is a RisuAI-native module import file; the rest are reviewable source packs.
+The plugin does not yet forward an imported module's rulebook to the backend, so enabling the
+module today only adds its narration text to the prompt. Pasting the prompt alone does not
+execute this backend or make model-written state authoritative.
 
 ## Run a campaign through the debug API
 
