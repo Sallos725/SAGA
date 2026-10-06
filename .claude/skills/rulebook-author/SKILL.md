@@ -40,7 +40,9 @@ that the engine cannot express.
    from saga_trpg.rulebooks.loader import load_rulebook
    from saga_trpg.rulebooks.engine import DataRules
    from saga_trpg.rulebooks.commands import parse_command, command_help
-   spec = load_rulebook("path/to/book.json"); rules = DataRules(spec)
+
+   spec = load_rulebook("path/to/book.json")
+   rules = DataRules(spec)
    print(command_help(spec))
    ```
    Then dispatch two or three commands through `RuntimeEngine` with scripted dice the way
