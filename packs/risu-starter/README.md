@@ -29,8 +29,10 @@ provider's prompt. It sends no SAGA request unless the SAGA provider consumes th
 The plugin's `server_url` defaults to `http://saga-runtime:4850`. PocketRisu routes that
 address through its server with `networkRoute: local_network`; your browser need not resolve
 Docker service names. The backend is not a public API and needs no API key in this isolated
-setup. The `host_instance_id` setting may be left empty: a generated identity is retained in
-host plugin storage. Keep that identity and the backend save volume when restarting or moving
+setup. Set `host_instance_id` explicitly (any token without whitespace). It may be left
+empty, in which case a generated identity is retained in host plugin storage, but on one host
+(PocketRisu 1.13.0, Safari) that storage call never returned and every generation spun
+without reaching SAGA; setting the id skips the call. Keep that identity and the backend save volume when restarting or moving
 the same installation. Use a different identity for an independent installation; changing it
 starts a different campaign namespace.
 
