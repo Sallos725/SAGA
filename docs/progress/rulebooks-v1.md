@@ -94,6 +94,16 @@ writing. See [ADR 0007](../adr/0007-rulebooks-as-data.md) and the
 - `fate-condensed@0.4.0` adds `invoke` and `use_boost`; boosts are unique by name. Earlier
   versions stay bundled byte for byte.
 
+## Follow-up: plugin-path verification without the UI (same day)
+
+- `scripts/smoke_plugin.cjs` runs the real `saga_provider.js` under Node with a mocked host
+  (an enabled module's lorebook from `risu-module.json`, `nativeFetch` = Node fetch) against
+  a live backend. Against the 6131 runtime: Fate module → attachment → world pinned to
+  `fate-condensed@0.4.0` → `overcome`, `create_advantage`, `invoke` ×2, refusal at zero
+  invokes, `overcome … boost_name=Opening`; SRD default → attack, damage, inflict, attack
+  with disadvantage; both regenerate the last turn with `기록 재사용`; footers come from
+  `display`. Only the PocketRisu UI itself is outside this check.
+
 ## Verification
 
 - `pytest` 388 passed, `ruff` clean, `node --test` 23 passed, pack export check clean.
@@ -122,8 +132,8 @@ writing. See [ADR 0007](../adr/0007-rulebooks-as-data.md) and the
 
 ## Unresolved
 
-- Live verification on the 6131 host of a Fate module (JSON or `.risum`) and of a `.charx`
-  import is pending.
+- The PocketRisu UI steps (module import, `.risum`/`.charx` import, plugin re-import) are
+  the only part not covered by `scripts/smoke_plugin.cjs`.
 - Invoke effects on rolls, opposed rolls and resource pools remain outside the schema; they
   would need either new builtins or the scripted layer.
 - Item effects, durations, multi-step procedures and opposed rolls are out of schema v1.
