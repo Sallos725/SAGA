@@ -51,7 +51,8 @@
 
 - [x] scenario loader (schema v2)
 - [x] hidden validators
-- [ ] model driver (scripted only so far)
+- [x] model driver (prompt template v1, Vertex)
+- [ ] first live Vertex benchmark run and its report
 - [x] fixed stochastic conditions (seed / tape)
 - [x] run artifacts
 - [ ] report generator

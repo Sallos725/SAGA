@@ -284,3 +284,90 @@ def test_scenarios_validate_against_the_runner_registry_including_imports(tmp_pa
     with pytest.raises(ValueError, match="house-fate"):
         validate_scenario(spec, RulesetRegistry())
     validate_scenario(spec, registry)
+
+
+# --- model drivers ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_prompt_driver_formats_public_observation_and_parses_one_command():
+    from saga_trpg.benchmark.drivers import PROMPT_TEMPLATE_VERSION, PromptDriver
+
+    prompts = []
+
+    async def complete(prompt: str) -> str:
+        prompts.append(prompt)
+        return "Thinking about it...\n\n```\nattack guard\n```\n"
+
+    driver = PromptDriver(complete, name="fake-model")
+    run = await RuleCheeseRunner().run(scenario(max_turns=1), driver=driver, model="fake")
+    assert run.metrics["turns"] == 1 and run.event_ids == ["turn-1"]
+    prompt = prompts[0]
+    assert "A guard blocks the west gate" in prompt
+    assert "attack <target_id>" in prompt and "Turn 1 of 1" in prompt
+    assert "guard" in prompt and "validators" not in prompt and "guard_down" not in prompt
+    assert run.driver == {
+        "name": "fake-model",
+        "template": PROMPT_TEMPLATE_VERSION,
+        "calls": 1,
+        "stopped_early": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_prompt_driver_shows_the_last_error_and_can_stop():
+    from saga_trpg.benchmark.drivers import PromptDriver
+
+    answers = iter(["dance", "attack guard", "END"])
+    prompts = []
+
+    async def complete(prompt: str) -> str:
+        prompts.append(prompt)
+        return next(answers)
+
+    run = await RuleCheeseRunner().run(
+        scenario(max_turns=5), driver=PromptDriver(complete, name="m"), model="m"
+    )
+    assert run.metrics["illegal_attempts"] == 1 and run.metrics["turns"] == 1
+    assert "unknown action 'dance'" in prompts[1]
+    assert run.driver["stopped_early"] is True and run.driver["calls"] == 3
+
+
+@pytest.mark.asyncio
+async def test_vertex_driver_uses_the_narrator_transport(monkeypatch):
+    import json as _json
+    from types import SimpleNamespace
+
+    import httpx
+    from google.oauth2 import service_account
+    from pydantic import SecretStr
+
+    from saga_trpg.benchmark.drivers import VertexDriver
+
+    monkeypatch.setattr(
+        service_account.Credentials,
+        "from_service_account_info",
+        lambda info, *, scopes: SimpleNamespace(token="tok", refresh=lambda transport: None),
+    )
+    seen = []
+
+    def remote(req):
+        seen.append(_json.loads(req.content))
+        return httpx.Response(
+            200, json={"candidates": [{"content": {"parts": [{"text": "attack guard"}]}}]}
+        )
+
+    account = {
+        "type": "service_account",
+        "project_id": "saga-test-project",
+        "client_email": "bench@saga-test-project.iam.gserviceaccount.com",
+        "private_key": "-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----\n",
+        "token_uri": "https://oauth2.googleapis.com/token",
+    }
+    driver = VertexDriver(SecretStr(_json.dumps(account)), transport=httpx.MockTransport(remote))
+    run = await RuleCheeseRunner().run(scenario(max_turns=1), driver=driver, model="gemini")
+    assert run.metrics["turns"] == 1
+    body = seen[0]
+    assert "one command" in body["systemInstruction"]["parts"][0]["text"].lower()
+    assert "attack <target_id>" in body["contents"][-1]["parts"][0]["text"]
+    assert run.driver["name"].startswith("vertex:")
