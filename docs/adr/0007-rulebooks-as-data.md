@@ -67,9 +67,9 @@ and keeps worlds pinned to older bundled versions replaying after an upgrade.
   system; `not_implemented` is a first-class answer.
 - Rulebook validation is stricter than the Python modules were: stats are typed, inputs are
   closed, formulas must name only known things. A world's rules are exactly its file.
-- The RisuAI module container (lorebook text plus the rulebook as a data asset) is the
-  intended delivery vehicle; the import path that validates and pins a rulebook from such a
-  container is not built yet. Until then rulebooks are bundled with the package.
+- The RisuAI module (lorebook text plus the rulebook as a never-inserted lorebook entry) is
+  the delivery vehicle; [ADR 0008](0008-rulebooks-in-risuai-modules.md) records the import
+  path that validates and pins a rulebook from it.
 - Expression language extensions (new functions, string operations) and new builtins are
   engine changes with their own tests; they must stay pure and deterministic.
 - Equivalence against the Python oracle only covers what the oracle implements. New data-only
