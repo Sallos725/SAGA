@@ -116,6 +116,7 @@ Start tiny.
 - [x] RisuAI module export (plain JSON shape) and backend import/pinning (`POST /rulebooks`)
 - [x] plugin forwards the module's rulebook entry; rulebook-derived command vocabulary
 - [x] `.risum` / `.charx` export with a supplied RPack table
+- [x] rulebook `display` declaration rendered by the backend into the footer
 
 Only after those are stable:
 

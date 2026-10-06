@@ -12,7 +12,12 @@ from saga_trpg.modules.generic_fantasy.rules import GenericFantasyRules
 from saga_trpg.modules.srd_5_2_1.rules import SRD521Rules
 from saga_trpg.modules.srd_5_2_1.rules import example_world as srd_world
 from saga_trpg.rulebooks.engine import DataRules
-from saga_trpg.rulebooks.loader import RulebookSpec, load_rulebook, rulebook_path
+from saga_trpg.rulebooks.loader import (
+    RulebookSpec,
+    bundled_versions,
+    load_rulebook,
+    rulebook_path,
+)
 
 COMMON_BOT_DESCRIPTION = """You are the game master of this campaign.
 Describe scenes and portray non-player characters; leave player decisions to the player.
@@ -61,18 +66,22 @@ def legacy_world(world_id: str) -> WorldState:
 # Hand-written Python versions stay registered for the worlds that pin them; the latest SRD
 # is the bundled rulebook interpreted by the generic engine.
 SRD_VERSIONS = ("0.1.0", "0.2.0", "0.3.0")
-SRD_LATEST = "0.4.0"
-FATE_LATEST = "0.2.0"
+BUNDLED_IDS = ("srd-5.2.1", "fate-condensed")
+SRD_LATEST = bundled_versions("srd-5.2.1")[-1]
+FATE_LATEST = bundled_versions("fate-condensed")[-1]
 BUNDLED_RULEBOOKS = {"srd-5.2.1": SRD_LATEST, "fate-condensed": FATE_LATEST}
 
 
 def bundled_digests() -> dict[tuple[str, str], str]:
-    """sha256 of each bundled rulebook file, so an import cannot shadow one."""
+    """sha256 of every bundled rulebook file, so an import cannot shadow any of them."""
     from saga_trpg.rulebooks.risu_module import sha256_text
 
     return {
-        (rulebook_id, version): sha256_text(rulebook_path(rulebook_id).read_text(encoding="utf-8"))
-        for rulebook_id, version in BUNDLED_RULEBOOKS.items()
+        (rulebook_id, version): sha256_text(
+            rulebook_path(rulebook_id, version).read_text(encoding="utf-8")
+        )
+        for rulebook_id in BUNDLED_IDS
+        for version in bundled_versions(rulebook_id)
     }
 
 
@@ -206,11 +215,14 @@ class RulesetRegistry:
         fate = FateCondensedRules()
         legacy = GenericFantasyRules()
         books = []
-        for rulebook_id, expected in BUNDLED_RULEBOOKS.items():
-            book = load_rulebook(rulebook_path(rulebook_id))
-            if book.version != expected:
-                raise ValueError(f"bundled {rulebook_id} is {book.version}, expected {expected}")
-            books.append(book)
+        for rulebook_id in BUNDLED_IDS:
+            for version in bundled_versions(rulebook_id):
+                book = load_rulebook(rulebook_path(rulebook_id, version))
+                if (book.id, book.version) != (rulebook_id, version):
+                    raise ValueError(
+                        f"bundled file {rulebook_id}@{version} declares {book.id}@{book.version}"
+                    )
+                books.append(book)
         definitions = [
             *[srd_definition(version) for version in SRD_VERSIONS],
             *[rulebook_definition(book) for book in books],

@@ -4,11 +4,12 @@ An API-key-free command demo for PocketRisu **1.13.0**, plugin API **3.0**.
 It uses the existing SRD 5.2.1 subset, deterministic local dice, committed facts as default
 narration, and no semantic memory. Optional Vertex intent and narration need service-account JSON;
 the default remains API-key-free. NMOS is not connected.
-Plugin **0.6.0** uses protocol **3** while preserving v2 worlds and command identities, and
-forwards the rulebook entry of an enabled SAGA module so a new chat is pinned to that rulebook.
-It renders a compact read-only status footer under each committed response: HP and
-conditions per actor, simulated time, the player's inventory, rolls, turn and event id.
-Every value comes from the response; the host stores and computes nothing.
+Plugin **0.7.0** uses protocol **3** while preserving v2 worlds and command identities, forwards
+the rulebook entry of an enabled SAGA module so a new chat is pinned to that rulebook, and prints
+the footer lines the backend renders from the rulebook's `display` declaration.
+It renders a compact read-only status footer under each committed response: the rulebook's
+`display` lines (HP/conditions/inventory for SRD, skills and aspects for Fate), rolls, turn and
+event id. Every value comes from the response; the host stores and computes nothing.
 Natural actions use a distinct raw-text identity; existing v2 chats continue without a reset.
 Backend/plugin 0.4.0 are deployed to 6011. One natural attack and one regeneration passed
 live with unchanged authoritative results; the existing host card was retained. The new

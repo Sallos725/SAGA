@@ -5,11 +5,13 @@ Each system currently implements a declared example subset; these are not full r
 
 | Module | Source license | Implemented example |
 | --- | --- | --- |
-| `srd-5.2.1` version `0.4.0` | CC BY 4.0 | **Data rulebook** (`rulebook.json`): everything in `0.3.0` plus condition effects on rolls and incapacitating conditions, interpreted by the generic engine |
+| `srd-5.2.1` version `0.5.0` | CC BY 4.0 | **Data rulebook** (`rulebook.json`): `0.4.0` plus a `display` declaration for the footer |
+| `srd-5.2.1` version `0.4.0` | CC BY 4.0 | Data rulebook: everything in `0.3.0` plus condition effects on rolls and incapacitating conditions; kept byte for byte |
 | `srd-5.2.1` version `0.3.0` | CC BY 4.0 | Everything in `0.2.0` plus exact per-actor item counts (`give`/`take`) with closed keys and no item effects |
 | `srd-5.2.1` version `0.2.0` | CC BY 4.0 | Ability checks, saving throws, configured weapon attacks, advantage/disadvantage, critical damage, HP; GM-declared damage/heal, explicit named conditions, simulated time |
 | `srd-5.2.1` version `0.1.0` | CC BY 4.0 | Rolls and HP subtraction only; kept registered so existing worlds keep their exact action set |
-| `fate-condensed` version `0.2.0` | CC BY 3.0 | **Data rulebook** (`rulebook.json`): static overcome/new-aspect advantage rolls, outcome grades with pending costs, aspect and boost records |
+| `fate-condensed` version `0.3.0` | CC BY 3.0 | **Data rulebook** (`rulebook.json`): `0.2.0` plus a `display` declaration (skills and aspects, no HP) |
+| `fate-condensed` version `0.2.0` | CC BY 3.0 | Data rulebook: static overcome/new-aspect advantage rolls, outcome grades with pending costs, aspect and boost records; kept byte for byte |
 | `fate-condensed` version `0.1.0` | CC BY 3.0 | The same subset, hand-written; kept registered as the oracle |
 
 The original `generic-fantasy` remains available for existing demo worlds. It is not one of

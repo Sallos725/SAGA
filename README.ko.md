@@ -264,7 +264,8 @@ docs/
   [진행 보고서](docs/progress/srd-state-actions.md))
 - SRD 5.2.1 `0.3.0` 인벤토리: 닫힌 키의 액터별 정확한 아이템 개수(`give`/`take`), 아이템 효과 없음
 - **데이터로 된 룰북**: 닫힌 JSON 스키마 + 작은 수식 언어 + 범용 엔진 하나, 항목별로 오류를
-  알려주는 `check` 명령. `srd-5.2.1@0.4.0`과 `fate-condensed@0.2.0`이 번들 룰북. 룰북은 RisuAI
+  알려주는 `check` 명령. `srd-5.2.1@0.5.0`과 `fate-condensed@0.3.0`이 번들 룰북(이전 번들 버전도
+  바이트 그대로 등록 유지). 룰북은 RisuAI
   모듈로 배포되고 `POST /rulebooks`로 가져옴 ([모듈 포맷](docs/RISUAI_MODULES.md))
   ([작성 가이드](docs/RULEBOOKS.md), [ADR 0007](docs/adr/0007-rulebooks-as-data.md))
 - 그 행동들을 위한 PocketRisu 명령(`damage`, `heal`, `inflict`, `cure`, `wait`, `give`, `take`)과

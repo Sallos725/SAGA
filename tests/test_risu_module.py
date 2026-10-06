@@ -28,15 +28,15 @@ def sha(text):
 def test_module_json_is_the_plain_import_shape_with_two_lorebook_entries():
     module = build_module(SRD_TEXT)
     assert module["type"] == "risuModule"
-    assert module["name"] == "SAGA · SRD 5.2.1 example 0.4.0"
+    assert module["name"] == "SAGA · SRD 5.2.1 example 0.5.0"
     assert module["id"] and module["namespace"] == "saga"
     assert set(module) == {"type", "name", "description", "id", "namespace", "lorebook"}
     narration, data = module["lorebook"]
-    assert narration["comment"] == "saga:narration:srd-5.2.1@0.4.0"
+    assert narration["comment"] == "saga:narration:srd-5.2.1@0.5.0"
     assert narration["alwaysActive"] is True and narration["mode"] == "constant"
     assert narration["content"] == narration_text(load_rulebook(rulebook_path("srd-5.2.1")))
     assert "Not implemented:" in narration["content"]
-    assert data["comment"] == f"saga:rulebook:srd-5.2.1@0.4.0:{sha(SRD_TEXT)}"
+    assert data["comment"] == f"saga:rulebook:srd-5.2.1@0.5.0:{sha(SRD_TEXT)}"
     assert data["useRegex"] is True and data["key"] == "(?!)"
     assert data["alwaysActive"] is False and data["mode"] == "normal"
     assert data["selective"] is False and data["secondkey"] == ""
@@ -53,7 +53,7 @@ def test_module_round_trips_through_the_lorebook_finder():
     ]
     found = find_rulebook_entries(entries)
     assert [(item.rulebook_id, item.version, item.sha256) for item in found] == [
-        ("fate-condensed", "0.2.0", sha(FATE_TEXT))
+        ("fate-condensed", "0.3.0", sha(FATE_TEXT))
     ]
     assert found[0].content == FATE_TEXT
     assert load_rulebook_text(found[0].content).id == "fate-condensed"
@@ -82,12 +82,12 @@ def test_module_command_writes_a_file(tmp_path, capsys):
 def test_store_persists_validated_rulebooks_and_refuses_conflicting_content(tmp_path):
     store = RulebookStore(tmp_path / "rulebooks")
     spec, created = store.register(FATE_TEXT)
-    assert created and (spec.id, spec.version) == ("fate-condensed", "0.2.0")
-    assert (tmp_path / "rulebooks" / "fate-condensed@0.2.0.json").read_text("utf-8") == FATE_TEXT
+    assert created and (spec.id, spec.version) == ("fate-condensed", "0.3.0")
+    assert (tmp_path / "rulebooks" / "fate-condensed@0.3.0.json").read_text("utf-8") == FATE_TEXT
     spec_again, created_again = store.register(FATE_TEXT)
-    assert not created_again and spec_again.version == "0.2.0"
+    assert not created_again and spec_again.version == "0.3.0"
     changed = FATE_TEXT.replace('"title": "Fate Condensed example"', '"title": "Fate (edited)"')
-    with pytest.raises(RepositoryConflict, match="fate-condensed@0.2.0"):
+    with pytest.raises(RepositoryConflict, match="fate-condensed@0.3.0"):
         store.register(changed)
     with pytest.raises(RulebookError):
         store.register("{not json")
@@ -95,17 +95,17 @@ def test_store_persists_validated_rulebooks_and_refuses_conflicting_content(tmp_
         store.register(json.dumps({"schema_version": 1, "id": "x", "version": "0.1.0"}))
     assert [
         (item.id, item.version) for item in RulebookStore(tmp_path / "rulebooks").load_all()
-    ] == [("fate-condensed", "0.2.0")]
+    ] == [("fate-condensed", "0.3.0")]
 
 
 def test_store_refuses_to_shadow_a_bundled_rulebook_version(tmp_path):
     store = RulebookStore(tmp_path / "rulebooks")
     changed = SRD_TEXT.replace('"title": "SRD 5.2.1 example"', '"title": "SRD (edited)"')
     with pytest.raises(RepositoryConflict, match="bundled"):
-        store.register(changed, bundled={("srd-5.2.1", "0.4.0"): sha(SRD_TEXT)})
-    spec, created = store.register(SRD_TEXT, bundled={("srd-5.2.1", "0.4.0"): sha(SRD_TEXT)})
-    assert not created and spec.version == "0.4.0"
-    assert not (tmp_path / "rulebooks" / "srd-5.2.1@0.4.0.json").exists()
+        store.register(changed, bundled={("srd-5.2.1", "0.5.0"): sha(SRD_TEXT)})
+    spec, created = store.register(SRD_TEXT, bundled={("srd-5.2.1", "0.5.0"): sha(SRD_TEXT)})
+    assert not created and spec.version == "0.5.0"
+    assert not (tmp_path / "rulebooks" / "srd-5.2.1@0.5.0.json").exists()
 
 
 def client_for(tmp_path):
@@ -194,3 +194,20 @@ def test_second_repository_sees_a_rulebook_imported_through_the_first(tmp_path):
     assert second.ruleset_for_world("late").ruleset_id == "late-fate"
     assert second.get_state("late").world_id == "late"
     assert second.registry.get("late-fate", "1.0.0").manifest.ruleset_version == "1.0.0"
+
+
+def test_every_bundled_version_stays_importable_byte_for_byte(tmp_path):
+    from saga_trpg.modules.catalog import BUNDLED_IDS, bundled_digests
+    from saga_trpg.rulebooks.loader import bundled_versions
+
+    repo, client = client_for(tmp_path)
+    digests = bundled_digests()
+    assert ("srd-5.2.1", "0.4.0") in digests and ("fate-condensed", "0.2.0") in digests
+    for rulebook_id in BUNDLED_IDS:
+        for version in bundled_versions(rulebook_id):
+            text = rulebook_path(rulebook_id, version).read_text(encoding="utf-8")
+            response = client.post("/rulebooks", json={"content": text})
+            assert response.status_code == 201, response.text
+            assert response.json()["created"] is False
+            assert client.get(f"/rulebooks/{rulebook_id}?version={version}").status_code == 200
+    assert not (tmp_path / "rulebooks").exists()

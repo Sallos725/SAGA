@@ -18,7 +18,7 @@ def fate_rules():
 
 def test_fate_rulebook_loads_with_records_and_graded_outcomes():
     spec = load_rulebook(FATE_PATH)
-    assert (spec.id, spec.version) == ("fate-condensed", "0.2.0")
+    assert (spec.id, spec.version) == ("fate-condensed", "0.3.0")
     assert set(spec.records) == {"fate_aspects", "fate_boosts"}
     assert spec.records["fate_aspects"].unique == ["name"]
     rules = fate_rules()
@@ -158,7 +158,7 @@ def test_registry_serves_fate_020_from_the_rulebook():
     from saga_trpg.modules.catalog import RulesetRegistry
 
     registry = RulesetRegistry()
-    latest = registry.get("fate-condensed", "0.2.0")
+    latest = registry.get("fate-condensed", "0.3.0")
     assert isinstance(latest.rules, DataRules)
     assert isinstance(registry.get("fate-condensed", "0.1.0").rules, FateCondensedRules)
     assert latest.example_world("w") == fate_world("w")

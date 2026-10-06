@@ -39,6 +39,7 @@ from saga_trpg.rulebooks.commands import (
     parse_command,
     rules_for,
 )
+from saga_trpg.rulebooks.display import render_display
 from saga_trpg.rulebooks.engine import DataRules
 from saga_trpg.rulebooks.loader import RulebookSpec, load_rulebook, rulebook_path
 from saga_trpg.runtime.hashing import stable_model_hash, stable_value_hash
@@ -565,6 +566,9 @@ class RisuBridge:
                 "event_id": event_id,
                 "seq": saved.committed.seq,
                 "replayed": replayed,
+                # Footer lines rendered from the rulebook's display declaration; the host
+                # prints them without knowing what a stat or a record means.
+                "display": render_display(spec, saved.result.state),
                 **result,
             },
         }

@@ -166,6 +166,14 @@ class ExampleWorld(Closed):
     flags: dict[str, Any] = Field(default_factory=dict)
 
 
+class DisplaySpec(Closed):
+    """What a host status footer shows; the backend renders it, the host only prints it."""
+
+    actor: list[str] = Field(default_factory=lambda: ["hp", "conditions", "inventory"])
+    records: list[str] = Field(default_factory=list)
+    world: list[str] = Field(default_factory=lambda: ["time"])
+
+
 class RulebookSpec(Closed):
     schema_version: Literal[1]
     id: str = Field(pattern=r"^[a-z0-9][a-z0-9.-]{0,60}$")
@@ -182,6 +190,7 @@ class RulebookSpec(Closed):
     conditions: dict[str, ConditionSpec] = Field(default_factory=dict)
     items: dict[str, ItemSpec] = Field(default_factory=dict)
     example_world: ExampleWorld | None = None
+    display: DisplaySpec = Field(default_factory=DisplaySpec)
     implemented: list[str] = Field(default_factory=list)
     not_implemented: list[str] = Field(default_factory=list)
     narration: str = ""
@@ -197,9 +206,30 @@ _BUILTIN_PAYLOAD_INPUTS = {
 }
 
 
-def rulebook_path(rulebook_id: str) -> Path:
-    """Path of a rulebook bundled with the package."""
-    return Path(str(resources.files("saga_trpg.rulebooks") / "bundled" / f"{rulebook_id}.json"))
+def _bundled_dir() -> Path:
+    return Path(str(resources.files("saga_trpg.rulebooks") / "bundled"))
+
+
+def bundled_versions(rulebook_id: str) -> list[str]:
+    """Every bundled version of a rulebook, oldest first. Bundled files are immutable: a
+    change to the rules is a new `<id>@<version>.json`, never an edit in place."""
+    prefix = f"{rulebook_id}@"
+    found = [
+        path.name[len(prefix) : -5]
+        for path in _bundled_dir().glob(f"{rulebook_id}@*.json")
+        if path.name.startswith(prefix)
+    ]
+    return sorted(found, key=lambda v: tuple(int(part) for part in v.split(".")))
+
+
+def rulebook_path(rulebook_id: str, version: str | None = None) -> Path:
+    """Path of a bundled rulebook: a specific version, or the latest one."""
+    if version is None:
+        versions = bundled_versions(rulebook_id)
+        if not versions:
+            raise RulebookError(f"no bundled rulebook named {rulebook_id!r}")
+        version = versions[-1]
+    return _bundled_dir() / f"{rulebook_id}@{version}.json"
 
 
 def load_rulebook(path: Path | str) -> RulebookSpec:
@@ -426,6 +456,25 @@ def _cross_check(spec: RulebookSpec):  # noqa: C901
         if action.on_hit is not None:
             yield from _check_formula(f"actions.{key}.on_hit.dice", action.on_hit.dice, allowed)
             yield from _check_formula(f"actions.{key}.on_hit.bonus", action.on_hit.bonus, allowed)
+    builtin_actor = {"hp", "conditions", "inventory"}
+    for section, allowed in (
+        ("actor", builtin_actor | set(spec.stats)),
+        ("records", set(spec.records)),
+        ("world", {"time"}),
+    ):
+        entries = getattr(spec.display, section)
+        for entry in entries:
+            if entry not in allowed:
+                yield (
+                    f"display.{section}: {entry!r} is not available; choose from "
+                    f"{', '.join(sorted(allowed)) or 'nothing'}"
+                )
+        seen: set[str] = set()
+        duplicates: set[str] = set()
+        for entry in entries:
+            (duplicates if entry in seen else seen).add(entry)
+        for duplicate in sorted(duplicates):
+            yield f"display.{section}: {duplicate!r} listed twice"
     if spec.example_world is not None:
         for actor_id, actor in spec.example_world.actors.items():
             if not re.fullmatch(r"^[a-z0-9][a-z0-9_.-]{0,60}$", actor_id):
