@@ -216,6 +216,21 @@ class DataRules:
             if builtin == "time_advance":
                 fields["amount"] = (int, Field(ge=1, le=100_000))
                 fields["unit"] = (Literal[tuple(action.units or {})], ...)
+            if builtin.startswith("record_"):
+                fields.pop("target_id", None)
+                record = self.spec.records[action.record]
+                key_field = record.fields[record.unique[0]]
+                fields[record.unique[0]] = _input_field(
+                    InputSpec(
+                        type="integer" if key_field.type == "integer" else "text",
+                        range=key_field.range,
+                        enum=key_field.enum,
+                        pattern=key_field.pattern
+                        or (".+" if key_field.type != "integer" else None),
+                    )
+                )
+                if builtin == "record_adjust":
+                    fields["amount"] = (int, Field(default=1, ge=1, le=1000))
         title = "".join(part.title() for part in kind.split("_"))
         return create_model(title, __base__=ClosedPayload, **fields)
 
@@ -331,6 +346,33 @@ class DataRules:
         except ExpressionError as exc:
             raise ValueError(str(exc)) from None
 
+        # Records an outcome would write depend only on actor and input, so build them now and
+        # refuse a unique-field collision before any die is rolled.
+        planned: dict[str, list[dict[str, Any]]] = {}
+        try:
+            for outcome_name, effects in action.on_outcome.items():
+                planned[outcome_name] = []
+                for index, effect in enumerate(effects):
+                    record = {
+                        name: formulas[f"on_outcome.{outcome_name}.{index}.{name}"].evaluate(scope)
+                        for name in effect.fields
+                    }
+                    collection = self.spec.records[effect.record]
+                    _validate_record(
+                        f"on_outcome.{outcome_name}[{index}]", record, collection.fields
+                    )
+                    for unique in collection.unique:
+                        if any(
+                            item.get(unique) == record[unique]
+                            for item in state.flags.get(effect.record, {}).values()
+                        ):
+                            raise ValueError(
+                                f"{effect.record} already has {unique} {record[unique]!r}"
+                            )
+                    planned[outcome_name].append(record)
+        except ExpressionError as exc:
+            raise ValueError(str(exc)) from None
+
         # Everything above is validated before the first tool call, including on a miss.
         check = self.spec.checks[action.check]
         sources: list[tuple[str, str]] = []
@@ -393,14 +435,9 @@ class DataRules:
             patches.append(
                 StatePatch(path=f"actors.{target.actor_id}.hp", before=target.hp, after=remaining)
             )
-        for index, effect in enumerate(action.on_outcome.get(outcome, [])):
-            record = {
-                name: formulas[f"on_outcome.{outcome}.{index}.{name}"].evaluate(scope)
-                for name in effect.fields
-            }
-            _validate_record(
-                f"on_outcome.{outcome}[{index}]", record, self.spec.records[effect.record].fields
-            )
+        for effect, record in zip(
+            action.on_outcome.get(outcome, []), planned.get(outcome, []), strict=True
+        ):
             next_state.flags.setdefault(effect.record, {})[event.event_id] = record
             patches.append(StatePatch(path=f"flags.{effect.record}.{event.event_id}", after=record))
         subject = f" against {target.actor_id}" if target is not None else ""
@@ -432,6 +469,57 @@ class DataRules:
             trace=trace,
         )
 
+    def _record(
+        self,
+        state: WorldState,
+        next_state: WorldState,
+        event: GameEvent,
+        action: BuiltinAction,
+        data: dict[str, Any],
+    ) -> RuleResult:
+        collection = self.spec.records[action.record]
+        for key, item in state.flags.get(action.record, {}).items():
+            _validate_record(f"flags.{action.record}.{key}", item, collection.fields)
+        unique = collection.unique[0]
+        key = _find_record(state, action.record, unique, data[unique])
+        if key is None:
+            raise ValueError(f"no {action.record} record with {unique} {data[unique]!r}")
+        stored = state.flags[action.record][key]
+        if action.builtin == "record_remove":
+            del next_state.flags[action.record][key]
+            return RuleResult(
+                state=next_state,
+                patches=[
+                    StatePatch(path=f"flags.{action.record}.{key}", before=stored, after=None)
+                ],
+                facts=[
+                    f"{event.actor_id}: {event.kind} {data[unique]!r} removed from {action.record}."
+                ],
+                trace=self._trace(event, f"builtin=record_remove; key={key}"),
+            )
+        field = collection.fields[action.field]
+        before = stored[action.field]
+        after = before + action.sign * data["amount"]
+        if not field.range[0] <= after <= field.range[1]:
+            raise ValueError(
+                f"{action.record} {data[unique]!r}: {action.field} would be {after}, "
+                f"outside {field.range[0]}..{field.range[1]}"
+            )
+        next_state.flags[action.record][key][action.field] = after
+        return RuleResult(
+            state=next_state,
+            patches=[
+                StatePatch(
+                    path=f"flags.{action.record}.{key}.{action.field}", before=before, after=after
+                )
+            ],
+            facts=[
+                f"{event.actor_id}: {event.kind} {data[unique]!r}; "
+                f"{action.field} {before}->{after}."
+            ],
+            trace=self._trace(event, f"builtin=record_adjust; key={key}"),
+        )
+
     def _builtin(
         self, state: WorldState, event: GameEvent, action: BuiltinAction, payload: ClosedPayload
     ) -> RuleResult:
@@ -455,6 +543,8 @@ class DataRules:
                 ],
                 trace=self._trace(event, f"seconds={seconds}"),
             )
+        if action.builtin.startswith("record_"):
+            return self._record(state, next_state, event, action, data)
         target = actor_in(state, data["target_id"])
         self._hp_sane(target)
         changed = next_state.actors[target.actor_id]
@@ -511,6 +601,16 @@ class DataRules:
             facts=[fact],
             trace=self._trace(event, f"builtin={action.builtin}"),
         )
+
+
+def _find_record(state: WorldState, collection: str, field: str, value: Any) -> str | None:
+    stored = state.flags.get(collection, {})
+    if not isinstance(stored, dict):
+        return None
+    for key, item in stored.items():
+        if isinstance(item, dict) and item.get(field) == value:
+            return key
+    return None
 
 
 def _validate_field(label: str, value: Any, field: RecordField) -> None:

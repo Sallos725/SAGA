@@ -117,6 +117,7 @@ Start tiny.
 - [x] plugin forwards the module's rulebook entry; rulebook-derived command vocabulary
 - [x] `.risum` / `.charx` export with a supplied RPack table
 - [x] rulebook `display` declaration rendered by the backend into the footer
+- [x] record builtins (`record_adjust`, `record_remove`): Fate invokes and boosts
 
 Only after those are stable:
 

@@ -10,7 +10,8 @@ Each system currently implements a declared example subset; these are not full r
 | `srd-5.2.1` version `0.3.0` | CC BY 4.0 | Everything in `0.2.0` plus exact per-actor item counts (`give`/`take`) with closed keys and no item effects |
 | `srd-5.2.1` version `0.2.0` | CC BY 4.0 | Ability checks, saving throws, configured weapon attacks, advantage/disadvantage, critical damage, HP; GM-declared damage/heal, explicit named conditions, simulated time |
 | `srd-5.2.1` version `0.1.0` | CC BY 4.0 | Rolls and HP subtraction only; kept registered so existing worlds keep their exact action set |
-| `fate-condensed` version `0.3.0` | CC BY 3.0 | **Data rulebook** (`rulebook.json`): `0.2.0` plus a `display` declaration (skills and aspects, no HP) |
+| `fate-condensed` version `0.4.0` | CC BY 3.0 | **Data rulebook** (`rulebook.json`): `0.3.0` plus `invoke` (spend a free invoke) and `use_boost` (remove a boost) via the record builtins; boosts unique by name |
+| `fate-condensed` version `0.3.0` | CC BY 3.0 | Data rulebook: `0.2.0` plus a `display` declaration (skills and aspects, no HP); kept byte for byte |
 | `fate-condensed` version `0.2.0` | CC BY 3.0 | Data rulebook: static overcome/new-aspect advantage rolls, outcome grades with pending costs, aspect and boost records; kept byte for byte |
 | `fate-condensed` version `0.1.0` | CC BY 3.0 | The same subset, hand-written; kept registered as the oracle |
 

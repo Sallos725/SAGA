@@ -44,6 +44,9 @@ class CommandError(ValueError):
 def _positional(spec: RulebookSpec, kind: str) -> list[str]:
     action = spec.actions[kind]
     if isinstance(action, BuiltinAction):
+        if action.builtin.startswith("record_"):
+            key = spec.records[action.record].unique[0]
+            return [key, "amount"] if action.builtin == "record_adjust" else [key]
         return list(_BUILTIN_ORDER[action.builtin])
     return list(action.input)
 
@@ -56,6 +59,11 @@ def _input_kinds(spec: RulebookSpec, kind: str) -> dict[str, Any]:
     case. Cosmetic variants of a command therefore share one identity."""
     action = spec.actions[kind]
     if isinstance(action, BuiltinAction):
+        if action.builtin.startswith("record_"):
+            record = spec.records[action.record]
+            key = record.unique[0]
+            key_kind = "integer" if record.fields[key].type == "integer" else "text"
+            return {key: key_kind, "amount": "integer"}
         kinds: dict[str, Any] = {name: "word" for name in _BUILTIN_ORDER[action.builtin]}
         kinds["amount"] = "integer"
         return kinds
@@ -174,7 +182,8 @@ def command_help(spec: RulebookSpec) -> str:
         parts = [kind]
         order = _positional(spec, kind)
         if isinstance(action, BuiltinAction):
-            parts += [f"<{name}>" for name in order]
+            optional = {"amount"} if action.builtin == "record_adjust" else set()
+            parts += [f"[{name}=…]" if name in optional else f"<{name}>" for name in order]
         else:
             for name in order:
                 item = action.input[name]

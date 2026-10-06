@@ -85,6 +85,15 @@ writing. See [ADR 0007](../adr/0007-rulebooks-as-data.md) and the
   all of them. Modules exported earlier import byte for byte; worlds pinned to the older
   versions replay unchanged.
 
+## Follow-up: record builtins (same day)
+
+- `record_adjust` (integer field ± amount on the record named by the collection's first
+  `unique` field, range-checked) and `record_remove`. Commands derive from them
+  (`invoke "Mapped route"`, `use_boost Opening`). `on_outcome` writes that would duplicate
+  a unique field are rejected before any roll.
+- `fate-condensed@0.4.0` adds `invoke` and `use_boost`; boosts are unique by name. Earlier
+  versions stay bundled byte for byte.
+
 ## Verification
 
 - `pytest` 388 passed, `ruff` clean, `node --test` 23 passed, pack export check clean.
@@ -115,8 +124,8 @@ writing. See [ADR 0007](../adr/0007-rulebooks-as-data.md) and the
 
 - Live verification on the 6131 host of a Fate module (JSON or `.risum`) and of a `.charx`
   import is pending.
-- Spending free invokes, expiring boosts, opposed rolls and resource pools remain outside the
-  schema; they would need either new builtins or the scripted layer.
+- Invoke effects on rolls, opposed rolls and resource pools remain outside the schema; they
+  would need either new builtins or the scripted layer.
 - Item effects, durations, multi-step procedures and opposed rolls are out of schema v1.
 - The 6131 and 6011 runtimes run older images; existing chats keep their pinned versions.
 

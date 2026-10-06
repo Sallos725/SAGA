@@ -1,0 +1,267 @@
+{
+  "schema_version": 1,
+  "id": "fate-condensed",
+  "version": "0.4.0",
+  "title": "Fate Condensed example",
+  "license": {
+    "id": "CC-BY-3.0",
+    "url": "https://creativecommons.org/licenses/by/3.0/",
+    "attribution": "Fate Condensed ©2020 Evil Hat Productions, LLC.\n\nThis work is based on Fate Condensed (found at http://www.faterpg.com/), a product of Evil Hat Productions, LLC, developed, authored, and edited by PK Sullivan, Lara Turner, Leonard Balsera, Fred Hicks, Richard Bellingham, Robert Hanz, Ryan Macklin, and Sophie Lagacé, and licensed for our use under the Creative Commons Attribution 3.0 Unported license (http://creativecommons.org/licenses/by/3.0/)."
+  },
+  "source": {
+    "url": "https://fate-srd.com/downloads/CC-BY-SRDs.zip",
+    "revision": "Fate-Condensed-SRD-CC-BY.html; SHA256 a0f556ce2415fe4dc88ff71e56755bb92e113a52f8041bda69b759b63782544e; checked 2026-10-04"
+  },
+  "modifications": "Selected unmodified-roll mechanics expressed as rulebook data; 4d3-8 represents four Fate dice. Original example actors and prompts. Costs remain explicit pending adjudications.",
+  "stats": {
+    "skill:*": {
+      "type": "integer",
+      "range": [
+        -10,
+        20
+      ]
+    }
+  },
+  "checks": {
+    "fate": {
+      "roll": "4d3-8",
+      "advantage": "none"
+    }
+  },
+  "outcomes": {
+    "overcome": [
+      {
+        "when": "total - target < 0",
+        "outcome": "failure",
+        "pending": true
+      },
+      {
+        "when": "total - target == 0",
+        "outcome": "tie",
+        "pending": true
+      },
+      {
+        "when": "total - target < 3",
+        "outcome": "success"
+      },
+      {
+        "when": "total - target >= 3",
+        "outcome": "success_with_style"
+      }
+    ],
+    "advantage": [
+      {
+        "when": "total - target < 0",
+        "outcome": "failure",
+        "pending": true
+      },
+      {
+        "when": "total - target == 0",
+        "outcome": "tie"
+      },
+      {
+        "when": "total - target < 3",
+        "outcome": "success"
+      },
+      {
+        "when": "total - target >= 3",
+        "outcome": "success_with_style"
+      }
+    ]
+  },
+  "records": {
+    "fate_aspects": {
+      "fields": {
+        "name": {
+          "type": "text",
+          "pattern": "^.{1,200}$"
+        },
+        "owner_id": {
+          "type": "actor"
+        },
+        "free_invokes": {
+          "type": "integer",
+          "range": [
+            0,
+            10
+          ]
+        }
+      },
+      "unique": [
+        "name"
+      ]
+    },
+    "fate_boosts": {
+      "fields": {
+        "name": {
+          "type": "text",
+          "pattern": "^.{1,200}$"
+        },
+        "owner_id": {
+          "type": "actor"
+        }
+      },
+      "unique": [
+        "name"
+      ]
+    }
+  },
+  "actions": {
+    "overcome": {
+      "role": "check",
+      "input": {
+        "skill": {
+          "type": "text",
+          "pattern": "^.{1,80}$"
+        },
+        "difficulty": {
+          "type": "integer",
+          "range": [
+            -10,
+            20
+          ]
+        },
+        "boost_name": {
+          "type": "text",
+          "pattern": "^.{1,200}$",
+          "default": "Temporary advantage"
+        }
+      },
+      "check": "fate",
+      "modifier": "actor.skill[input.skill]",
+      "target": "input.difficulty",
+      "outcomes": "overcome",
+      "on_outcome": {
+        "success_with_style": [
+          {
+            "record": "fate_boosts",
+            "fields": {
+              "name": "input.boost_name",
+              "owner_id": "actor.id"
+            }
+          }
+        ]
+      }
+    },
+    "create_advantage": {
+      "role": "check",
+      "input": {
+        "skill": {
+          "type": "text",
+          "pattern": "^.{1,80}$"
+        },
+        "difficulty": {
+          "type": "integer",
+          "range": [
+            -10,
+            20
+          ]
+        },
+        "aspect_name": {
+          "type": "text",
+          "pattern": "^.{1,200}$"
+        }
+      },
+      "requires": [
+        {
+          "unique": {
+            "record": "fate_aspects",
+            "field": "name",
+            "value": "input.aspect_name"
+          },
+          "error": "this example supports creating new aspects only"
+        }
+      ],
+      "check": "fate",
+      "modifier": "actor.skill[input.skill]",
+      "target": "input.difficulty",
+      "outcomes": "advantage",
+      "on_outcome": {
+        "tie": [
+          {
+            "record": "fate_boosts",
+            "fields": {
+              "name": "input.aspect_name",
+              "owner_id": "actor.id"
+            }
+          }
+        ],
+        "success": [
+          {
+            "record": "fate_aspects",
+            "fields": {
+              "name": "input.aspect_name",
+              "owner_id": "actor.id",
+              "free_invokes": "1"
+            }
+          }
+        ],
+        "success_with_style": [
+          {
+            "record": "fate_aspects",
+            "fields": {
+              "name": "input.aspect_name",
+              "owner_id": "actor.id",
+              "free_invokes": "2"
+            }
+          }
+        ]
+      }
+    },
+    "invoke": {
+      "builtin": "record_adjust",
+      "record": "fate_aspects",
+      "field": "free_invokes",
+      "sign": -1
+    },
+    "use_boost": {
+      "builtin": "record_remove",
+      "record": "fate_boosts"
+    }
+  },
+  "conditions": {},
+  "items": {},
+  "example_world": {
+    "actors": {
+      "player": {
+        "stats": {
+          "skill:investigate": 2,
+          "skill:athletics": 1,
+          "skill:notice": 3
+        }
+      }
+    },
+    "flags": {
+      "fate_aspects": {},
+      "fate_boosts": {}
+    }
+  },
+  "display": {
+    "actor": [
+      "skill:*"
+    ],
+    "records": [
+      "fate_aspects",
+      "fate_boosts"
+    ],
+    "world": []
+  },
+  "implemented": [
+    "overcome against static opposition",
+    "four outcome grades",
+    "create a new situation aspect",
+    "one/two free invokes on new aspects",
+    "boost records",
+    "spending free invokes on an aspect",
+    "using (removing) a boost"
+  ],
+  "not_implemented": [
+    "character creation and advancement",
+    "paid/free invocations and rerolls",
+    "stunts and compels",
+    "attack, defend, stress and consequences",
+    "opposed rolls and existing-aspect advantages",
+    "paid invocations, invoke effects on rolls, and applying costs"
+  ],
+  "narration": "Selected system: Fate Condensed example, version 0.4.0.\nUse overcome or create_advantage against static opposition, with a stored skill:<name> rating.\nFour journaled d3 faces map 1/2/3 to -1/0/+1. The recorded total includes the skill rating.\nAn overcome failure/tie, or failed advantage, leaves a fictional choice pending; do not state that\na cost or adverse aspect was applied. Successful new aspects and boosts are stored in world flags.\nUse invoke to spend one free invoke on a named aspect (rejected at zero) and use_boost to\nremove a named boost; neither changes a roll in this example, only the recorded counts.\nDo not use generic HP or SRD combat mechanics to fill in unsupported Fate rules.\n"
+}
