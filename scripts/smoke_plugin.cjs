@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // Drive the real PocketRisu plugin (packs/risu-starter/saga_provider.js) against a running
-// SAGA backend with a mocked host: an enabled module's lorebook comes from a risu-module.json,
-// nativeFetch is Node's fetch. Everything except the PocketRisu UI is exercised.
+// SAGA backend with a mocked host. The plugin is evaluated with a `risuai` global, so its own
+// bootstrap runs: the `beforeRequest` replacer and the provider it registers are what this
+// script calls. An enabled module's lorebook comes from a risu-module.json and nativeFetch is
+// Node's fetch. Only the PocketRisu UI itself (menus, import dialogs) is outside this check.
 //
 //   node scripts/smoke_plugin.cjs --base http://127.0.0.1:4852 \
 //     --module packs/rulesets/fate-condensed/risu-module.json \
@@ -23,15 +25,16 @@ const modulePath = option("--module");
 const instance = option("--instance") || "smoke-plugin-" + Date.now();
 const turns = args.length ? args : ["attack opponent"];
 
-const source = fs.readFileSync(path.join(__dirname, "../packs/risu-starter/saga_provider.js"), "utf8");
-const sandbox = { console, URL, TextEncoder, crypto: crypto.webcrypto, btoa: v => Buffer.from(v, "binary").toString("base64"), setTimeout, clearTimeout };
-vm.runInNewContext(source, sandbox);
-const { createClient } = sandbox.SagaRisu;
-
 const lorebook = modulePath ? JSON.parse(fs.readFileSync(modulePath, "utf8")).lorebook : [];
 const character = { chatPage: 0, chats: [{ id: "chat-" + Date.now(), message: [] }] };
 const storage = new Map();
+// What the plugin registers with the host during its own install().
+const hooks = { replacers: new Map(), providers: new Map(), unload: [] };
 const api = {
+  addRisuReplacer: async (kind, fn) => { hooks.replacers.set(kind, fn); },
+  removeRisuReplacer: async kind => { hooks.replacers.delete(kind); },
+  addProvider: async (name, fn) => { hooks.providers.set(name, fn); },
+  onUnload: async fn => { hooks.unload.push(fn); },
   getArgument: async name => ({ server_url: base, host_instance_id: instance, vertex_service_account_json: "" })[name],
   getCurrentCharacterIndex: async () => "char-1",
   getCharacter: async () => JSON.parse(JSON.stringify(character)),
@@ -42,19 +45,32 @@ const api = {
     return { ok: response.ok, status: response.status, json: () => response.json() };
   },
 };
-const client = createClient(api, () => crypto.randomUUID());
 
-async function send(index) {
+const source = fs.readFileSync(path.join(__dirname, "../packs/risu-starter/saga_provider.js"), "utf8");
+const sandbox = { console, URL, TextEncoder, crypto: crypto.webcrypto, btoa: v => Buffer.from(v, "binary").toString("base64"), setTimeout, clearTimeout, risuai: api };
+vm.runInNewContext(source, sandbox);
+
+async function installed() {
+  // install() is fire-and-forget inside the plugin; give its awaits a tick to settle.
+  for (let i = 0; i < 20 && !hooks.providers.has(sandbox.SagaRisu.PROVIDER); i++) await new Promise(r => setImmediate(r));
+  const beforeRequest = hooks.replacers.get("beforeRequest");
+  const provider = hooks.providers.get(sandbox.SagaRisu.PROVIDER);
+  if (!beforeRequest || !provider) throw new Error("plugin did not register its beforeRequest replacer and provider");
+  return { beforeRequest, provider };
+}
+
+async function send(label) {
+  const { beforeRequest, provider } = await installed();
   const prompt = character.chats[0].message
     .filter(m => m.role === "user")
     .map(m => ({ role: "user", content: m.data, memo: m.chatId }));
-  const prepared = await client.beforeRequest(prompt, "model");
-  const response = await client.provider({ mode: "v3", prompt_chat: prepared });
+  const prepared = await beforeRequest(prompt, "model");
+  const response = await provider({ mode: "v3", prompt_chat: prepared });
   const footer = response.content.slice(response.content.indexOf("<div"));
   const text = footer.split("<br>").map(line =>
     line.replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").trim()
   ).join("\n    ");
-  console.log(`${response.success ? "OK " : "ERR"} turn ${index}: ${turns[index - 1]}`);
+  console.log(`${response.success ? "OK " : "ERR"} ${label}: ${prompt.at(-1).content}`);
   console.log("    " + (response.success ? text : response.content.split("\n")[0]));
   return response;
 }
@@ -63,7 +79,7 @@ async function send(index) {
   let failed = 0;
   for (let i = 0; i < turns.length; i++) {
     character.chats[0].message.push({ chatId: "u" + (i + 1), role: "user", data: turns[i] });
-    const response = await send(i + 1);
+    const response = await send("turn " + (i + 1));
     if (!response.success) {
       // A rejected turn never commits; drop it as a player would delete the failed message.
       failed += 1;
@@ -76,9 +92,11 @@ async function send(index) {
   if (messages.length && messages.at(-1).role === "char") {
     messages.pop();
     console.log("--- regenerate last committed turn");
-    const again = await send(turns.length);
+    const again = await send("regenerate");
     if (!again.success || !/기록 재사용/.test(again.content)) failed += 1;
   }
-  console.log(failed ? `${failed} turn(s) failed` : "all turns committed");
+  for (const fn of hooks.unload) await fn();
+  if (hooks.replacers.size) { failed += 1; console.log("unload left a replacer registered"); }
+  console.log(failed ? `${failed} turn(s) failed` : "all turns committed; plugin installed and unloaded cleanly");
   process.exit(failed ? 1 : 0);
 })();

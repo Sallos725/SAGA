@@ -35,8 +35,8 @@ the backend with `up -d --build saga-runtime`. Compose cannot adopt an existing 
 the same name; replacing that container is a separate explicit operator action, using the
 same named volumes. Do not remove save volumes to solve a container-name conflict.
 
-To exercise the plugin path end to end without the UI (module → attachment → commands →
-footer), run `node scripts/smoke_plugin.cjs --base http://127.0.0.1:4852 --module
+To exercise the plugin without the UI (its own install hooks, module → attachment →
+commands → footer, unload), run `node scripts/smoke_plugin.cjs --base http://127.0.0.1:4852 --module
 packs/rulesets/fate-condensed/risu-module.json "overcome investigate 2"` against a backend.
 
 ```bash

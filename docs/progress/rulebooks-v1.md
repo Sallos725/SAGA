@@ -96,13 +96,15 @@ writing. See [ADR 0007](../adr/0007-rulebooks-as-data.md) and the
 
 ## Follow-up: plugin-path verification without the UI (same day)
 
-- `scripts/smoke_plugin.cjs` runs the real `saga_provider.js` under Node with a mocked host
-  (an enabled module's lorebook from `risu-module.json`, `nativeFetch` = Node fetch) against
-  a live backend. Against the 6131 runtime: Fate module → attachment → world pinned to
+- `scripts/smoke_plugin.cjs` runs the real `saga_provider.js` under Node with a mocked
+  `risuai` host: the plugin's own bootstrap registers its `beforeRequest` replacer and
+  provider, the script calls those hooks (an enabled module's lorebook from
+  `risu-module.json`, `nativeFetch` = Node fetch) against a live backend, then runs the
+  plugin's unload hook and checks the replacer is gone. Against the 6131 runtime: Fate module → attachment → world pinned to
   `fate-condensed@0.4.0` → `overcome`, `create_advantage`, `invoke` ×2, refusal at zero
   invokes, `overcome … boost_name=Opening`; SRD default → attack, damage, inflict, attack
   with disadvantage; both regenerate the last turn with `기록 재사용`; footers come from
-  `display`. Only the PocketRisu UI itself is outside this check.
+  `display`. Only the PocketRisu UI itself (menus, import dialogs) is outside this check.
 
 ## Verification
 
