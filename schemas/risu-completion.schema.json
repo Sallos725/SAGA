@@ -91,6 +91,17 @@
           "title": "Purpose",
           "type": "string"
         },
+        "rulebook": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RulebookAttachment"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "schema_version": {
           "enum": [
             1,
@@ -110,6 +121,23 @@
         "actions"
       ],
       "title": "HostTurn",
+      "type": "object"
+    },
+    "RulebookAttachment": {
+      "additionalProperties": false,
+      "description": "A rulebook carried by an enabled RisuAI module; pins a world when it is created.",
+      "properties": {
+        "content": {
+          "maxLength": 2000000,
+          "minLength": 2,
+          "title": "Content",
+          "type": "string"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "title": "RulebookAttachment",
       "type": "object"
     },
     "VertexNarrationOptions": {

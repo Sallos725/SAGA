@@ -10,8 +10,9 @@ Python under `modules/`. `srd-5.2.1@0.4.0` is the bundled rulebook; `0.1.0`–`0
 registered as Python oracles for pinned worlds and the equivalence test. Scripts in
 rulebooks remain closed pending a further ADR. Rulebooks ship as RisuAI modules
 ([RISUAI_MODULES.md](RISUAI_MODULES.md), [ADR 0008](adr/0008-rulebooks-in-risuai-modules.md));
-the backend imports them at `POST /rulebooks`, the plugin forwarding and a rulebook-derived
-command vocabulary are the open next slice.
+the backend imports them at `POST /rulebooks`, plugin 0.6.0 forwards an enabled module's
+rulebook with each turn, and commands are derived from the world's rulebook
+(`saga_trpg.rulebooks.commands`). Live Fate-module verification on 6131 is pending.
 
 Earlier checkpoint (2026-10-06): SRD `0.2.0` state actions (damage, heal, conditions, time)
 and their PocketRisu commands are merged. Read [ADR 0006](adr/0006-ruleset-versions-and-state-actions.md)

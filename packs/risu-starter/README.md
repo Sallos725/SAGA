@@ -4,7 +4,8 @@ An API-key-free command demo for PocketRisu **1.13.0**, plugin API **3.0**.
 It uses the existing SRD 5.2.1 subset, deterministic local dice, committed facts as default
 narration, and no semantic memory. Optional Vertex intent and narration need service-account JSON;
 the default remains API-key-free. NMOS is not connected.
-Plugin **0.5.0** uses protocol **3** while preserving v2 worlds and command identities.
+Plugin **0.6.0** uses protocol **3** while preserving v2 worlds and command identities, and
+forwards the rulebook entry of an enabled SAGA module so a new chat is pinned to that rulebook.
 It renders a compact read-only status footer under each committed response: HP and
 conditions per actor, simulated time, the player's inventory, rolls, turn and event id.
 Every value comes from the response; the host stores and computes nothing.
@@ -108,6 +109,14 @@ and general card/lore compatibility are not supported.
 | `wait 2 rounds` | Advance simulated time; units `round`/`minute`/`hour`/`day`, 6-second rounds |
 | `give player torch 3` | Add items; keys are `[a-z0-9_]{1,40}` (commands are lower-cased) |
 | `take player torch 1` | Remove items; rejected if fewer are held, key disappears at 0 |
+
+Commands are derived from the world's rulebook: `<action> <values in input order> [name=value…]
+[advantage|disadvantage]`, so every rulebook action is a command (`overcome investigate 2`,
+`create_advantage notice 1 "Mapped route"`). The table above lists the SRD shorthands; `check`,
+`save`, `inflict`, `cure` and `wait` are aliases. A malformed command returns the full command
+list of that rulebook. Enable a SAGA rulebook module (`packs/rulesets/<id>/risu-module.json`)
+before starting a **new** chat and that chat plays by it; existing chats keep their rulebook.
+Enable only one SAGA rulebook module at a time; two different ones are refused with their ids.
 
 Abilities: `strength`, `dexterity`, `constitution`, `intelligence`, `wisdom`, `charisma`.
 DC range: 1–100. Commands are case-insensitive; no slash prefix. One command per user message.

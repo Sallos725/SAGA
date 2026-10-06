@@ -189,6 +189,14 @@ divergent action for an alternate line. The actor is fixed to `player`; the rule
 created on an earlier version keep that version, its exact action set and semantics, and
 reject newer commands with a validation error. Adding command verbs never changes existing
 command identities.
+Commands are parsed by the world's rulebook (`saga_trpg.rulebooks.commands`): the action name
+or an alias, positional values in input order, `name=value`, quoted text, and the advantage
+flags for roll-twice checks. Closed choices are lower-cased; free text keeps its case. Worlds
+pinned to hand-written SRD versions use the bundled SRD grammar, whose payload shapes match.
+The turn may carry `rulebook: { content }`; it is validated and registered, and pins the
+world only when the world is created. Natural-language interpretation stays limited to the SRD
+demo rulebook.
+
 If the rules reject a divergent edit before any commit, the fork created for it is discarded
 again, so the host can retry with a corrected edit on the same message without leftover
 branches. Set `host_instance_id` explicitly; see the starter guide for the storage hang

@@ -114,7 +114,8 @@ Start tiny.
 - [x] condition effects on rolls, as rulebook data (SRD `0.4.0`)
 - [x] Fate Condensed as data (`0.2.0`: graded outcomes, pending costs, records)
 - [x] RisuAI module export (plain JSON shape) and backend import/pinning (`POST /rulebooks`)
-- [ ] plugin forwards the module's rulebook entry; rulebook-derived command vocabulary
+- [x] plugin forwards the module's rulebook entry; rulebook-derived command vocabulary
+- [ ] `.risum` / `.charx` export with a supplied RPack table
 
 Only after those are stable:
 
