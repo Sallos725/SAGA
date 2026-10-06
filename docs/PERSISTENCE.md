@@ -95,6 +95,11 @@ write transaction, apply only to a new commit (retries still return their record
 fork transaction to create a branch for an event id the world already holds. `locate_event` reports, per branch containing an event (or genesis), its
 sequence, the branch head, fork sequence and any unresolved tool event. The PocketRisu bridge
 uses these to append consecutive turns to one branch and fork only on divergence.
+`discard_empty_branch` removes, in one write transaction, a fork that holds nothing beyond its
+copied prefix: the branch row, copied entries and snapshot go together. It refuses `main`, a
+branch with its own entries, any tool event or tape record, and a branch that has children. The bridge calls it when
+the rules reject the edited action a fork was just created for, so failed edits do not
+accumulate empty branches; a racing identical request that already committed keeps its branch.
 
 Copies make this implementation simple and independently replayable, at the cost of storage
 proportional to the copied prefix. Large histories may later need shared immutable prefixes,

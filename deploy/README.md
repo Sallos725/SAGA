@@ -1,5 +1,11 @@
 # Isolated PocketRisu 6011 playtest
 
+A second file, `compose.risu-6131.yaml`, starts only a backend (`saga-runtime-6131`, data
+volume `saga-runtime-6131-data`, debug API on `127.0.0.1:4852`) for an existing PocketRisu
+that runs with host networking on port 6131. Point that host's plugin `server_url` at
+`http://127.0.0.1:4852`; PocketRisu's local-network route accepts loopback. Nothing in it
+touches the 6011 containers or volumes.
+
 The compose file reproduces the dedicated `saga-pocketrisu` host and `saga-runtime` backend.
 It does not modify the existing PocketRisu host on 6010. The pinned PocketRisu image is
 `ghcr.io/pocketrisu/pocketrisu@sha256:409a5243295f54f1f99a552dc04659fa2ac69bd7c1ab6ee99132b5744ed893bd`.

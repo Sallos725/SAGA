@@ -258,6 +258,8 @@ Implemented:
 - selectable, versioned SRD 5.2.1 and Fate Condensed example modules with closed action schemas
 - SRD 5.2.1 `0.2.0` state actions: GM-declared damage/heal, explicit named conditions,
   and simulated time; `0.1.0` worlds keep their exact action set
+  ([ADR 0006](docs/adr/0006-ruleset-versions-and-state-actions.md),
+  [progress report](docs/progress/srd-state-actions.md))
 - PocketRisu commands for those actions (`damage`, `heal`, `inflict`, `cure`, `wait`);
   new bridge worlds pin `0.2.0`, existing `0.1.0` worlds reject them without changing
 - replayable generic-fantasy attack rule
