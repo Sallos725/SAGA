@@ -10,7 +10,7 @@
   "use strict";
   const PROVIDER = "SAGA SRD Demo";
   const MARKER = "SAGA request ticket: ";
-  const HELP = "Vertex JSON 설정 시 자연어 단일 행동도 지원합니다: 상대를 공격한다 / 힘 난이도 10 판정. 명령: attack opponent / check strength 10 / save dexterity 12 / damage opponent 5 / heal player 3 / inflict opponent prone / cure opponent prone / wait 2 rounds. 판정 명령 뒤에 advantage 또는 disadvantage를 붙일 수 있습니다.";
+  const HELP = "Vertex JSON 설정 시 자연어 단일 행동도 지원합니다: 상대를 공격한다 / 힘 난이도 10 판정. 명령: attack opponent / check strength 10 / save dexterity 12 / damage opponent 5 / heal player 3 / inflict opponent prone / cure opponent prone / wait 2 rounds / give player torch 1 / take player torch 1. 판정 명령 뒤에 advantage 또는 disadvantage를 붙일 수 있습니다.";
 
   function narrationContext(prompt) {
     const text = prompt.filter(message => ["system", "user", "assistant"].includes(message?.role) &&

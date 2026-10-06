@@ -260,8 +260,11 @@ Implemented:
   and simulated time; `0.1.0` worlds keep their exact action set
   ([ADR 0006](docs/adr/0006-ruleset-versions-and-state-actions.md),
   [progress report](docs/progress/srd-state-actions.md))
-- PocketRisu commands for those actions (`damage`, `heal`, `inflict`, `cure`, `wait`);
-  new bridge worlds pin `0.2.0`, existing `0.1.0` worlds reject them without changing
+- SRD 5.2.1 `0.3.0` inventory: exact per-actor item counts with closed keys (`give`/`take`),
+  no item effects
+- PocketRisu commands for those actions (`damage`, `heal`, `inflict`, `cure`, `wait`,
+  `give`, `take`) and a compact read-only status footer; new bridge worlds pin the latest
+  version, existing worlds keep theirs and reject newer commands without changing
 - replayable generic-fantasy attack rule
 - FastAPI debug endpoints
 - a versioned OpenAI-shaped Risu completion adapter with immutable host-turn mapping
@@ -279,7 +282,7 @@ Not implemented yet:
 - live checks/saves and broader language quality/scope for the limited intent adapter
 - general RisuAI card/lore compatibility and streaming (narration copies only bounded text context)
 - legacy JSONL import and future state/event semantic migrations
-- complete TRPG rulesets (inventory, quest flags, visibility, condition effects, death)
+- complete TRPG rulesets (item effects, quest flags, visibility, condition effects, death)
 - full RuleCheeseBench runner and judges
 
 Start with `docs/AGENT_HANDOFF.md` if you are handing this repo to Codex or Claude Code.

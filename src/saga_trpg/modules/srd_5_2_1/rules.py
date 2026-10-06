@@ -95,6 +95,21 @@ class AdvanceTime(ClosedPayload):
     unit: TimeUnit
 
 
+# Item keys are closed by shape only; what an item does is not modelled in this example.
+class InventoryChange(ClosedPayload):
+    target_id: str = Field(min_length=1)
+    item: str = Field(pattern=r"^[a-z0-9_]{1,40}$")
+    amount: int = Field(ge=1, le=1000)
+
+
+class Give(InventoryChange):
+    pass
+
+
+class Take(InventoryChange):
+    pass
+
+
 ROLL_ACTIONS = {"ability_check": AbilityCheck, "saving_throw": SavingThrow, "attack": Attack}
 STATE_ACTIONS = {
     "damage": Damage,
@@ -103,8 +118,13 @@ STATE_ACTIONS = {
     "remove_condition": RemoveCondition,
     "advance_time": AdvanceTime,
 }
-_ACTIONS_BY_VERSION = {"0.1.0": ROLL_ACTIONS, "0.2.0": {**ROLL_ACTIONS, **STATE_ACTIONS}}
-LATEST_VERSION = "0.2.0"
+INVENTORY_ACTIONS = {"give": Give, "take": Take}
+_ACTIONS_BY_VERSION = {
+    "0.1.0": ROLL_ACTIONS,
+    "0.2.0": {**ROLL_ACTIONS, **STATE_ACTIONS},
+    "0.3.0": {**ROLL_ACTIONS, **STATE_ACTIONS, **INVENTORY_ACTIONS},
+}
+LATEST_VERSION = "0.3.0"
 
 
 class SRD521Rules:
@@ -133,6 +153,8 @@ class SRD521Rules:
             return self._condition(state, event, payload)
         if isinstance(payload, AdvanceTime):
             return self._advance_time(state, event, payload)
+        if isinstance(payload, InventoryChange):
+            return self._inventory(state, event, payload)
 
         modifier = self._ability_modifier(actor, payload.ability)
         proficiency_key = (
@@ -319,6 +341,39 @@ class SRD521Rules:
                 f"simulated time {next_state.simulated_time}s."
             ],
             trace=[f"{self.name}@{self.version}.advance_time", f"seconds={seconds}"],
+        )
+
+    def _inventory(
+        self, state: WorldState, event: GameEvent, payload: InventoryChange
+    ) -> RuleResult:
+        target = actor_in(state, payload.target_id)
+        before = target.inventory.get(payload.item, 0)
+        if isinstance(payload, Take) and before < payload.amount:
+            raise ValueError(
+                f"{target.actor_id} holds {before} {payload.item}, cannot take {payload.amount}"
+            )
+        after = before + payload.amount if isinstance(payload, Give) else before - payload.amount
+        next_state = state.model_copy(deep=True)
+        inventory = next_state.actors[target.actor_id].inventory
+        if after > 0:
+            inventory[payload.item] = after
+        else:
+            del inventory[payload.item]
+        return RuleResult(
+            state=next_state,
+            patches=[
+                StatePatch(
+                    path=f"actors.{target.actor_id}.inventory.{payload.item}",
+                    before=before,
+                    after=after,
+                )
+            ],
+            facts=[
+                f"{event.actor_id}: {event.kind} {payload.amount} {payload.item} "
+                f"{'to' if isinstance(payload, Give) else 'from'} {target.actor_id}; "
+                f"now {after}."
+            ],
+            trace=[f"{self.name}@{self.version}.{event.kind}", f"item={payload.item}"],
         )
 
 

@@ -56,7 +56,7 @@ def legacy_world(world_id: str) -> WorldState:
     )
 
 
-SRD_VERSIONS = ("0.1.0", "0.2.0")
+SRD_VERSIONS = ("0.1.0", "0.2.0", "0.3.0")
 _SRD_ROLL_SCOPE = [
     "ability checks",
     "saving throws",
@@ -70,6 +70,9 @@ _SRD_STATE_SCOPE = [
     "explicit named conditions without exhaustion levels",
     "simulated time in seconds with six-second rounds",
 ]
+_SRD_INVENTORY_SCOPE = [
+    "exact item counts per actor with closed item keys; no item effects",
+]
 _SRD_NOT_IMPLEMENTED = [
     "character creation and advancement",
     "classes and spells",
@@ -77,6 +80,7 @@ _SRD_NOT_IMPLEMENTED = [
     "resistances and vulnerabilities",
     "death saves, instant death and automatic unconsciousness",
     "condition effects on rolls and condition durations",
+    "item effects, equipment, weight and currency",
     "inspiration and rules rerolls",
 ]
 _SRD_NARRATOR_INSTRUCTIONS = {
@@ -95,6 +99,18 @@ Use damage or heal for GM-declared hit point changes; HP is clamped to 0..max an
 automatically at 0 HP. Use apply_condition or remove_condition to change named conditions
 explicitly; conditions have no mechanical effect on rolls in this example. Use advance_time to
 move simulated time in rounds, minutes, hours, or days.
+Unsupported rules require a future implementation; never borrow Fate rules or invent their effects.
+""",
+    "0.3.0": """Selected system: SRD 5.2.1 example, version 0.3.0.
+Use ability_check, saving_throw, or attack for rolls. Ability scores, proficiency, weapon data,
+and AC come from stored actor stats. The GM supplies the check difficulty and circumstances in
+validated input. Narrate the recorded resolution. Natural 1/20 overrides apply to attacks only.
+Use damage or heal for GM-declared hit point changes; HP is clamped to 0..max and nothing happens
+automatically at 0 HP. Use apply_condition or remove_condition to change named conditions
+explicitly; conditions have no mechanical effect on rolls in this example. Use advance_time to
+move simulated time in rounds, minutes, hours, or days. Use give or take to change an actor's
+exact item counts; item keys are lowercase snake_case, items have no modelled effect, and taking
+more than is held is rejected. The recorded inventory is authoritative; never invent items.
 Unsupported rules require a future implementation; never borrow Fate rules or invent their effects.
 """,
 }
@@ -116,7 +132,11 @@ def srd_definition(version: str) -> RulesetDefinition:
             "Selected mechanics reimplemented in Python; original example actors "
             "and prompts. No source art, setting, or full rulebook is bundled."
         ),
-        implemented=_SRD_ROLL_SCOPE + (_SRD_STATE_SCOPE if version != "0.1.0" else []),
+        implemented=(
+            _SRD_ROLL_SCOPE
+            + (_SRD_STATE_SCOPE if version >= "0.2.0" else [])
+            + (_SRD_INVENTORY_SCOPE if version >= "0.3.0" else [])
+        ),
         not_implemented=(
             [
                 "character creation and advancement",

@@ -335,3 +335,67 @@ def test_srd_020_attack_mechanics_match_010_and_only_the_trace_names_the_version
     assert old.facts == new.facts
     assert old.trace[1:] == new.trace[1:]
     assert (old.trace[0], new.trace[0]) == ("srd-5.2.1@0.1.0.attack", "srd-5.2.1@0.2.0.attack")
+
+
+def srd_030(dice=None):
+    return engine_for("srd-5.2.1", dice or ScriptedDice(), "0.3.0")
+
+
+def test_srd_give_and_take_track_exact_counts_without_dice():
+    dice = ScriptedDice()
+    engine = srd_030(dice)
+    initial = engine.state.model_copy(deep=True)
+    result = engine.dispatch(
+        event("give", {"target_id": "player", "item": "silver_key", "amount": 1})
+    ).entry.result
+    assert engine.state.actors["player"].inventory == {"silver_key": 1}
+    assert result.patches == [
+        StatePatch(path="actors.player.inventory.silver_key", before=0, after=1)
+    ]
+    assert result.rolls == [] and result.resolution is None
+    engine.dispatch(event("give", {"target_id": "player", "item": "torch", "amount": 3}, "g2"))
+    engine.dispatch(event("take", {"target_id": "player", "item": "torch", "amount": 2}, "t1"))
+    assert engine.state.actors["player"].inventory == {"silver_key": 1, "torch": 1}
+    taken = engine.dispatch(
+        event("take", {"target_id": "player", "item": "torch", "amount": 1}, "t2")
+    ).entry.result
+    assert "torch" not in engine.state.actors["player"].inventory
+    assert taken.patches == [StatePatch(path="actors.player.inventory.torch", before=1, after=0)]
+    assert dice.calls == []
+    assert replay_recorded_results(initial, engine.journal.entries()) == engine.state
+
+
+@pytest.mark.parametrize(
+    "kind,payload",
+    [
+        ("take", {"target_id": "player", "item": "silver_key", "amount": 1}),
+        ("give", {"target_id": "player", "item": "Silver Key", "amount": 1}),
+        ("give", {"target_id": "player", "item": "silver-key", "amount": 1}),
+        ("give", {"target_id": "player", "item": "", "amount": 1}),
+        ("give", {"target_id": "player", "item": "torch", "amount": 0}),
+        ("give", {"target_id": "player", "item": "torch", "amount": 1001}),
+        ("give", {"target_id": "missing", "item": "torch", "amount": 1}),
+    ],
+)
+def test_srd_030_invalid_inventory_actions_fail_closed(kind, payload):
+    engine = srd_030()
+    before = engine.state.model_copy(deep=True)
+    with pytest.raises(ValueError):
+        engine.dispatch(event(kind, payload))
+    assert engine.state == before and engine.journal.entries() == []
+
+
+def test_srd_take_more_than_held_is_rejected_before_commit():
+    engine = srd_030()
+    engine.dispatch(event("give", {"target_id": "player", "item": "torch", "amount": 2}))
+    with pytest.raises(ValueError, match="holds 2"):
+        engine.dispatch(event("take", {"target_id": "player", "item": "torch", "amount": 3}, "t"))
+    assert engine.state.actors["player"].inventory == {"torch": 2}
+    assert len(engine.journal.entries()) == 1
+
+
+def test_srd_020_worlds_keep_rejecting_inventory_actions():
+    engine = srd_020()
+    with pytest.raises(ValueError, match="unsupported"):
+        engine.dispatch(event("give", {"target_id": "player", "item": "torch", "amount": 1}))
+    assert engine.journal.entries() == []

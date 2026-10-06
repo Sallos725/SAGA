@@ -14,6 +14,7 @@ from saga_trpg.adapters.risu.openai_proxy import (
 from saga_trpg.adapters.storage.sqlite import RepositoryNotFound, SQLiteWorldRepository
 from saga_trpg.api.app import create_app
 from saga_trpg.domain.events import GameEvent
+from saga_trpg.modules.srd_5_2_1.rules import LATEST_VERSION
 from saga_trpg.runtime.hashing import stable_value_hash
 
 
@@ -661,11 +662,11 @@ def test_hidden_latest_and_true_first_turn_edit_have_distinct_behavior(tmp_path)
     )
 
 
-def test_new_bridge_worlds_pin_srd_020_and_existing_010_worlds_keep_working(tmp_path):
+def test_new_bridge_worlds_pin_the_latest_srd_and_existing_010_worlds_keep_working(tmp_path):
     repo, _, _, client = setup(tmp_path)
     saved = client.post("/v1/chat/completions", json=request()).json()["saga"]
     selection = repo.ruleset_for_world(saved["world_id"])
-    assert (selection.ruleset_id, selection.ruleset_version) == ("srd-5.2.1", "0.2.0")
+    assert (selection.ruleset_id, selection.ruleset_version) == ("srd-5.2.1", LATEST_VERSION)
 
     body = request(instance="old-host")
     world_id, _ = RisuBridge.identities(CompletionRequest.model_validate(body).saga)
@@ -785,3 +786,30 @@ def test_concurrent_identical_rejected_edits_both_report_the_rule_error(tmp_path
     assert response.status_code == 422, response.text
     assert "does not have condition" in response.json()["detail"]
     assert [item.branch_id for item in repo.branches(world_id)] == ["main"]
+
+
+def test_inventory_commands_pin_030_and_round_trip(tmp_path):
+    repo, dice, _, client = setup(tmp_path)
+    turns = [
+        ("u1", "give player silver_key 1"),
+        ("u2", "give player torch 3"),
+        ("u3", "take player torch 2"),
+    ]
+    for index in range(3):
+        response = client.post("/v1/chat/completions", json=request(*turns[: index + 1]))
+        assert response.status_code == 200, response.text
+    result = response.json()["saga"]
+    assert repo.ruleset_for_world(result["world_id"]).ruleset_version == "0.3.0"
+    assert result["state"]["actors"]["player"]["inventory"] == {"silver_key": 1, "torch": 1}
+    assert result["rolls"] == [] and dice.calls == 0
+    rejected = client.post(
+        "/v1/chat/completions", json=request(*turns, ("u4", "take player torch 5"))
+    )
+    assert rejected.status_code == 422 and "holds 1" in rejected.json()["detail"]
+    # Commands are case-normalized like every other command; the key shape is still closed.
+    assert (
+        client.post(
+            "/v1/chat/completions", json=request(*turns, ("u4", "give player silver-key 1"))
+        ).status_code
+        == 422
+    )

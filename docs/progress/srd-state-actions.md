@@ -24,6 +24,15 @@ and documentation. Live on the 6131 test host; not deployed to the 6011 playtest
 - `deploy/compose.risu-6131.yaml` runs a backend-only runtime on `127.0.0.1:4852` for an
   existing host-network PocketRisu on port 6131, with its own data volume.
 
+## Follow-up: `0.3.0` inventory and the status footer (same day)
+
+- `srd-5.2.1@0.3.0` adds `give` and `take`: exact per-actor counts, keys `[a-z0-9_]{1,40}`,
+  no effects, over-take rejected before commit, key removed at zero. New bridge worlds pin
+  `0.3.0`; `0.2.0` worlds keep rejecting the new kinds. Bridge commands
+  `give <target> <item> <n>` / `take <target> <item> <n>`.
+- Plugin 0.5.0 renders one compact HTML footer (HP, conditions, time, inventory, rolls,
+  turn, event id) from the response; verified rendering on the 6131 host.
+
 ## Verification
 
 - Offline: `pytest` 290 passed; `ruff check`/`format --check` clean; `node --test` 22 passed;

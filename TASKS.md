@@ -30,7 +30,7 @@
 - [ ] MCP dice adapter
 - [x] durable generic tool-result tape, external dice integration seam, restart/concurrency tests
 - [ ] provider-specific reconciliation of ambiguous executions before enabling live MCP tools
-- [ ] inventory module
+- [x] inventory module (SRD `0.3.0`: counts only, no effects)
 - [x] checks/saves module (SRD)
 - [x] conditions module (SRD `0.2.0`: explicit apply/remove, no effects)
 - [x] damage/heal and simulated time (SRD `0.2.0`)

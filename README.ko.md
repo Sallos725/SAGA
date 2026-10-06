@@ -261,8 +261,10 @@ docs/
   `0.1.0` 월드는 기존 행동 집합을 그대로 유지
   ([ADR 0006](docs/adr/0006-ruleset-versions-and-state-actions.md),
   [진행 보고서](docs/progress/srd-state-actions.md))
-- 그 행동들을 위한 PocketRisu 명령(`damage`, `heal`, `inflict`, `cure`, `wait`).
-  새 브리지 월드는 `0.2.0`에 고정되고, 기존 `0.1.0` 월드는 변경 없이 거부
+- SRD 5.2.1 `0.3.0` 인벤토리: 닫힌 키의 액터별 정확한 아이템 개수(`give`/`take`), 아이템 효과 없음
+- 그 행동들을 위한 PocketRisu 명령(`damage`, `heal`, `inflict`, `cure`, `wait`, `give`, `take`)과
+  작은 읽기 전용 상태 푸터. 새 브리지 월드는 최신 버전에 고정되고, 기존 월드는 자기 버전을
+  유지하며 더 새로운 명령은 변경 없이 거부
 - 리플레이 가능한 범용 판타지 공격 규칙
 - FastAPI 디버그 엔드포인트
 - 호스트 턴을 불변 분기에 연결하는, 버전이 명시된 OpenAI 형태의 Risu completion 어댑터
@@ -280,7 +282,7 @@ docs/
 - 자연어 능력 판정·내성 및 일반적인 표현의 실제 모델 검증과 지원 범위 확장
 - 일반적인 RisuAI 카드·로어 호환과 스트리밍(모델 서술에는 제한된 텍스트 문맥만 전달)
 - 기존 JSONL 가져오기 및 향후 상태·이벤트 의미 체계 변경을 위한 마이그레이션
-- 완전한 TRPG 규칙 세트 (인벤토리, 퀘스트 플래그, 가시성, 상태 이상 효과, 사망)
+- 완전한 TRPG 규칙 세트 (아이템 효과, 퀘스트 플래그, 가시성, 상태 이상 효과, 사망)
 - 완전한 RuleCheeseBench 실행기와 평가기
 
 이 저장소의 작업을 Codex나 Claude Code에 인계한다면 `docs/AGENT_HANDOFF.md`부터 확인하세요.

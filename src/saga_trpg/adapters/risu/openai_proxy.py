@@ -30,6 +30,7 @@ from saga_trpg.domain.events import GameEvent
 from saga_trpg.domain.models import WorldState
 from saga_trpg.domain.tools import ToolCall
 from saga_trpg.modules.srd_5_2_1.rules import (
+    INVENTORY_ACTIONS,
     LATEST_VERSION,
     ROLL_ACTIONS,
     STATE_ACTIONS,
@@ -100,12 +101,14 @@ class CompletionRequest(ClosedModel):
         return self
 
 
-COMMAND_VERBS = frozenset({"attack", "check", "save", "damage", "heal", "inflict", "cure", "wait"})
-COMMAND_ACTIONS = {**ROLL_ACTIONS, **STATE_ACTIONS}
+COMMAND_VERBS = frozenset(
+    {"attack", "check", "save", "damage", "heal", "inflict", "cure", "wait", "give", "take"}
+)
+COMMAND_ACTIONS = {**ROLL_ACTIONS, **STATE_ACTIONS, **INVENTORY_ACTIONS}
 SUPPORTED_COMMANDS = (
     "Supported commands: attack opponent; check strength 10; save dexterity 12; "
     "damage opponent 5; heal player 3; inflict opponent prone; cure opponent prone; "
-    "wait 2 rounds. "
+    "wait 2 rounds; give player torch 1; take player torch 1. "
 )
 _NUMBER = re.compile(r"[0-9]{1,6}")
 
@@ -133,6 +136,14 @@ def canonical_command(*, actor_id: str, text: str) -> GameEvent:
     elif len(words) == 3 and words[0] in {"inflict", "cure"} and not circumstances:
         kind = "apply_condition" if words[0] == "inflict" else "remove_condition"
         payload = {"target_id": words[1], "condition": words[2]}
+    elif (
+        len(words) == 4
+        and words[0] in {"give", "take"}
+        and _NUMBER.fullmatch(words[3])
+        and not circumstances
+    ):
+        kind = words[0]
+        payload = {"target_id": words[1], "item": words[2], "amount": int(words[3])}
     elif (
         len(words) == 3 and words[0] == "wait" and _NUMBER.fullmatch(words[1]) and not circumstances
     ):

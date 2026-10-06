@@ -47,6 +47,11 @@ its levels are tracked.
 logic but serializes sorted, so API responses, stored entries and benchmark artifacts do not
 depend on the process hash seed. State hashes already canonicalized sets.
 
+**Applied again for `0.3.0`.** Inventory arrived as `give`/`take` under the same rule: a
+further registered version, exact counts per actor, item keys closed by shape
+(`[a-z0-9_]{1,40}`) rather than by a catalogue, no item effects, and taking more than is
+held rejected before any write. A catalogue with effects would be yet another version.
+
 ## Consequences
 
 - Bridge command identities are unchanged: adding verbs (`damage`, `heal`, `inflict`,
