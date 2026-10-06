@@ -431,7 +431,7 @@ class RisuBridge:
                 if spec.id != DEFAULT_SPEC.id:
                     raise ValueError(
                         "Natural-language actions are only interpreted for the SRD demo "
-                        "rulebook; use this rulebook's commands."
+                        f"rulebook; use this rulebook's commands. {supported_commands(spec)}"
                     )
                 if vertex_credentials is None:
                     raise ValueError(
