@@ -68,31 +68,61 @@ def compare_runs(runs: Sequence[BenchmarkRun]) -> list[Row]:
     ]
 
 
+def _cell(value: object) -> str:
+    """One Markdown table cell: no pipes, no line breaks."""
+    return " ".join(str(value).replace("|", "\\|").split())
+
+
+def _table(header: list[str], aligned_right: set[str], rows: list[list[object]]) -> list[str]:
+    cells = [_cell(h) for h in header]
+    separator = ["---:" if h in aligned_right else "---" for h in header]
+    lines = ["| " + " | ".join(cells) + " |", "| " + " | ".join(separator) + " |"]
+    for row in rows:
+        lines.append("| " + " | ".join(_cell(v) for v in row) + " |")
+    return lines
+
+
 def render_report(runs: Sequence[BenchmarkRun]) -> str:
     rows = compare_runs(runs)
     first = runs[0]
     names = list(first.validators)
+    header = [
+        "model",
+        "outcome",
+        "turns",
+        "attempts",
+        "illegal",
+        "valid rate",
+        "rolls",
+        *names,
+        "driver",
+        "final state",
+    ]
+    numeric = {"turns", "attempts", "illegal", "valid rate", "rolls"}
+    body = [
+        [
+            row.model,
+            row.outcome,
+            row.turns,
+            row.attempts,
+            row.illegal_attempts,
+            f"{row.valid_action_rate:.2f}",
+            row.rolls,
+            *("ok" if row.validators.get(n) else "--" for n in names),
+            row.driver,
+            f"`{row.final_state_hash[:12]}`",
+        ]
+        for row in rows
+    ]
     lines = [
-        f"# RuleCheeseBench · {first.scenario_id} v{first.scenario_version}",
+        f"# RuleCheeseBench · {_cell(first.scenario_id)} v{_cell(first.scenario_version)}",
         "",
         f"- ruleset: `{first.ruleset}@{first.ruleset_version}` · runtime `{first.runtime_version}`",
         f"- stochastic: `{json.dumps(first.stochastic.model_dump(), ensure_ascii=False)}`",
         f"- runs: {len(rows)}",
         "",
-        "| model | outcome | turns | attempts | illegal | valid rate | rolls | "
-        + " | ".join(names)
-        + " | driver | final state |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | "
-        + " | ".join("---" for _ in names)
-        + " | --- | --- |",
+        *_table(header, numeric, body),
     ]
-    for row in rows:
-        verdicts = " | ".join("ok" if row.validators.get(n) else "--" for n in names)
-        lines.append(
-            f"| {row.model} | {row.outcome} | {row.turns} | {row.attempts} | "
-            f"{row.illegal_attempts} | {row.valid_action_rate:.2f} | {row.rolls} | "
-            f"{verdicts} | {row.driver} | `{row.final_state_hash[:12]}` |"
-        )
     lines.append("")
     lines.append(
         "Rows share scenario, ruleset, runtime and dice policy; only the driver differs. "

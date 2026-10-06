@@ -46,8 +46,12 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print(text, end="")
         if args.out:
-            Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-            Path(args.out).write_text(text, encoding="utf-8")
+            try:
+                Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+                Path(args.out).write_text(text, encoding="utf-8")
+            except OSError as exc:
+                print(f"cannot write {args.out}: {exc}", file=sys.stderr)
+                return 1
         return 0
     try:
         scenario = load_scenario(args.scenario)
@@ -80,8 +84,12 @@ def main(argv: list[str] | None = None) -> int:
     for note in result.notes:
         print(f"  note: {note}")
     if args.out:
-        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.out).write_text(result.model_dump_json(indent=2) + "\n", encoding="utf-8")
+        try:
+            Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.out).write_text(result.model_dump_json(indent=2) + "\n", encoding="utf-8")
+        except OSError as exc:
+            print(f"cannot write {args.out}: {exc}", file=sys.stderr)
+            return 1
         print(f"  artifact: {args.out}")
     return 0 if result.outcome != "failure" else 2
 

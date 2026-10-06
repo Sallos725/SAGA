@@ -487,3 +487,32 @@ async def test_report_cli_prints_a_table_and_writes_markdown(tmp_path, capsys):
     )
     assert main(["report", str(paths[0]), str(bad)]) == 1
     assert "ruleset_version" in capsys.readouterr().err
+
+
+@pytest.mark.asyncio
+async def test_report_escapes_cells_and_handles_no_validators_and_bad_output_paths(
+    tmp_path, capsys
+):
+    from saga_trpg.benchmark.__main__ import main
+    from saga_trpg.benchmark.report import render_report
+
+    runner = RuleCheeseRunner()
+    run = await runner.run(
+        scenario(validators=[], success=[], failure=[]),
+        driver=ScriptedDriver(["attack guard"]),
+        model="Gemini | baseline\nline two",
+    )
+    text = render_report([run])
+    table_rows = [line for line in text.splitlines() if line.startswith("| ")]
+    assert len(table_rows) == 3  # header, separator, one run
+    import re
+
+    cells = [len(re.findall(r"(?<!\\)\|", row)) for row in table_rows]
+    assert len(set(cells)) == 1
+    assert "Gemini \\| baseline line two" in text
+    path = tmp_path / "run.json"
+    path.write_text(run.model_dump_json())
+    unwritable = tmp_path / "file-not-dir"
+    unwritable.write_text("x")
+    assert main(["report", str(path), "--out", str(unwritable / "report.md")]) == 1
+    assert "cannot write" in capsys.readouterr().err
