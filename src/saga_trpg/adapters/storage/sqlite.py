@@ -502,8 +502,8 @@ class SQLiteWorldRepository:
         """Remove a fork that never committed anything of its own.
 
         The copied prefix, its snapshot and the branch row go together in one write
-        transaction. A branch with its own entries or a pending tool claim is never removed;
-        the name becomes free for a fresh fork from the same point."""
+        transaction. A branch with its own entries, any tool record, or a child branch is
+        never removed; the name becomes free for a fresh fork from the same point."""
         if branch_id == "main":
             raise RepositoryConflict("main is never discarded")
         with self._transaction(write=True) as connection:
@@ -513,12 +513,21 @@ class SQLiteWorldRepository:
                 "SELECT 1 FROM entries WHERE world_id = ? AND branch_id = ? AND seq > ?",
                 (world_id, branch_id, branch.fork_seq),
             ).fetchone()
-            pending = connection.execute(
-                "SELECT 1 FROM tool_events WHERE world_id = ? AND branch_id = ?",
-                (world_id, branch_id),
-            ).fetchone()
-            if committed or pending:
-                raise RepositoryConflict("branch holds committed or pending actions")
+            referenced = any(
+                connection.execute(
+                    f"SELECT 1 FROM {table} WHERE world_id = ? AND {column} = ?",
+                    (world_id, branch_id),
+                ).fetchone()
+                for table, column in (
+                    ("tool_events", "branch_id"),
+                    ("tool_executions", "branch_id"),
+                    ("branches", "parent_branch_id"),
+                )
+            )
+            if committed or referenced:
+                raise RepositoryConflict(
+                    "branch holds committed actions, tool records or child branches"
+                )
             for table in ("entries", "snapshots", "branches"):
                 connection.execute(
                     f"DELETE FROM {table} WHERE world_id = ? AND branch_id = ?",

@@ -97,7 +97,7 @@ sequence, the branch head, fork sequence and any unresolved tool event. The Pock
 uses these to append consecutive turns to one branch and fork only on divergence.
 `discard_empty_branch` removes, in one write transaction, a fork that holds nothing beyond its
 copied prefix: the branch row, copied entries and snapshot go together. It refuses `main`, a
-branch with its own entries, and a branch with a pending tool claim. The bridge calls it when
+branch with its own entries, any tool event or tape record, and a branch that has children. The bridge calls it when
 the rules reject the edited action a fork was just created for, so failed edits do not
 accumulate empty branches; a racing identical request that already committed keeps its branch.
 

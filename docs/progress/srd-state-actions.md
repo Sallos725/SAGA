@@ -17,7 +17,8 @@ and documentation. Live on the 6131 test host; not deployed to the 6011 playtest
   responses and stored JSON now are too.
 - A fork created for a divergent edit is discarded again when the rules reject that edit
   before any commit. `SQLiteWorldRepository.discard_empty_branch` refuses `main` and any branch
-  with its own entries or a pending tool claim.
+  with its own entries, tool records or child branches. A racing identical request that finds
+  its selected fork gone reselects and gets the same rule error, not a 404.
 - Packs export the latest version with sample state events. The starter card, plugin help
   text and READMEs list the new commands.
 - `deploy/compose.risu-6131.yaml` runs a backend-only runtime on `127.0.0.1:4852` for an

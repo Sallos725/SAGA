@@ -434,3 +434,35 @@ def test_discard_empty_branch_removes_only_uncommitted_forks(repository):
     # The name is free again and a new fork from the same point starts clean.
     repository.fork("test", branch_id="empty", at_event_id="first")
     assert len(repository.entries("test", branch_id="empty")) == 1
+
+
+def test_discard_empty_branch_refuses_forks_with_children_or_tape_records(repository):
+    from saga_trpg.domain.tools import ToolCall
+
+    repository.dispatch("test", attack(event_id="first"))
+    repository.fork("test", branch_id="parent", at_event_id="first")
+    repository.fork("test", branch_id="child", source_branch_id="parent", at_event_id="first")
+    with pytest.raises(RepositoryConflict):
+        repository.discard_empty_branch("test", "parent")
+    repository.fork("test", branch_id="taped", at_event_id="first")
+    call = ToolCall(
+        world_id="test",
+        branch_id="taped",
+        event_id="later",
+        tool_call_key="lookup",
+        tool_name="encounter",
+        tool_version="1",
+        protocol_version="fake-1",
+        arguments={},
+    )
+
+    class Tool:
+        def execute(self, call, *, idempotency_key):
+            return {"ok": True}
+
+    repository.tool_tape.execute(call, Tool())
+    with pytest.raises(RepositoryConflict):
+        repository.discard_empty_branch("test", "taped")
+    repository.discard_empty_branch("test", "child")
+    repository.discard_empty_branch("test", "parent")
+    assert [item.branch_id for item in repository.branches("test")] == ["main", "taped"]

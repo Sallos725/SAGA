@@ -757,3 +757,31 @@ def test_rejected_divergent_edit_leaves_no_empty_fork_and_a_valid_edit_still_for
     assert accepted.status_code == 200, accepted.text
     assert accepted.json()["saga"]["branch_id"] != "main"
     assert len(repo.branches(world_id)) == 2
+
+
+def test_concurrent_identical_rejected_edits_both_report_the_rule_error(tmp_path):
+    repo, _, _, client = setup(tmp_path)
+    turns = [("u1", "attack opponent"), ("u2", "check strength 10")]
+    for index in range(2):
+        saved = client.post("/v1/chat/completions", json=request(*turns[: index + 1])).json()
+    world_id = saved["saga"]["world_id"]
+    body = request(turns[0], ("u2", "cure opponent prone"))
+    _, identities = RisuBridge.identities(CompletionRequest.model_validate(body).saga)
+    # Another request for the same rejected edit created and reserved this fork already.
+    repo.fork(world_id, branch_id=identities[-1], at_event_id=identities[0])
+    bridge = client.app.state.risu_bridge
+    branch_for, raced = bridge._branch_for, [True]
+
+    def shared_fork(world_id, identities):
+        branch_id, forked = branch_for(world_id, identities)
+        if not forked and raced[0]:
+            # ...and discards it after its own rule rejection, before this dispatch.
+            raced[0] = False
+            repo.discard_empty_branch(world_id, branch_id)
+        return branch_id, forked
+
+    bridge._branch_for = shared_fork
+    response = client.post("/v1/chat/completions", json=body)
+    assert response.status_code == 422, response.text
+    assert "does not have condition" in response.json()["detail"]
+    assert [item.branch_id for item in repo.branches(world_id)] == ["main"]

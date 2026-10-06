@@ -466,7 +466,9 @@ class RisuBridge:
                         expected_seq=len(identities) - 1,
                         unique_in_world=True,
                     )
-                except RepositoryConflict:
+                except (RepositoryConflict, RepositoryNotFound):
+                    # Not found here means a racing request discarded the empty fork this
+                    # one had selected; reselecting recreates it. The world itself exists.
                     if attempt == 2:
                         raise
                     continue
