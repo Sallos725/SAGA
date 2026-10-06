@@ -5,7 +5,8 @@ Each system currently implements a declared example subset; these are not full r
 
 | Module | Source license | Implemented example |
 | --- | --- | --- |
-| `srd-5.2.1` version `0.1.0` | CC BY 4.0 | Ability checks, saving throws, configured weapon attacks, advantage/disadvantage, critical damage, HP |
+| `srd-5.2.1` version `0.2.0` | CC BY 4.0 | Ability checks, saving throws, configured weapon attacks, advantage/disadvantage, critical damage, HP; GM-declared damage/heal, explicit named conditions, simulated time |
+| `srd-5.2.1` version `0.1.0` | CC BY 4.0 | Rolls and HP subtraction only; kept registered so existing worlds keep their exact action set |
 | `fate-condensed` version `0.1.0` | CC BY 3.0 | Static overcome/new-aspect advantage rolls, outcome grades, free-invoke and boost records |
 
 The original `generic-fantasy` remains available for existing demo worlds. It is not one of
@@ -19,6 +20,14 @@ these licensed-source examples.
 - `<module>/prompt.md`: readable ruleset instructions and attribution.
 - `<module>/initial-world.json`: example actor stats and initial state for the runtime.
 - `<module>/events.json`: example validated action proposals.
+
+The exported `srd-5.2.1` pack describes the latest version. A world pins one version at
+creation and never changes it; the PocketRisu bridge creates new worlds on the latest version
+and leaves existing `0.1.0` worlds as they are. State
+actions (`damage`, `heal`, `apply_condition`, `remove_condition`, `advance_time`) roll no dice,
+clamp HP to `0..max_hp`, reject applying a condition that is already present or removing one
+that is absent, and count simulated time in seconds with six-second rounds. Nothing happens
+automatically at 0 HP; the GM proposes `apply_condition` explicitly.
 
 The backend catalog is the generation source. Run `python scripts/export_rulesets.py` after
 changing it; `python scripts/export_rulesets.py --check` detects missing or stale exports.
@@ -40,10 +49,13 @@ List the available modules and create a fantasy example:
 curl -s http://127.0.0.1:4850/rulesets
 curl -s -X POST http://127.0.0.1:4850/worlds/fantasy-example \
   -H 'content-type: application/json' \
-  -d '{"ruleset_id":"srd-5.2.1","ruleset_version":"0.1.0"}'
+  -d '{"ruleset_id":"srd-5.2.1","ruleset_version":"0.2.0"}'
 curl -s -X POST http://127.0.0.1:4850/worlds/fantasy-example/events \
   -H 'content-type: application/json' \
   -d '{"event_id":"turn-1","kind":"attack","actor_id":"player","payload":{"target_id":"opponent"}}'
+curl -s -X POST http://127.0.0.1:4850/worlds/fantasy-example/events \
+  -H 'content-type: application/json' \
+  -d '{"event_id":"turn-2","kind":"apply_condition","actor_id":"player","payload":{"target_id":"opponent","condition":"prone"}}'
 ```
 
 Create a Fate example on the same server:

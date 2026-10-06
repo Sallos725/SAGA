@@ -12,7 +12,7 @@ from pydantic import Field, JsonValue, TypeAdapter
 from saga_trpg.adapters.narrator.vertex import VertexNarrator, VertexResponseError
 from saga_trpg.domain.events import GameEvent
 from saga_trpg.domain.tools import ToolCall
-from saga_trpg.modules.srd_5_2_1.rules import Ability, SRD521Rules
+from saga_trpg.modules.srd_5_2_1.rules import ROLL_ACTIONS, Ability
 from saga_trpg.modules.validation import ClosedPayload
 from saga_trpg.ports.tools import ToolExecutionPending
 
@@ -113,7 +113,7 @@ def validated_proposal(value: object, arguments: dict[str, JsonValue]) -> Propos
         raise ValueError(REFUSAL)
     if payload.disadvantage != mentioned(text, ["disadvantage", "불리"]):
         raise ValueError(REFUSAL)
-    SRD521Rules.payload_models[proposal.kind].model_validate(payload.model_dump())
+    ROLL_ACTIONS[proposal.kind].model_validate(payload.model_dump())
     return proposal
 
 
@@ -122,9 +122,7 @@ def event_from_result(value: object, arguments: dict[str, JsonValue]) -> GameEve
         proposal = validated_proposal(value, arguments)
         if isinstance(proposal, Refusal):
             raise ValueError(REFUSAL)
-        payload = SRD521Rules.payload_models[proposal.kind].model_validate(
-            proposal.payload.model_dump()
-        )
+        payload = ROLL_ACTIONS[proposal.kind].model_validate(proposal.payload.model_dump())
         return GameEvent(kind=proposal.kind, actor_id="player", payload=payload.model_dump())
     except ValueError:
         raise ValueError(REFUSAL) from None

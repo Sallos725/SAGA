@@ -56,58 +56,93 @@ def legacy_world(world_id: str) -> WorldState:
     )
 
 
-class RulesetRegistry:
-    def __init__(self) -> None:
-        srd = SRD521Rules()
-        fate = FateCondensedRules()
-        legacy = GenericFantasyRules()
-        definitions = [
-            RulesetDefinition(
-                srd,
-                RulesetManifest(
-                    ruleset_id=srd.name,
-                    ruleset_version=srd.version,
-                    title="SRD 5.2.1 example",
-                    implementation_scope="example",
-                    source_url="https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf",
-                    source_revision="SRD 5.2.1, pages 6–8 and 16; checked 2026-10-04",
-                    license_id="CC-BY-4.0",
-                    license_url="https://creativecommons.org/licenses/by/4.0/",
-                    attribution=SRD_ATTRIBUTION,
-                    modifications=(
-                        "Selected mechanics reimplemented in Python; original example actors "
-                        "and prompts. No source art, setting, or full rulebook is bundled."
-                    ),
-                    implemented=[
-                        "ability checks",
-                        "saving throws",
-                        "one configured weapon attack",
-                        "advantage/disadvantage",
-                        "critical damage dice",
-                        "HP subtraction",
-                    ],
-                    not_implemented=[
-                        "character creation and advancement",
-                        "classes and spells",
-                        "initiative, range, movement and action economy",
-                        "conditions and resistances",
-                        "death saves, instant death and unconsciousness",
-                        "inspiration and rules rerolls",
-                    ],
-                    narrator_instructions="""Selected system: SRD 5.2.1 example, version 0.1.0.
+SRD_VERSIONS = ("0.1.0", "0.2.0")
+_SRD_ROLL_SCOPE = [
+    "ability checks",
+    "saving throws",
+    "one configured weapon attack",
+    "advantage/disadvantage",
+    "critical damage dice",
+    "HP subtraction",
+]
+_SRD_STATE_SCOPE = [
+    "GM-declared damage and healing clamped to 0..max HP",
+    "explicit named conditions without exhaustion levels",
+    "simulated time in seconds with six-second rounds",
+]
+_SRD_NOT_IMPLEMENTED = [
+    "character creation and advancement",
+    "classes and spells",
+    "initiative, range, movement and action economy",
+    "resistances and vulnerabilities",
+    "death saves, instant death and automatic unconsciousness",
+    "condition effects on rolls and condition durations",
+    "inspiration and rules rerolls",
+]
+_SRD_NARRATOR_INSTRUCTIONS = {
+    "0.1.0": """Selected system: SRD 5.2.1 example, version 0.1.0.
 Use ability_check, saving_throw, or attack. Ability scores, proficiency, weapon data, and AC come
 from stored actor stats. The GM supplies the check difficulty and circumstances in validated input.
 Narrate the recorded resolution. Natural 1/20 overrides apply to attacks only.
 HP reaching zero is recorded; this example does not resolve death or conditions.
 Unsupported rules require a future implementation; never borrow Fate rules or invent their effects.
 """,
-                    event_payload_schemas={
-                        kind: model.model_json_schema()
-                        for kind, model in srd.payload_models.items()
-                    },
-                ),
-                srd_world,
-            ),
+    "0.2.0": """Selected system: SRD 5.2.1 example, version 0.2.0.
+Use ability_check, saving_throw, or attack for rolls. Ability scores, proficiency, weapon data,
+and AC come from stored actor stats. The GM supplies the check difficulty and circumstances in
+validated input. Narrate the recorded resolution. Natural 1/20 overrides apply to attacks only.
+Use damage or heal for GM-declared hit point changes; HP is clamped to 0..max and nothing happens
+automatically at 0 HP. Use apply_condition or remove_condition to change named conditions
+explicitly; conditions have no mechanical effect on rolls in this example. Use advance_time to
+move simulated time in rounds, minutes, hours, or days.
+Unsupported rules require a future implementation; never borrow Fate rules or invent their effects.
+""",
+}
+
+
+def srd_definition(version: str) -> RulesetDefinition:
+    srd = SRD521Rules(version)
+    manifest = RulesetManifest(
+        ruleset_id=srd.name,
+        ruleset_version=srd.version,
+        title="SRD 5.2.1 example",
+        implementation_scope="example",
+        source_url="https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf",
+        source_revision="SRD 5.2.1, pages 6–8 and 16; checked 2026-10-04",
+        license_id="CC-BY-4.0",
+        license_url="https://creativecommons.org/licenses/by/4.0/",
+        attribution=SRD_ATTRIBUTION,
+        modifications=(
+            "Selected mechanics reimplemented in Python; original example actors "
+            "and prompts. No source art, setting, or full rulebook is bundled."
+        ),
+        implemented=_SRD_ROLL_SCOPE + (_SRD_STATE_SCOPE if version != "0.1.0" else []),
+        not_implemented=(
+            [
+                "character creation and advancement",
+                "classes and spells",
+                "initiative, range, movement and action economy",
+                "conditions and resistances",
+                "death saves, instant death and unconsciousness",
+                "inspiration and rules rerolls",
+            ]
+            if version == "0.1.0"
+            else _SRD_NOT_IMPLEMENTED
+        ),
+        narrator_instructions=_SRD_NARRATOR_INSTRUCTIONS[version],
+        event_payload_schemas={
+            kind: model.model_json_schema() for kind, model in srd.payload_models.items()
+        },
+    )
+    return RulesetDefinition(srd, manifest, srd_world)
+
+
+class RulesetRegistry:
+    def __init__(self) -> None:
+        fate = FateCondensedRules()
+        legacy = GenericFantasyRules()
+        definitions = [
+            *[srd_definition(version) for version in SRD_VERSIONS],
             RulesetDefinition(
                 fate,
                 RulesetManifest(

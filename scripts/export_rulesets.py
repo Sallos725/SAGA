@@ -6,6 +6,7 @@ from pathlib import Path
 
 from saga_trpg.domain.events import GameEvent
 from saga_trpg.modules.catalog import COMMON_BOT_DESCRIPTION, RulesetRegistry
+from saga_trpg.modules.srd_5_2_1.rules import LATEST_VERSION as SRD_LATEST
 
 
 def json_text(value: object) -> str:
@@ -15,6 +16,8 @@ def json_text(value: object) -> str:
 def build_files() -> dict[Path, str]:
     root = Path(__file__).resolve().parents[1] / "packs" / "rulesets"
     files = {root / "common-bot-description.md": COMMON_BOT_DESCRIPTION}
+    # Packs describe the latest registered version; older versions stay pinned in the catalog.
+    versions = {"srd-5.2.1": SRD_LATEST, "fate-condensed": "0.1.0"}
     samples = {
         "srd-5.2.1": [
             (
@@ -23,6 +26,11 @@ def build_files() -> dict[Path, str]:
             ),
             ("saving_throw", {"ability": "strength", "difficulty": 15}),
             ("attack", {"target_id": "opponent"}),
+            ("damage", {"target_id": "player", "amount": 4}),
+            ("apply_condition", {"target_id": "player", "condition": "poisoned"}),
+            ("advance_time", {"amount": 1, "unit": "hour"}),
+            ("remove_condition", {"target_id": "player", "condition": "poisoned"}),
+            ("heal", {"target_id": "player", "amount": 6}),
         ],
         "fate-condensed": [
             ("overcome", {"skill": "investigate", "difficulty": 2}),
@@ -34,7 +42,7 @@ def build_files() -> dict[Path, str]:
     }
     registry = RulesetRegistry()
     for ruleset_id, actions in samples.items():
-        definition = registry.get(ruleset_id, "0.1.0")
+        definition = registry.get(ruleset_id, versions[ruleset_id])
         manifest = definition.manifest
         directory = root / ruleset_id
         files[directory / "module.json"] = json_text(manifest.model_dump(mode="json"))

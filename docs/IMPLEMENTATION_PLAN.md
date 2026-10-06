@@ -102,11 +102,11 @@ External mutable tools require extra care: replay should normally use recorded r
 
 Start tiny.
 
-- [ ] generic checks
-- [ ] attacks/damage/heal
+- [x] generic checks (SRD ability checks and saving throws)
+- [x] attacks/damage/heal (SRD `0.2.0`: GM-declared damage/heal clamped to 0..max)
 - [ ] inventory
-- [ ] conditions
-- [ ] clocks/time
+- [x] conditions (SRD `0.2.0`: explicit named conditions; no effects or durations yet)
+- [x] clocks/time (SRD `0.2.0`: `advance_time` in seconds, six-second rounds)
 - [ ] quest flags
 - [ ] visibility/observation
 - [x] system-sized example module manifests + campaign selection

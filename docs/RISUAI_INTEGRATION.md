@@ -183,7 +183,9 @@ parent event id, user-message id and the validated `{kind, actor_id, payload}` c
 the event id. Canonical payloads include explicit ruleset defaults. Because each id includes
 its parent, one event id identifies its whole action prefix. The response `branch_id` names
 the branch that committed the action: `main` for an unedited chat, or the id of the first
-divergent action for an alternate line. Actor/ruleset remain fixed to `player` / `srd-5.2.1@0.1.0`.
+divergent action for an alternate line. The actor is fixed to `player`; the ruleset is
+`srd-5.2.1`, pinned per world at creation (`0.2.0` for new worlds; earlier worlds keep `0.1.0`
+and their exact action set). Adding command verbs never changes existing command identities.
 
 The synchronous closed-command parser normalizes case, whitespace and numeric DC formatting
 before hashing. For the same message id and ancestry, `attack opponent`, `Attack  opponent`

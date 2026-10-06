@@ -1,7 +1,7 @@
 import pytest
 
 from saga_trpg.domain.events import GameEvent
-from saga_trpg.domain.models import RollRecord
+from saga_trpg.domain.models import RollRecord, StatePatch
 from saga_trpg.modules.catalog import RulesetRegistry
 from saga_trpg.runtime.engine import RuntimeEngine
 from saga_trpg.runtime.journal import InMemoryJournal
@@ -26,8 +26,8 @@ class ScriptedDice:
         )
 
 
-def engine_for(ruleset_id, dice):
-    definition = RulesetRegistry().get(ruleset_id, "0.1.0")
+def engine_for(ruleset_id, dice, version="0.1.0"):
+    definition = RulesetRegistry().get(ruleset_id, version)
     return RuntimeEngine(
         initial_state=definition.example_world("sample"),
         rules=definition.rules,
@@ -213,3 +213,125 @@ def test_fate_existing_aspect_is_rejected_before_dice():
     with pytest.raises(ValueError, match="new aspects only"):
         engine.dispatch(event("create_advantage", payload, "duplicate-name"))
     assert len(dice.calls) == 1
+
+
+def srd_020(dice=None):
+    return engine_for("srd-5.2.1", dice or ScriptedDice(), "0.2.0")
+
+
+def test_srd_damage_reduces_hp_without_dice_and_clamps_at_zero():
+    dice = ScriptedDice()
+    engine = srd_020(dice)
+    initial = engine.state.model_copy(deep=True)
+    result = engine.dispatch(event("damage", {"target_id": "opponent", "amount": 7})).entry.result
+    assert engine.state.actors["opponent"].hp == 23
+    assert result.patches == [StatePatch(path="actors.opponent.hp", before=30, after=23)]
+    assert result.rolls == []
+    assert result.resolution is None
+    assert "opponent" in result.facts[0] and "23" in result.facts[0]
+    engine.dispatch(event("damage", {"target_id": "opponent", "amount": 100}, "action-2"))
+    assert engine.state.actors["opponent"].hp == 0
+    assert dice.calls == []
+    assert replay_recorded_results(initial, engine.journal.entries()) == engine.state
+
+
+def test_srd_heal_restores_hp_up_to_max():
+    engine = srd_020()
+    engine.state.actors["player"].hp = 5
+    engine.dispatch(event("heal", {"target_id": "player", "amount": 8}))
+    assert engine.state.actors["player"].hp == 13
+    result = engine.dispatch(
+        event("heal", {"target_id": "player", "amount": 100}, "a2")
+    ).entry.result
+    assert engine.state.actors["player"].hp == 20
+    assert result.patches == [StatePatch(path="actors.player.hp", before=13, after=20)]
+
+
+def test_srd_conditions_are_explicit_closed_and_non_repeating():
+    engine = srd_020()
+    result = engine.dispatch(
+        event("apply_condition", {"target_id": "opponent", "condition": "prone"})
+    ).entry.result
+    assert engine.state.actors["opponent"].conditions == {"prone"}
+    assert result.patches == [
+        StatePatch(path="actors.opponent.conditions", before=[], after=["prone"])
+    ]
+    with pytest.raises(ValueError, match="already"):
+        engine.dispatch(
+            event("apply_condition", {"target_id": "opponent", "condition": "prone"}, "dup")
+        )
+    engine.dispatch(
+        event("remove_condition", {"target_id": "opponent", "condition": "prone"}, "rm")
+    )
+    assert engine.state.actors["opponent"].conditions == set()
+    with pytest.raises(ValueError, match="does not have"):
+        engine.dispatch(
+            event("remove_condition", {"target_id": "opponent", "condition": "prone"}, "rm2")
+        )
+    assert len(engine.journal.entries()) == 2
+
+
+@pytest.mark.parametrize(
+    "amount,unit,seconds",
+    [(2, "round", 12), (3, "minute", 180), (1, "hour", 3600), (1, "day", 86400)],
+)
+def test_srd_advance_time_counts_seconds_with_six_second_rounds(amount, unit, seconds):
+    engine = srd_020()
+    result = engine.dispatch(event("advance_time", {"amount": amount, "unit": unit})).entry.result
+    assert engine.state.simulated_time == seconds
+    assert result.patches == [StatePatch(path="simulated_time", before=0, after=seconds)]
+    assert result.rolls == []
+
+
+@pytest.mark.parametrize(
+    "kind,payload",
+    [
+        ("damage", {"target_id": "opponent", "amount": 0}),
+        ("damage", {"target_id": "missing", "amount": 3}),
+        ("heal", {"target_id": "player", "amount": -1}),
+        ("heal", {"target_id": "player", "amount": 3, "extra": True}),
+        ("apply_condition", {"target_id": "player", "condition": "exhaustion"}),
+        ("remove_condition", {"target_id": "player", "condition": "dead"}),
+        ("advance_time", {"amount": 1, "unit": "week"}),
+        ("advance_time", {"amount": 0, "unit": "round"}),
+    ],
+)
+def test_srd_020_invalid_state_actions_fail_closed(kind, payload):
+    engine = srd_020()
+    before = engine.state.model_copy(deep=True)
+    with pytest.raises(ValueError):
+        engine.dispatch(event(kind, payload))
+    assert engine.state == before
+    assert engine.journal.entries() == []
+
+
+@pytest.mark.parametrize(
+    "kind,payload",
+    [
+        ("damage", {"target_id": "opponent", "amount": 3}),
+        ("heal", {"target_id": "player", "amount": 3}),
+        ("apply_condition", {"target_id": "player", "condition": "prone"}),
+        ("advance_time", {"amount": 1, "unit": "round"}),
+    ],
+)
+def test_srd_010_worlds_keep_rejecting_020_actions(kind, payload):
+    engine = engine_for("srd-5.2.1", ScriptedDice())
+    with pytest.raises(ValueError, match="unsupported"):
+        engine.dispatch(event(kind, payload))
+    assert engine.journal.entries() == []
+
+
+def test_srd_020_attack_mechanics_match_010_and_only_the_trace_names_the_version():
+    results = []
+    for version in ("0.1.0", "0.2.0"):
+        dice = ScriptedDice(("1d20", [20], 0), ("2d8+3", [4, 5], 3))
+        engine = engine_for("srd-5.2.1", dice, version)
+        results.append(engine.dispatch(event("attack", {"target_id": "opponent"})).entry.result)
+    old, new = results
+    assert old.state == new.state
+    assert old.rolls == new.rolls
+    assert old.patches == new.patches
+    assert old.resolution == new.resolution
+    assert old.facts == new.facts
+    assert old.trace[1:] == new.trace[1:]
+    assert (old.trace[0], new.trace[0]) == ("srd-5.2.1@0.1.0.attack", "srd-5.2.1@0.2.0.attack")

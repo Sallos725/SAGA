@@ -137,7 +137,8 @@ adapter; SAGA does not embed a second memory system into the game engine.
 
 For the API-key-free PocketRisu **6011** playtest, use the
 [isolated deployment](deploy/README.md) and [starter card/provider](packs/risu-starter/README.md).
-Send `attack opponent`, `check strength 10`, or `save dexterity 12`; regeneration reuses the
+Send `attack opponent`, `check strength 10`, or `save dexterity 12`, or dice-free state commands
+such as `damage opponent 5`, `inflict opponent prone` and `wait 1 hour`; regeneration reuses the
 committed event and dice. This is a limited SRD subset. Fallback narration needs no key.
 For optional Gemini natural-language intent and narration, open
 **Settings → Plugins → SAGA SRD Demo → Vertex 서비스 계정 JSON** and paste the entire
@@ -255,6 +256,10 @@ Implemented:
 - explicit storage v1 → v2 migration with backup, rollback, and replay validation
 - generic SQLite tool-result tape and a repository path for taped external dice results
 - selectable, versioned SRD 5.2.1 and Fate Condensed example modules with closed action schemas
+- SRD 5.2.1 `0.2.0` state actions: GM-declared damage/heal, explicit named conditions,
+  and simulated time; `0.1.0` worlds keep their exact action set
+- PocketRisu commands for those actions (`damage`, `heal`, `inflict`, `cure`, `wait`);
+  new bridge worlds pin `0.2.0`, existing `0.1.0` worlds reject them without changing
 - replayable generic-fantasy attack rule
 - FastAPI debug endpoints
 - a versioned OpenAI-shaped Risu completion adapter with immutable host-turn mapping
@@ -272,7 +277,7 @@ Not implemented yet:
 - live checks/saves and broader language quality/scope for the limited intent adapter
 - general RisuAI card/lore compatibility and streaming (narration copies only bounded text context)
 - legacy JSONL import and future state/event semantic migrations
-- complete TRPG rulesets
+- complete TRPG rulesets (inventory, quest flags, visibility, condition effects, death)
 - full RuleCheeseBench runner and judges
 
 Start with `docs/AGENT_HANDOFF.md` if you are handing this repo to Codex or Claude Code.

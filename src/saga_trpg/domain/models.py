@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 
 class ActorState(BaseModel):
@@ -12,6 +12,11 @@ class ActorState(BaseModel):
     inventory: dict[str, int] = Field(default_factory=dict)
     conditions: set[str] = Field(default_factory=set)
     stats: dict[str, int | float | str | bool] = Field(default_factory=dict)
+
+    @field_serializer("conditions")
+    def _sorted_conditions(self, conditions: set[str]) -> list[str]:
+        # Set iteration order depends on the hash seed; responses and stored JSON must not.
+        return sorted(conditions)
 
 
 class WorldState(BaseModel):

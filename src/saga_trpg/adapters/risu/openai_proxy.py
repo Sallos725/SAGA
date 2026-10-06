@@ -28,7 +28,11 @@ from saga_trpg.adapters.storage.sqlite import (
 from saga_trpg.domain.events import GameEvent
 from saga_trpg.domain.models import WorldState
 from saga_trpg.domain.tools import ToolCall
-from saga_trpg.modules.srd_5_2_1.rules import SRD521Rules
+from saga_trpg.modules.srd_5_2_1.rules import (
+    LATEST_VERSION,
+    ROLL_ACTIONS,
+    STATE_ACTIONS,
+)
 from saga_trpg.ports.intent import IntentPort
 from saga_trpg.ports.narrator import NarrationRequest, NarratorPort
 from saga_trpg.ports.tools import ToolExecutionPending
@@ -95,6 +99,16 @@ class CompletionRequest(ClosedModel):
         return self
 
 
+COMMAND_VERBS = frozenset({"attack", "check", "save", "damage", "heal", "inflict", "cure", "wait"})
+COMMAND_ACTIONS = {**ROLL_ACTIONS, **STATE_ACTIONS}
+SUPPORTED_COMMANDS = (
+    "Supported commands: attack opponent; check strength 10; save dexterity 12; "
+    "damage opponent 5; heal player 3; inflict opponent prone; cure opponent prone; "
+    "wait 2 rounds. "
+)
+_NUMBER = re.compile(r"[0-9]{1,6}")
+
+
 def canonical_command(*, actor_id: str, text: str) -> GameEvent:
     """Pure v2 identity contract; never call an injected/remote interpreter to derive an id."""
     words = text.strip().lower().split()
@@ -108,13 +122,27 @@ def canonical_command(*, actor_id: str, text: str) -> GameEvent:
     ):
         kind = "ability_check" if words[0] == "check" else "saving_throw"
         payload = {"ability": words[1], "difficulty": int(words[2]), **circumstances}
+    elif (
+        len(words) == 3
+        and words[0] in {"damage", "heal"}
+        and _NUMBER.fullmatch(words[2])
+        and not circumstances
+    ):
+        kind, payload = words[0], {"target_id": words[1], "amount": int(words[2])}
+    elif len(words) == 3 and words[0] in {"inflict", "cure"} and not circumstances:
+        kind = "apply_condition" if words[0] == "inflict" else "remove_condition"
+        payload = {"target_id": words[1], "condition": words[2]}
+    elif (
+        len(words) == 3 and words[0] == "wait" and _NUMBER.fullmatch(words[1]) and not circumstances
+    ):
+        kind = "advance_time"
+        payload = {"amount": int(words[1]), "unit": words[2].removesuffix("s")}
     else:
         raise ValueError(
-            "Supported commands: attack opponent; check strength 10; save dexterity 12. "
-            "Optionally append advantage or disadvantage. "
+            SUPPORTED_COMMANDS + "Optionally append advantage or disadvantage to rolls. "
             "Natural language requires protocol 3 and Vertex JSON."
         )
-    validated = SRD521Rules.payload_models[kind].model_validate(payload)
+    validated = COMMAND_ACTIONS[kind].model_validate(payload)
     return GameEvent(kind=kind, actor_id=actor_id, payload=validated.model_dump())
 
 
@@ -124,7 +152,7 @@ def command_for(action: HostAction, actor_id: str, *, natural: bool) -> GameEven
         return canonical_command(actor_id=actor_id, text=action.text)
     except ValueError:
         words = action.text.strip().lower().split()
-        if natural and words and words[0] not in {"attack", "check", "save"}:
+        if natural and words and words[0] not in COMMAND_VERBS:
             if action.text.strip().lower() != "*says nothing*":
                 return None
         if action.context_hidden:
@@ -133,8 +161,8 @@ def command_for(action: HostAction, actor_id: str, *, natural: bool) -> GameEven
                 "Restore it for review; hidden drafts are never executed automatically."
             ) from None
         raise ValueError(
-            "Supported commands: attack opponent; check strength 10; save dexterity 12. "
-            "Empty actions and malformed commands are not interpreted automatically."
+            SUPPORTED_COMMANDS
+            + "Empty actions and malformed commands are not interpreted automatically."
         ) from None
 
 
@@ -201,16 +229,18 @@ class RisuBridge:
         return world_id, identities
 
     def _ensure_world(self, world_id: str) -> WorldState:
-        definition = self.repository.registry.get("srd-5.2.1", "0.1.0")
+        # New worlds pin the latest SRD version; existing worlds keep the version they were
+        # created with, so their action set and semantics never change under them.
+        definition = self.repository.registry.get("srd-5.2.1", LATEST_VERSION)
         initial = definition.example_world(world_id)
         self.repository.create_world(
             initial,
             if_missing=True,
             ruleset_id="srd-5.2.1",
-            ruleset_version="0.1.0",
+            ruleset_version=LATEST_VERSION,
         )
         selection = self.repository.ruleset_for_world(world_id)
-        if (selection.ruleset_id, selection.ruleset_version) != ("srd-5.2.1", "0.1.0"):
+        if selection.ruleset_id != "srd-5.2.1":
             raise RepositoryConflict("host world has an incompatible ruleset")
         return self.repository.get_initial_state(world_id)
 
@@ -398,7 +428,9 @@ class RisuBridge:
                     world_id=world_id, actor_id=turn.actor_id, text=turn.actions[-1].text
                 )
                 proposed = GameEvent.model_validate(proposed.model_dump())
-            payload_model = SRD521Rules.payload_models.get(proposed.kind)
+            # Natural-language proposals stay limited to roll actions; commands cover the rest.
+            allowed = COMMAND_ACTIONS if expected is not None else ROLL_ACTIONS
+            payload_model = allowed.get(proposed.kind)
             if payload_model is None or proposed.actor_id != turn.actor_id:
                 raise ValueError("intent must select a supported action for the identified actor")
             payload = payload_model.model_validate(proposed.payload)
