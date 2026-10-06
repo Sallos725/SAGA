@@ -80,3 +80,15 @@ def test_expression_names_are_reported_for_validation():
         "bonus",
         "proficient",
     }
+
+
+def test_and_or_short_circuit_like_python():
+    assert evaluate("x != 0 and 10 // x > 1", x=0) is False
+    assert evaluate("x == 0 or 10 // x > 1", x=0) is True
+    assert evaluate("present and stats[key] > 1", present=False, stats={}, key="missing") is False
+
+
+@pytest.mark.parametrize("text", ["max(1)", "min(2)", "abs(1, 2)", "abs()"])
+def test_function_arity_is_checked_at_compile_time(text):
+    with pytest.raises(ExpressionError):
+        compile_expression(text)

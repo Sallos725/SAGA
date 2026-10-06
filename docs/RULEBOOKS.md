@@ -58,7 +58,8 @@ Problems are reported by entry, for example
 - `integer` stats need a `range`. An optional `modifier` formula turns the raw value into
   the number added to rolls; `value` is the only name available in it.
 - `text` stats need an `enum` (closed list) or a `pattern` (regular expression).
-- `boolean` stats may have a `default`.
+- `boolean` stats may have a `default`. Any `default` must satisfy its own range, enum or
+  pattern; the checker says so otherwise.
 - A key ending in `:*` is a **family**: `proficient:*` covers `proficient:athletics`,
   `proficient:stealth`, …, each with the family's default. Formulas read a family as
   `actor.proficient[name]`.
@@ -73,7 +74,8 @@ Problems are reported by entry, for example
 }
 ```
 
-`roll` is `NdF` with F in 4, 6, 8, 10, 12, 20, 100 or F (Fate dice). `advantage: "roll_twice"`
+`roll` is `NdF` with 1..100 dice and F in 4, 6, 8, 10, 12, 20 or 100; Fate dice (`dF`) are not
+in schema v1 yet. `advantage: "roll_twice"`
 enables advantage/disadvantage: the action accepts `advantage` and `disadvantage` booleans,
 conditions can add either, one of each cancels out, and the better or worse of two rolls is
 kept. `"none"` rolls once and rejects those inputs.
@@ -118,9 +120,10 @@ Two shapes. A **check action** rolls dice:
   `advantage`/`disadvantage`; the check frame adds them.
 - `requires` are checked in order before anything is rolled; a false `when` rejects the
   action with your `error` text.
-- `modifier` and `target` are formulas. `on_hit` is only for attacks: `dice` must evaluate to a
-  dice expression such as `1d8`, `bonus` to a number; on `critical_hit` the dice count doubles
-  when `critical` is `double_dice`. Damage reduces the target's HP, never below zero.
+- `modifier` and `target` are formulas. `on_hit` is only for `attack`-role actions: `dice` must
+  evaluate to a dice expression such as `1d8` (at most 100 dice after a critical doubles the
+  count), `bonus` to a number; on `critical_hit` the dice count doubles when `critical` is
+  `double_dice`. Damage reduces the target's HP, never below zero.
 
 A **builtin action** changes state without dice and needs no formulas:
 
@@ -180,8 +183,9 @@ Used by demos, tests and new PocketRisu worlds. Keep it small and valid against 
 ## Formulas
 
 Formulas use a small, closed language: integers, text in quotes, `+ - * // %`, comparisons,
-`and or not`, `x if condition else y`, `max( )`, `min( )`, `abs( )`, and lookups. There are
-no floats, no other functions and no way to change anything.
+`and or not` (short-circuit, so `x != 0 and 10 // x > 1` is safe), `x if condition else y`,
+`max(a, b, …)`, `min(a, b, …)`, `abs(a)`, and lookups. There are no floats, no other functions
+and no way to change anything.
 
 | Name | Meaning | Available in |
 | --- | --- | --- |

@@ -348,3 +348,65 @@ def test_registry_serves_srd_040_from_the_rulebook_and_keeps_python_versions():
     assert sorted(
         m.ruleset_version for m in registry.manifests() if m.ruleset_id == "srd-5.2.1"
     ) == ["0.1.0", "0.2.0", "0.3.0", "0.4.0"]
+
+
+@pytest.mark.parametrize(
+    "mutate,message",
+    [
+        (
+            lambda d: d["checks"].update(d20={"roll": "101d20", "advantage": "none"}),
+            "checks.d20.roll",
+        ),
+        (lambda d: d["checks"].update(d20={"roll": "4dF", "advantage": "none"}), "checks.d20.roll"),
+        (lambda d: d["stats"].update(label={"type": "text"}), "stats.label"),
+        (lambda d: d["stats"].update(flag={"type": "boolean", "enum": ["a"]}), "stats.flag"),
+        (
+            lambda d: d["stats"].update(n={"type": "integer", "range": [1, 5], "default": 9}),
+            "stats.n.default",
+        ),
+        (
+            lambda d: d["stats"].update(t={"type": "text", "enum": ["a"], "default": "b"}),
+            "stats.t.default",
+        ),
+        (lambda d: d["outcomes"].update(empty=[]), "outcomes.empty"),
+        (
+            lambda d: d["actions"]["ability_check"]["input"]["difficulty"].update(range=[20, 1]),
+            "difficulty.range",
+        ),
+        (
+            lambda d: d["actions"]["saving_throw"].update(on_hit={"dice": "actor.weapon_damage"}),
+            "saving_throw.on_hit",
+        ),
+    ],
+)
+def test_stricter_validation_rejects_unusable_rulebooks(tmp_path, mutate, message):
+    data = spec_dict()
+    mutate(data)
+    with pytest.raises(RulebookError, match=message):
+        load_rulebook(write_spec(tmp_path, data))
+
+
+def test_optional_inputs_keep_their_constraints_and_booleans_can_be_required(tmp_path):
+    data = spec_dict()
+    data["actions"]["ability_check"]["input"]["flag"] = {"type": "boolean"}
+    rules = DataRules(load_rulebook(write_spec(tmp_path, data)))
+    model = rules.payload_models["ability_check"]
+    with pytest.raises(ValueError):
+        model.model_validate(
+            {"ability": "strength", "difficulty": 10, "flag": True, "proficiency": "x" * 81}
+        )
+    with pytest.raises(ValueError):
+        model.model_validate({"ability": "strength", "difficulty": 10})
+    model.model_validate({"ability": "strength", "difficulty": 10, "flag": False})
+
+
+def test_damage_dice_that_cannot_be_rolled_after_a_critical_fail_before_any_roll(tmp_path):
+    data = spec_dict()
+    data["stats"]["weapon_damage"] = {"type": "text", "pattern": "^[0-9]+d6$"}
+    dice = ScriptedDice()
+    engine = engine_for(DataRules(load_rulebook(write_spec(tmp_path, data))), dice)
+    engine.state.actors["player"].stats["weapon_damage"] = "60d6"
+    engine.state.actors["opponent"].stats["armor_class"] = 1
+    with pytest.raises(ValueError, match="dice"):
+        engine.dispatch(event("attack", {"target_id": "opponent"}))
+    assert dice.calls == []

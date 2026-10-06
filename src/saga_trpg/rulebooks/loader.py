@@ -64,7 +64,8 @@ class StatSpec(Closed):
 
 
 class CheckSpec(Closed):
-    roll: str = Field(pattern=r"^[1-9][0-9]{0,2}d(4|6|8|10|12|20|100|F)$")
+    # Schema v1 advertises exactly what the standard dice path can roll (1..100 dice).
+    roll: str = Field(pattern=r"^([1-9]|[1-9][0-9]|100)d(4|6|8|10|12|20|100)$")
     advantage: Literal["roll_twice", "none"] = "none"
 
 
@@ -221,19 +222,29 @@ def _cross_check(spec: RulebookSpec):  # noqa: C901
         else:
             if stat.range is not None or stat.modifier is not None:
                 yield f"stats.{key}: range and modifier apply to integer stats only"
-        if stat.type == "text" and stat.pattern is not None:
-            try:
-                re.compile(stat.pattern)
-            except re.error as exc:
-                yield f"stats.{key}.pattern: {exc}"
-        if stat.default is not None and _kind_of(stat.default) != stat.type:
-            yield f"stats.{key}.default: must be a {stat.type}"
+        if stat.type == "text":
+            if stat.enum is None and stat.pattern is None:
+                yield f"stats.{key}: text stats need an enum or a pattern"
+            if stat.pattern is not None:
+                try:
+                    re.compile(stat.pattern)
+                except re.error as exc:
+                    yield f"stats.{key}.pattern: {exc}"
+        elif stat.enum is not None or stat.pattern is not None:
+            yield f"stats.{key}: enum and pattern apply to text stats only"
+        if stat.default is not None:
+            if _kind_of(stat.default) != stat.type:
+                yield f"stats.{key}.default: must be a {stat.type}"
+            else:
+                yield from _check_default(f"stats.{key}.default", stat)
     for key in spec.checks:
         if not re.fullmatch(KEY, key):
             yield f"checks.{key}: key must match {KEY}"
     for key, rules in spec.outcomes.items():
         if not re.fullmatch(KEY, key):
             yield f"outcomes.{key}: key must match {KEY}"
+        if not rules:
+            yield f"outcomes.{key}: an outcome table needs at least one rule"
         for index, rule in enumerate(rules):
             if rule.outcome not in OUTCOMES:
                 yield (
@@ -286,6 +297,8 @@ def _cross_check(spec: RulebookSpec):  # noqa: C901
                 )
             if item.type == "integer" and item.range is None:
                 yield f"actions.{key}.input.{name}.range: integer inputs need a [min, max] range"
+            if item.type == "integer" and item.range is not None and item.range[0] > item.range[1]:
+                yield f"actions.{key}.input.{name}.range: min is greater than max"
             if item.type == "text" and item.enum is None and item.pattern is None:
                 yield f"actions.{key}.input.{name}: text inputs need an enum or a pattern"
             if item.type == "text" and item.pattern is not None:
@@ -295,6 +308,8 @@ def _cross_check(spec: RulebookSpec):  # noqa: C901
                     yield f"actions.{key}.input.{name}.pattern: {exc}"
         if action.role == "attack" and not has_target:
             yield f"actions.{key}.input: an attack needs a target_id input of type actor"
+        if action.on_hit is not None and action.role != "attack":
+            yield f"actions.{key}.on_hit: only attack-role actions may deal damage"
         if action.on_hit is not None and not has_target:
             yield f"actions.{key}.on_hit: needs a target_id input of type actor"
         allowed = {"actor", "mod", "input"} | ({"target", "target_mod"} if has_target else set())
@@ -317,6 +332,22 @@ def _cross_check(spec: RulebookSpec):  # noqa: C901
                     )
             if not 0 <= actor.hp <= actor.max_hp or actor.max_hp <= 0:
                 yield f"example_world.actors.{actor_id}: hp must be within 0..max_hp"
+
+
+def _check_default(location: str, stat: StatSpec):
+    value = stat.default
+    if stat.type == "integer" and stat.range is not None:
+        if not stat.range[0] <= value <= stat.range[1]:
+            yield f"{location}: outside the range {stat.range[0]}..{stat.range[1]}"
+    elif stat.type == "text":
+        if stat.enum is not None and value not in stat.enum:
+            yield f"{location}: not one of {', '.join(stat.enum)}"
+        if stat.pattern is not None:
+            try:
+                if not re.fullmatch(stat.pattern, value):
+                    yield f"{location}: does not match {stat.pattern}"
+            except re.error:
+                pass
 
 
 def _kind_of(value: Any) -> str:

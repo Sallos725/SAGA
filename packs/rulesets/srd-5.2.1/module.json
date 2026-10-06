@@ -35,6 +35,7 @@
         "proficiency": {
           "anyOf": [
             {
+              "pattern": "^.{1,80}$",
               "type": "string"
             },
             {

@@ -124,20 +124,25 @@ def _validated(actor: ActorState, key: str, spec: StatSpec, value: Any) -> Any:
 
 
 def _input_field(spec: InputSpec) -> tuple[Any, Any]:
+    constraints: dict[str, Any] = {}
     if spec.type == "integer":
-        annotation, default = int, ...
-        field = Field(ge=spec.range[0], le=spec.range[1])
+        annotation = int
+        constraints = {"ge": spec.range[0], "le": spec.range[1]}
     elif spec.type == "actor":
-        annotation, default, field = str, ..., Field(min_length=1)
+        annotation = str
+        constraints = {"min_length": 1}
     elif spec.type == "boolean":
-        return bool, bool(spec.default)
+        annotation = bool
     elif spec.enum is not None:
-        annotation, default, field = Literal[tuple(spec.enum)], ..., Field()
+        annotation = Literal[tuple(spec.enum)]
     else:
-        annotation, default, field = str, ..., Field(pattern=spec.pattern)
-    if spec.optional:
-        annotation, default = annotation | None, None
-    return annotation, (field if default is ... else Field(default=default))
+        annotation = str
+        constraints = {"pattern": spec.pattern}
+    if not spec.optional:
+        return annotation, Field(**constraints)
+    if spec.type == "boolean":
+        return bool, Field(default=bool(spec.default), **constraints)
+    return annotation | None, Field(default=None, **constraints)
 
 
 class DataRules:
@@ -286,6 +291,12 @@ class DataRules:
                 if match is None:
                     raise ValueError(f"on_hit dice {expression!r} must look like 2d6")
                 damage_dice = (int(match[1]), int(match[2]))
+                doubled = 2 if action.on_hit.critical == "double_dice" else 1
+                if damage_dice[0] * doubled > 100:
+                    raise ValueError(
+                        f"on_hit dice {expression!r} cannot be rolled after a critical "
+                        "(at most 100 dice)"
+                    )
                 bonus = _as_int(formulas["on_hit.bonus"].evaluate(scope), "on_hit.bonus")
         except ExpressionError as exc:
             raise ValueError(str(exc)) from None

@@ -86,8 +86,11 @@ def compile_expression(source: str) -> Expression:
                 raise ExpressionError(
                     f"formula {source!r} may only call {', '.join(sorted(_FUNCTIONS))}"
                 )
-            if node.keywords or not node.args:
-                raise ExpressionError(f"formula {source!r} calls a function incorrectly")
+            arity_ok = len(node.args) == 1 if node.func.id == "abs" else len(node.args) >= 2
+            if node.keywords or not arity_ok:
+                raise ExpressionError(
+                    f"formula {source!r} calls {node.func.id} with the wrong number of arguments"
+                )
         elif isinstance(node, ast.Attribute):
             if node.attr.startswith("_"):
                 raise ExpressionError(f"formula {source!r} may not access {node.attr!r}")
@@ -140,8 +143,14 @@ def _evaluate(node: ast.AST, scope: Mapping[str, Any], source: str = "") -> Any:
             return not operand
         return _check_value(-_number(operand, source), source)
     if isinstance(node, ast.BoolOp):
-        values = [_evaluate(item, scope, source) for item in node.values]
-        return all(values) if isinstance(node.op, ast.And) else any(values)
+        # Short-circuit like Python so guards such as `x != 0 and 10 // x > 1` are safe.
+        stop_on = not isinstance(node.op, ast.And)
+        result = not stop_on
+        for item in node.values:
+            result = bool(_evaluate(item, scope, source))
+            if result is stop_on:
+                return result
+        return result
     if isinstance(node, ast.IfExp):
         branch = node.body if _evaluate(node.test, scope, source) else node.orelse
         return _evaluate(branch, scope, source)
