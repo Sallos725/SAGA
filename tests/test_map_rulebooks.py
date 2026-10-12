@@ -222,3 +222,16 @@ def test_moves_replay_from_the_journal_and_retries_reuse_the_entry():
     assert retry.replayed and len(runtime.journal.entries()) == 3
     assert replay_recorded_results(initial, runtime.journal.entries()) == runtime.state
     assert runtime.state.actors["player"].visited_rooms == {"hall", "guard", "store"}
+
+
+# --- footer ----------------------------------------------------------------------------------
+
+
+def test_footer_shows_the_viewers_room_and_exit_keys():
+    data = srd_with(HAND_MAP)
+    data["display"]["world"] = ["time", "location"]
+    spec = parse_rulebook(data)
+    state = DataRules(spec).example_world("w")
+    assert render_display(spec, state)["world"] == ["⏱ 0s", "📍 입구 홀 · 출구 east, north"]
+    no_map = DataRules(load_rulebook(rulebook_path("srd-5.2.1", "0.5.0"))).example_world("w")
+    assert render_display(spec, no_map)["world"] == ["⏱ 0s"]
