@@ -14,12 +14,77 @@
         "skill:investigate": 2,
         "skill:athletics": 1,
         "skill:notice": 3
-      }
+      },
+      "location": "harbor",
+      "visited_rooms": [
+        "harbor"
+      ]
     }
   },
   "flags": {
     "fate_aspects": {},
     "fate_boosts": {}
   },
-  "quest_state": {}
+  "quest_state": {},
+  "map": {
+    "schema_version": 1,
+    "start_room": "harbor",
+    "rooms": {
+      "harbor": {
+        "name": "부두",
+        "description": "안개 낀 부두. 밧줄에 묶인 작은 배가 흔들린다.",
+        "exits": {
+          "north": {
+            "to_room": "warehouse",
+            "label": "북쪽 창고 문",
+            "kind": "door"
+          },
+          "east": {
+            "to_room": "lighthouse",
+            "label": "동쪽 해안길",
+            "kind": "open"
+          }
+        }
+      },
+      "warehouse": {
+        "name": "창고",
+        "description": "젖은 그물과 소금 냄새가 가득하다.",
+        "exits": {
+          "south": {
+            "to_room": "harbor",
+            "label": "남쪽 문",
+            "kind": "door"
+          }
+        }
+      },
+      "lighthouse": {
+        "name": "등대 아래",
+        "description": "파도가 바위에 부딪혀 물보라가 튄다.",
+        "exits": {
+          "west": {
+            "to_room": "harbor",
+            "label": "서쪽 해안길",
+            "kind": "open"
+          },
+          "up": {
+            "to_room": "lamp_room",
+            "label": "위쪽 나선 계단",
+            "kind": "door"
+          }
+        }
+      },
+      "lamp_room": {
+        "name": "등대 꼭대기",
+        "description": "꺼진 등불 옆으로 바다가 내려다보인다.",
+        "exits": {
+          "down": {
+            "to_room": "lighthouse",
+            "label": "아래쪽 나선 계단",
+            "kind": "door"
+          }
+        }
+      }
+    },
+    "generator": null
+  }
 }

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "fate-condensed",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "title": "Fate Condensed example",
   "license": {
     "id": "CC-BY-3.0",
@@ -217,6 +217,9 @@
     "use_boost": {
       "builtin": "record_remove",
       "record": "fate_boosts"
+    },
+    "move": {
+      "builtin": "map_move"
     }
   },
   "conditions": {},
@@ -234,6 +237,65 @@
     "flags": {
       "fate_aspects": {},
       "fate_boosts": {}
+    },
+    "map": {
+      "start_room": "harbor",
+      "rooms": {
+        "harbor": {
+          "name": "부두",
+          "description": "안개 낀 부두. 밧줄에 묶인 작은 배가 흔들린다.",
+          "exits": {
+            "north": {
+              "to_room": "warehouse",
+              "label": "북쪽 창고 문",
+              "kind": "door"
+            },
+            "east": {
+              "to_room": "lighthouse",
+              "label": "동쪽 해안길",
+              "kind": "open"
+            }
+          }
+        },
+        "warehouse": {
+          "name": "창고",
+          "description": "젖은 그물과 소금 냄새가 가득하다.",
+          "exits": {
+            "south": {
+              "to_room": "harbor",
+              "label": "남쪽 문",
+              "kind": "door"
+            }
+          }
+        },
+        "lighthouse": {
+          "name": "등대 아래",
+          "description": "파도가 바위에 부딪혀 물보라가 튄다.",
+          "exits": {
+            "west": {
+              "to_room": "harbor",
+              "label": "서쪽 해안길",
+              "kind": "open"
+            },
+            "up": {
+              "to_room": "lamp_room",
+              "label": "위쪽 나선 계단",
+              "kind": "door"
+            }
+          }
+        },
+        "lamp_room": {
+          "name": "등대 꼭대기",
+          "description": "꺼진 등불 옆으로 바다가 내려다보인다.",
+          "exits": {
+            "down": {
+              "to_room": "lighthouse",
+              "label": "아래쪽 나선 계단",
+              "kind": "door"
+            }
+          }
+        }
+      }
     }
   },
   "display": {
@@ -244,7 +306,9 @@
       "fate_aspects",
       "fate_boosts"
     ],
-    "world": []
+    "world": [
+      "location"
+    ]
   },
   "implemented": [
     "overcome against static opposition",
@@ -253,7 +317,8 @@
     "one/two free invokes on new aspects",
     "boost records",
     "spending free invokes on an aspect",
-    "using (removing) a boost"
+    "using (removing) a boost",
+    "hand-authored room-graph map; move between connected rooms"
   ],
   "not_implemented": [
     "character creation and advancement",
@@ -263,5 +328,5 @@
     "opposed rolls and existing-aspect advantages",
     "paid invocations, invoke effects on rolls, and applying costs"
   ],
-  "narration": "Selected system: Fate Condensed example, version 0.4.0.\nUse overcome or create_advantage against static opposition, with a stored skill:<name> rating.\nFour journaled d3 faces map 1/2/3 to -1/0/+1. The recorded total includes the skill rating.\nAn overcome failure/tie, or failed advantage, leaves a fictional choice pending; do not state that\na cost or adverse aspect was applied. Successful new aspects and boosts are stored in world flags.\nUse invoke to spend one free invoke on a named aspect (rejected at zero) and use_boost to\nremove a named boost; neither changes a roll in this example, only the recorded counts.\nDo not use generic HP or SRD combat mechanics to fill in unsupported Fate rules.\n"
+  "narration": "Selected system: Fate Condensed example, version 0.5.0.\nUse overcome or create_advantage against static opposition, with a stored skill:<name> rating.\nFour journaled d3 faces map 1/2/3 to -1/0/+1. The recorded total includes the skill rating.\nAn overcome failure/tie, or failed advantage, leaves a fictional choice pending; do not state that\na cost or adverse aspect was applied. Successful new aspects and boosts are stored in world flags.\nUse invoke to spend one free invoke on a named aspect (rejected at zero) and use_boost to\nremove a named boost; neither changes a roll in this example, only the recorded counts.\nDo not use generic HP or SRD combat mechanics to fill in unsupported Fate rules.\n\nThe player changes rooms only when a recorded move result says so; if they describe walking somewhere without one, tell them to type move <exit> with an exit key from the status line, and do not narrate arriving. Describe only the current room and what the map block lists; never describe rooms behind ??? exits."
 }

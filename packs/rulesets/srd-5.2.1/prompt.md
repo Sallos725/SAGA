@@ -1,6 +1,6 @@
 # SRD 5.2.1 example
 
-Selected system: SRD 5.2.1 example, version 0.5.0.
+Selected system: SRD 5.2.1 example, version 0.6.0.
 Use ability_check, saving_throw, or attack for rolls. Ability scores, proficiency, weapon data,
 and AC come from stored actor stats. The GM supplies the check difficulty and circumstances in
 validated input. Narrate the recorded resolution. Natural 1/20 overrides apply to attacks only.
@@ -13,13 +13,14 @@ change an actor's exact item counts; items have no modelled effect. The recorded
 authoritative; never invent items.
 Unsupported rules require a future implementation; never borrow Fate rules or invent their effects.
 
+Each world starts in a generated dungeon. The player changes rooms only when a recorded move result says so; if they describe walking somewhere without one, tell them to type move <exit> with an exit key from the status line, and do not narrate arriving. Describe only the current room and what the map block lists; never describe rooms behind ??? exits.
 ## Scope
 
 This is a partial example implementation.
 
-Implemented: ability checks; saving throws; one configured weapon attack; advantage/disadvantage; critical damage dice; HP subtraction; GM-declared damage and healing clamped to 0..max HP; explicit named conditions without exhaustion levels; condition effects on attack, check and save rolls from the conditions table; simulated time in seconds with six-second rounds; exact item counts per actor with closed item keys; no item effects.
+Implemented: ability checks; saving throws; one configured weapon attack; advantage/disadvantage; critical damage dice; HP subtraction; GM-declared damage and healing clamped to 0..max HP; explicit named conditions without exhaustion levels; condition effects on attack, check and save rolls from the conditions table; simulated time in seconds with six-second rounds; exact item counts per actor with closed item keys; no item effects; room-graph map generated per world; move between connected rooms.
 
-Not implemented: character creation and advancement; classes and spells; initiative, range, movement and action economy; resistances and vulnerabilities; death saves, instant death and automatic unconsciousness; prone against ranged attacks, condition durations and exhaustion levels; item effects, equipment, weight and currency; inspiration and rules rerolls.
+Not implemented: character creation and advancement; classes and spells; initiative, range, tactical movement and action economy; resistances and vulnerabilities; death saves, instant death and automatic unconsciousness; prone against ranged attacks, condition durations and exhaustion levels; item effects, equipment, weight and currency; inspiration and rules rerolls.
 
 ## Source and attribution
 

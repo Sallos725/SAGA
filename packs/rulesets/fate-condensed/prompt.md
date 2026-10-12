@@ -1,6 +1,6 @@
 # Fate Condensed example
 
-Selected system: Fate Condensed example, version 0.4.0.
+Selected system: Fate Condensed example, version 0.5.0.
 Use overcome or create_advantage against static opposition, with a stored skill:<name> rating.
 Four journaled d3 faces map 1/2/3 to -1/0/+1. The recorded total includes the skill rating.
 An overcome failure/tie, or failed advantage, leaves a fictional choice pending; do not state that
@@ -9,11 +9,12 @@ Use invoke to spend one free invoke on a named aspect (rejected at zero) and use
 remove a named boost; neither changes a roll in this example, only the recorded counts.
 Do not use generic HP or SRD combat mechanics to fill in unsupported Fate rules.
 
+The player changes rooms only when a recorded move result says so; if they describe walking somewhere without one, tell them to type move <exit> with an exit key from the status line, and do not narrate arriving. Describe only the current room and what the map block lists; never describe rooms behind ??? exits.
 ## Scope
 
 This is a partial example implementation.
 
-Implemented: overcome against static opposition; four outcome grades; create a new situation aspect; one/two free invokes on new aspects; boost records; spending free invokes on an aspect; using (removing) a boost.
+Implemented: overcome against static opposition; four outcome grades; create a new situation aspect; one/two free invokes on new aspects; boost records; spending free invokes on an aspect; using (removing) a boost; hand-authored room-graph map; move between connected rooms.
 
 Not implemented: character creation and advancement; rerolls; stunts and compels; attack, defend, stress and consequences; opposed rolls and existing-aspect advantages; paid invocations, invoke effects on rolls, and applying costs.
 

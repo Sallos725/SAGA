@@ -265,8 +265,10 @@ Implemented:
 - SRD 5.2.1 `0.3.0` inventory: exact per-actor item counts with closed keys (`give`/`take`),
   no item effects
 - **Rulebooks as data**: a closed JSON schema plus a small formula language, one generic
-  engine, a `check` command with errors by entry; `srd-5.2.1@0.5.0` and `fate-condensed@0.4.0`
-  are the bundled rulebooks (older bundled versions stay registered byte for byte); rulebooks
+  engine, a `check` command with errors by entry; `srd-5.2.1@0.6.0` and `fate-condensed@0.5.0`
+  are the latest bundled rulebooks, with room-graph maps and `move <exit>`
+  ([ADR 0009](docs/adr/0009-locations-and-map-movement.md)); older bundled versions stay
+  registered byte for byte; rulebooks
   ship as RisuAI modules, import at `POST /rulebooks`, and drive commands and the footer
   ([guide](docs/RULEBOOKS.md), [module format](docs/RISUAI_MODULES.md),
   [ADR 0007](docs/adr/0007-rulebooks-as-data.md))
