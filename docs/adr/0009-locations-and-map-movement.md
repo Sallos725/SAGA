@@ -1,6 +1,6 @@
 # ADR 0009: Locations as a room graph in authoritative state
 
-Status: proposed (2026-10-12). Tracks [SAGA-44](https://app.plane.so/sallos/projects/bce65fff-ee0a-4677-b068-b255ed9eebfe/issues/cc780fc2-1b0b-419d-90e1-c2c69416c523/)
+Status: accepted (2026-10-12). Tracks [SAGA-44](https://app.plane.so/sallos/projects/bce65fff-ee0a-4677-b068-b255ed9eebfe/issues/cc780fc2-1b0b-419d-90e1-c2c69416c523/)
 (A5 in [the TRPG feature review](../TRPG_FEATURE_REVIEW.md)); this ADR covers its first slice only.
 
 ## Problem
@@ -137,11 +137,17 @@ play, NPC movement, time cost of travel, and a visual map (SVG, Mermaid or an HT
 rendered from the same projection, shown when a player asks to see the map). Each needs its own
 decision on how check outcomes, records and the projection interact.
 
-## Evidence (to be added with the implementation)
+## Evidence
 
-Planned tests, starting with the hash-neutrality golden test (the hash and stored JSON of a
-map-less world are unchanged, and history verification still passes) before any other code:
-same seed and world give the same map and different worlds differ; reachability
-holds across several hundred seeds; moves are accepted and rejected as specified; journal,
-replay and rerender leave state unchanged; the projection hides unvisited rooms; the hash of
-a map-less world is unchanged (first test above).
+`tests/test_state_compat.py` (golden hash and stored JSON of a map-less world, written before
+any map code; clearing a placement restores them; the documented serialization schema keeps
+every field), `tests/test_maps.py` (validation, projection, generator determinism with a
+pinned map digest checked on Python 3.11–3.13, reachability, opposite-key return exits and
+loops across 800 generated maps), `tests/test_map_rulebooks.py` (loader checks by entry path,
+the 200-room cap, example worlds that never share the rulebook's map objects, `map_move`
+acceptance, rejection without a journal entry including `cannot_act` conditions, replay and
+retries, footer, bundled versions), `tests/test_risu_api.py` (a new chat starts on a generated
+map; a move commits once across regenerations; a bad exit is rejected) and
+`tests/test_vertex_narration.py` (the prompt carries the known map and no unseen room name,
+room id or NPC position, also for an authored map with an NPC behind a closed door). Full
+suite: 608 passed. Progress report: [locations and map movement v1](../progress/locations-map-v1.md).
