@@ -823,7 +823,7 @@ def test_bridge_worlds_on_040_apply_condition_effects_from_the_rulebook(tmp_path
         response = client.post("/v1/chat/completions", json=request(*turns[: index + 1]))
         assert response.status_code == 200, response.text
     result = response.json()["saga"]
-    assert repo.ruleset_for_world(result["world_id"]).ruleset_version == "0.5.0"
+    assert repo.ruleset_for_world(result["world_id"]).ruleset_version == SRD_LATEST
     d20s = [roll for roll in result["rolls"] if roll["roll_key"].startswith("attack:")]
     assert len(d20s) == 2
     assert any("prone" in line for line in result["trace"])
@@ -931,7 +931,8 @@ def test_response_carries_rendered_display_lines_from_the_rulebook(tmp_path):
     srd = client.post("/v1/chat/completions", json=request(("u1", "inflict opponent prone")))
     display = srd.json()["saga"]["display"]
     assert display["actors"][1] == {"id": "opponent", "items": ["30/30", "prone"]}
-    assert display["world"] == ["⏱ 0s"] and display["records"] == []
+    assert display["world"][0] == "⏱ 0s" and display["records"] == []
+    assert display["world"][1].startswith("📍 입구 홀 · 출구 ")
     fate = client.post(
         "/v1/chat/completions",
         json=fate_request(("u1", 'create_advantage notice 1 "Mapped route"')),
@@ -940,7 +941,7 @@ def test_response_carries_rendered_display_lines_from_the_rulebook(tmp_path):
     assert display["actors"] == [
         {"id": "player", "items": ["athletics +1, investigate +2, notice +3"]}
     ]
-    assert display["world"] == []
+    assert display["world"] == ["📍 부두 · 출구 east, north"]
     if fate.json()["saga"]["resolution"]["outcome"] in {"success", "success_with_style"}:
         assert display["records"][0]["label"] == "fate_aspects"
         assert display["records"][0]["items"][0].startswith("Mapped route")

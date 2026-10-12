@@ -13,10 +13,10 @@ FATE = load_rulebook(rulebook_path("fate-condensed"))
 
 def test_bundled_rulebooks_declare_what_the_footer_shows():
     assert SRD.display.actor == ["hp", "conditions", "inventory"]
-    assert SRD.display.world == ["time"]
+    assert SRD.display.world == ["time", "location"]
     assert FATE.display.actor == ["skill:*"]
     assert FATE.display.records == ["fate_aspects", "fate_boosts"]
-    assert FATE.display.world == []
+    assert FATE.display.world == ["location"]
 
 
 def test_srd_display_lines_follow_the_declaration():

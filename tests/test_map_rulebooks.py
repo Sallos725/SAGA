@@ -235,3 +235,39 @@ def test_footer_shows_the_viewers_room_and_exit_keys():
     assert render_display(spec, state)["world"] == ["⏱ 0s", "📍 입구 홀 · 출구 east, north"]
     no_map = DataRules(load_rulebook(rulebook_path("srd-5.2.1", "0.5.0"))).example_world("w")
     assert render_display(spec, no_map)["world"] == ["⏱ 0s"]
+
+
+# --- bundled versions ------------------------------------------------------------------------
+
+
+def test_new_bundled_versions_declare_move_and_an_example_map():
+    assert (SRD_LATEST, FATE_LATEST) == ("0.6.0", "0.5.0")
+    registry = RulesetRegistry()
+    srd = registry.get("srd-5.2.1", "0.6.0")
+    world = srd.example_world("w")
+    assert world.map.generator.name == "saga-rooms"
+    assert world.actors["player"].location == world.map.start_room
+    assert "move" in srd.manifest.event_payload_schemas
+    fate = registry.get("fate-condensed", "0.5.0").example_world("w")
+    assert fate.map.start_room == "harbor" and fate.map.generator is None
+    for older in (("srd-5.2.1", "0.5.0"), ("fate-condensed", "0.4.0")):
+        assert registry.get(*older).example_world("w").map is None
+
+
+def test_a_bundled_generated_world_can_walk_every_exit_of_its_start_room():
+    spec = load_rulebook(rulebook_path("srd-5.2.1", "0.6.0"))
+    runtime = engine(spec, world_id="walk")
+    rooms = runtime.state.map.rooms
+    start = runtime.state.map.start_room
+    for index, key in enumerate(sorted(rooms[start].exits)):
+        runtime.dispatch(
+            GameEvent(event_id=f"go{index}", kind="move", actor_id="player", payload={"exit": key})
+        )
+        here = rooms[runtime.state.actors["player"].location]
+        back = next(k for k, e in here.exits.items() if e.to_room == start)
+        runtime.dispatch(
+            GameEvent(
+                event_id=f"back{index}", kind="move", actor_id="player", payload={"exit": back}
+            )
+        )
+    assert runtime.state.actors["player"].location == start
