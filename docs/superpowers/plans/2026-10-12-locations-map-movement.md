@@ -648,6 +648,8 @@ Expected: `ModuleNotFoundError: No module named 'saga_trpg.domain.mapgen'`.
 The digest in `GOLDEN_MAP_SHA256` depends on every line below (table order, draw order,
 probabilities). If you change any of it, bump `GENERATOR_VERSION` and recapture the digest in
 the same commit; stored worlds are unaffected because replay never reruns the generator.
+If the digest test passes locally but fails on exactly one CI Python (3.11–3.13), that is a
+determinism bug in the generator to fix, never a constant to loosen.
 
 ```python
 """Seeded room-graph generator (ADR 0009).
@@ -795,17 +797,18 @@ git commit -m "feat: seeded room-graph generator"
 
 ---
 
-### Task 5: Maps in rulebooks — schema, checks and example worlds
+### Task 5: Maps in rulebooks and the `move` command
 
 **Files:**
 - Modify: `src/saga_trpg/rulebooks/loader.py`
-- Modify: `src/saga_trpg/rulebooks/engine.py` (imports and `example_world` only in this task)
+- Modify: `src/saga_trpg/rulebooks/engine.py`
+- Modify: `src/saga_trpg/rulebooks/commands.py`
 - Create: `tests/test_map_rulebooks.py`
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `tests/test_map_rulebooks.py` with the full import header (later tasks append sections
-that use the rest of it):
+Create `tests/test_map_rulebooks.py` with this content. The import header already covers the
+sections Tasks 6 and 7 append, so `ruff` reports unused imports until then; it runs in Task 10.
 
 ```python
 """Maps in rulebooks: example_world.map, the map_move builtin, commands and the footer."""
@@ -936,12 +939,70 @@ def test_worlds_without_a_map_are_unchanged():
     state = DataRules(load_rulebook(rulebook_path("srd-5.2.1", "0.5.0"))).example_world("w")
     assert state.map is None
     assert all(actor.location is None for actor in state.actors.values())
+
+
+
+# --- map_move -----------------------------------------------------------------------------------
+
+
+def test_move_follows_an_exit_and_records_patches_and_a_fact():
+    spec = parse_rulebook(srd_with(HAND_MAP))
+    runtime = engine(spec)
+    entry = runtime.dispatch(move(spec, "move NORTH", "m1")).entry
+    assert entry.committed.event.payload == {"exit": "north"}
+    player = runtime.state.actors["player"]
+    assert player.location == "guard" and player.visited_rooms == {"hall", "guard"}
+    assert [(p.path, p.before, p.after) for p in entry.result.patches] == [
+        ("actors.player.location", "hall", "guard"),
+        ("actors.player.visited_rooms", ["hall"], ["guard", "hall"]),
+    ]
+    assert entry.result.facts == ["player: move through 북쪽 문 from 입구 홀 to 경비실."]
+    assert entry.result.rolls == [] and runtime.state.simulated_time == 0
+
+
+@pytest.mark.parametrize("text", ["move west", "move nowhere"])
+def test_moves_that_do_not_leave_the_current_room_are_rejected_without_a_journal_entry(text):
+    spec = parse_rulebook(srd_with(HAND_MAP))
+    runtime = engine(spec)
+    before = runtime.state.model_copy(deep=True)
+    with pytest.raises(ValueError, match="입구 홀 has no exit"):
+        runtime.dispatch(move(spec, text, "m1"))
+    assert runtime.journal.entries() == [] and runtime.state == before
+
+
+def test_move_in_a_world_without_a_map_is_rejected():
+    data = json.loads(rulebook_path("srd-5.2.1", "0.5.0").read_text())
+    data["actions"]["move"] = {"builtin": "map_move"}
+    spec = parse_rulebook(data)
+    with pytest.raises(ValueError, match="this world has no map"):
+        engine(spec).dispatch(move(spec, "move north", "m1"))
+
+
+def test_move_exit_keys_are_closed_identifiers():
+    spec = parse_rulebook(srd_with(HAND_MAP))
+    with pytest.raises(CommandError, match="move: exit"):
+        parse_command(spec, actor_id="player", text="move '북쪽 문'")
+    assert "move <exit>" in command_help(spec)
+
+
+def test_moves_replay_from_the_journal_and_retries_reuse_the_entry():
+    spec = parse_rulebook(srd_with(HAND_MAP))
+    runtime = engine(spec)
+    initial = runtime.state.model_copy(deep=True)
+    runtime.dispatch(move(spec, "move north", "m1"))
+    runtime.dispatch(move(spec, "move south", "m2"))
+    runtime.dispatch(move(spec, "move east", "m3"))
+    retry = runtime.dispatch(move(spec, "move east", "m3"))
+    assert retry.replayed and len(runtime.journal.entries()) == 3
+    assert replay_recorded_results(initial, runtime.journal.entries()) == runtime.state
+    assert runtime.state.actors["player"].visited_rooms == {"hall", "guard", "store"}
 ```
 
 - [ ] **Step 2: Run to see them fail**
 
-Run: `$PY -m pytest tests/test_map_rulebooks.py -v`
-Expected: failures — `RulebookError` for unknown `example_world.map` / `map_move`.
+Run: `$PY -m pytest tests/test_map_rulebooks.py -q`
+Expected: failures — `RulebookError` for the unknown `example_world.map` field and the unknown
+`map_move` builtin.
 
 - [ ] **Step 3: Implement the loader**
 
@@ -1044,11 +1105,8 @@ Expected: failures — `RulebookError` for unknown `example_world.map` / `map_mo
  _RESERVED_NAMES = frozenset(
 ```
 
-- [ ] **Step 4: Implement maps in `example_world`**
-
-From the engine diff below apply only these hunks now: the imports, the `example_world`
-change and the module-level `_example_map` helper (place it just above `_find_record`). The
-`map_move` payload, the `_builtin` branch and `_move` come in Task 6.
+- [ ] **Step 4: Implement the engine** — `map_move` payload, maps in `example_world`, `_move`,
+and the module-level `_example_map` helper:
 
 ```diff
 @@ -9,8 +9,11 @@
@@ -1171,95 +1229,7 @@ change and the module-level `_example_map` helper (place it just above `_find_re
      stored = state.flags.get(collection, {})
 ```
 
-- [ ] **Step 5: Run**
-
-Run: `$PY -m pytest tests/test_map_rulebooks.py -v` → `13 passed`.
-Run: `$PY -m pytest -q` → no failures.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add src/saga_trpg/rulebooks/loader.py src/saga_trpg/rulebooks/engine.py tests/test_map_rulebooks.py
-git commit -m "feat: example_world.map in rulebooks, hand-authored or generated per world"
-```
-
----
-
-### Task 6: The `map_move` builtin and the `move <exit>` command
-
-**Files:**
-- Modify: `src/saga_trpg/rulebooks/engine.py`
-- Modify: `src/saga_trpg/rulebooks/commands.py`
-- Modify: `tests/test_map_rulebooks.py`
-
-- [ ] **Step 1: Write the failing tests** — append to `tests/test_map_rulebooks.py`:
-
-```python
-# --- map_move -----------------------------------------------------------------------------------
-
-
-def test_move_follows_an_exit_and_records_patches_and_a_fact():
-    spec = parse_rulebook(srd_with(HAND_MAP))
-    runtime = engine(spec)
-    entry = runtime.dispatch(move(spec, "move NORTH", "m1")).entry
-    assert entry.committed.event.payload == {"exit": "north"}
-    player = runtime.state.actors["player"]
-    assert player.location == "guard" and player.visited_rooms == {"hall", "guard"}
-    assert [(p.path, p.before, p.after) for p in entry.result.patches] == [
-        ("actors.player.location", "hall", "guard"),
-        ("actors.player.visited_rooms", ["hall"], ["guard", "hall"]),
-    ]
-    assert entry.result.facts == ["player: move through 북쪽 문 from 입구 홀 to 경비실."]
-    assert entry.result.rolls == [] and runtime.state.simulated_time == 0
-
-
-@pytest.mark.parametrize("text", ["move west", "move nowhere"])
-def test_moves_that_do_not_leave_the_current_room_are_rejected_without_a_journal_entry(text):
-    spec = parse_rulebook(srd_with(HAND_MAP))
-    runtime = engine(spec)
-    before = runtime.state.model_copy(deep=True)
-    with pytest.raises(ValueError, match="입구 홀 has no exit"):
-        runtime.dispatch(move(spec, text, "m1"))
-    assert runtime.journal.entries() == [] and runtime.state == before
-
-
-def test_move_in_a_world_without_a_map_is_rejected():
-    data = json.loads(rulebook_path("srd-5.2.1", "0.5.0").read_text())
-    data["actions"]["move"] = {"builtin": "map_move"}
-    spec = parse_rulebook(data)
-    with pytest.raises(ValueError, match="this world has no map"):
-        engine(spec).dispatch(move(spec, "move north", "m1"))
-
-
-def test_move_exit_keys_are_closed_identifiers():
-    spec = parse_rulebook(srd_with(HAND_MAP))
-    with pytest.raises(CommandError, match="move: exit"):
-        parse_command(spec, actor_id="player", text="move '북쪽 문'")
-    assert "move <exit>" in command_help(spec)
-
-
-def test_moves_replay_from_the_journal_and_retries_reuse_the_entry():
-    spec = parse_rulebook(srd_with(HAND_MAP))
-    runtime = engine(spec)
-    initial = runtime.state.model_copy(deep=True)
-    runtime.dispatch(move(spec, "move north", "m1"))
-    runtime.dispatch(move(spec, "move south", "m2"))
-    runtime.dispatch(move(spec, "move east", "m3"))
-    retry = runtime.dispatch(move(spec, "move east", "m3"))
-    assert retry.replayed and len(runtime.journal.entries()) == 3
-    assert replay_recorded_results(initial, runtime.journal.entries()) == runtime.state
-    assert runtime.state.actors["player"].visited_rooms == {"hall", "guard", "store"}
-```
-
-- [ ] **Step 2: Run to see them fail**
-
-Run: `$PY -m pytest tests/test_map_rulebooks.py -v -k "move"`
-Expected: `KeyError: 'map_move'` from the command parser and missing `exit` payload fields.
-
-- [ ] **Step 3: Implement**
-
-Apply the remaining hunks of the Task 5 engine diff: the `map_move` payload fields in
-`_payload_model`, the `map_move` branch in `_builtin` and the `_move` method. Then:
+- [ ] **Step 5: Implement the command order**
 
 ```diff
 @@ -33,6 +33,7 @@
@@ -1271,21 +1241,21 @@ Apply the remaining hunks of the Task 5 engine diff: the `map_move` payload fiel
  _INTEGER = re.compile(r"^-?[0-9]{1,9}$")
 ```
 
-- [ ] **Step 4: Run**
+- [ ] **Step 6: Run**
 
-Run: `$PY -m pytest tests/test_map_rulebooks.py -v` → `19 passed`.
-Run: `$PY -m pytest -q` → no failures.
+Run: `$PY -m pytest tests/test_map_rulebooks.py -q` → `19 passed`.
+Run: `$PY -m pytest -q` → `591 passed`.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add src/saga_trpg/rulebooks/engine.py src/saga_trpg/rulebooks/commands.py tests/test_map_rulebooks.py
-git commit -m "feat: map_move builtin and move <exit> command"
+git add src/saga_trpg/rulebooks/loader.py src/saga_trpg/rulebooks/engine.py src/saga_trpg/rulebooks/commands.py tests/test_map_rulebooks.py
+git commit -m "feat: example_world.map in rulebooks, map_move builtin and move <exit> command"
 ```
 
 ---
 
-### Task 7: Footer location line
+### Task 6: Footer location line
 
 **Files:**
 - Modify: `src/saga_trpg/rulebooks/display.py`
@@ -1357,7 +1327,7 @@ git commit -m "feat: footer shows the player's room and exit keys"
 
 ---
 
-### Task 8: Bundled `srd-5.2.1@0.6.0` and `fate-condensed@0.5.0`
+### Task 7: Bundled `srd-5.2.1@0.6.0` and `fate-condensed@0.5.0`
 
 New Risu chats pin the latest SRD, so after this task they start in a generated dungeon
 (ADR 0009, Consequences). Bundled files are immutable per version: never edit `0.5.0`/`0.4.0`.
@@ -1461,11 +1431,13 @@ f["narration"] = f["narration"].replace("version 0.4.0.", "version 0.5.0.") + (
 )
 open(B + "fate-condensed@0.5.0.json", "w", encoding="utf-8").write(json.dumps(f, indent=2, ensure_ascii=False) + "\n")
 EOF
-$PY -m saga_trpg.rulebooks check src/saga_trpg/rulebooks/bundled/srd-5.2.1@0.6.0.json
-$PY -m saga_trpg.rulebooks check src/saga_trpg/rulebooks/bundled/fate-condensed@0.5.0.json
+PYTHONPATH=src $PY -m saga_trpg.rulebooks check src/saga_trpg/rulebooks/bundled/srd-5.2.1@0.6.0.json
+PYTHONPATH=src $PY -m saga_trpg.rulebooks check src/saga_trpg/rulebooks/bundled/fate-condensed@0.5.0.json
 ```
 
-Expected: both checks print the rulebook summary and exit 0.
+Expected: both print the rulebook summary (SRD lists `move` last among its actions) and exit 0.
+`PYTHONPATH=src` is required: outside pytest, `$PY -m` would load the main checkout's
+installed package, which has no maps.
 
 - [ ] **Step 4: Run the suite and read the failures**
 
@@ -1665,7 +1637,7 @@ git commit -m "feat: srd-5.2.1@0.6.0 and fate-condensed@0.5.0 with maps and move
 
 ---
 
-### Task 9: Narrator sees the known map, never the full map
+### Task 8: Narrator sees the known map, never the full map
 
 **Files:**
 - Modify: `src/saga_trpg/ports/narrator.py`
@@ -1759,7 +1731,7 @@ def test_vertex_prompt_carries_the_known_map_and_never_the_full_map(
 - [ ] **Step 2: Run to see them fail**
 
 Run: `$PY -m pytest tests/test_risu_api.py tests/test_vertex_narration.py -q -k "map or move"`
-Expected: the bridge tests pass already (Tasks 5–8); the Vertex test fails with
+Expected: the bridge tests pass already (Tasks 5–7); the Vertex test fails with
 `assert "map" not in committed["state"]`.
 
 - [ ] **Step 3: Implement**
@@ -1861,7 +1833,7 @@ git commit -m "feat: narrator gets the player's known map; the full map stays in
 
 ---
 
-### Task 10: Schemas and author docs
+### Task 9: Schemas and author docs
 
 **Files:**
 - Regenerate: `schemas/world.schema.json`
@@ -1936,7 +1908,7 @@ git commit -m "docs: maps and map_move for rulebook authors; regenerate schemas"
 
 ---
 
-### Task 11: Verification, ADR acceptance and progress report
+### Task 10: Verification, ADR acceptance and progress report
 
 **Files:**
 - Modify: `docs/adr/0009-locations-and-map-movement.md`
@@ -1950,9 +1922,11 @@ $PY -m pytest -q
 $PY -m compileall -q src
 $RUFF check .
 $RUFF format --check .
+node --test tests/risu_provider.test.cjs
 ```
 
-Expected: `597 passed`; compileall silent; ruff clean.
+Expected: `597 passed`; compileall silent; ruff clean; Node `# pass 27`, `# fail 0` (the CI
+`risu-provider` job; the plugin prints the new footer line as an ordinary string).
 
 - [ ] **Step 2: CLAUDE.md self-review** — answer each in the progress report:
 
@@ -1964,7 +1938,7 @@ Expected: `597 passed`; compileall silent; ruff clean.
 
 - [ ] **Step 3: Mark ADR 0009 accepted**
 
-Change its status line to `Status: accepted (<date of merge>)` and replace the "Evidence (to be
+Change its status line to `Status: accepted (YYYY-MM-DD)`, using the ISO date you run this step, and replace the "Evidence (to be
 added with the implementation)" section with:
 
 ```markdown
@@ -1985,7 +1959,7 @@ the known map and none of the unseen room names). Full suite: 597 passed.
 ```markdown
 # Locations and map movement v1
 
-Date: <today> (Asia/Seoul). Status: implemented and tested offline; not deployed to 6011.
+Date: YYYY-MM-DD, the ISO date you write it (Asia/Seoul). Status: implemented and tested offline; not deployed to 6011.
 Spec: [ADR 0009](../adr/0009-locations-and-map-movement.md). Tracks SAGA-44 (first slice).
 
 ## Changed
@@ -2005,7 +1979,7 @@ Spec: [ADR 0009](../adr/0009-locations-and-map-movement.md). Tracks SAGA-44 (fir
 ## Verification
 
 - `pytest` 597 passed; `ruff check`, `ruff format --check`, `compileall` clean.
-- CLAUDE.md checks: (copy the five answers from Task 11 Step 2).
+- CLAUDE.md checks: (copy the five answers from Task 10 Step 2).
 
 ## Unresolved
 
@@ -2034,7 +2008,7 @@ git commit -m "docs: ADR 0009 accepted; progress report for locations and map mo
 
 ---
 
-### Task 12: PR and tracking
+### Task 11: PR and tracking
 
 - [ ] **Step 1: Push and open the PR**
 
@@ -2047,8 +2021,9 @@ Append the attribution line `🤖 Generated with [Claude Code](https://claude.co
 
 - [ ] **Step 2: Plane**
 
+Plane project `bce65fff-ee0a-4677-b068-b255ed9eebfe`, module "Product proposals — TRPG
+features" `81353a8a-2c66-40e3-8a55-3770443b46ee`, SAGA-44 `cc780fc2-1b0b-419d-90e1-c2c69416c523`.
 On SAGA-44 add a comment linking the PR and the progress report and stating that this is the
-first slice. Create two Backlog issues in the "Product proposals — TRPG features" module, as
-children of SAGA-44: "자연어 이동 (해석기 계약·tape 식별자 설계 포함)" and "지도 시각화
+first slice. Create two Backlog issues in that module, as children of SAGA-44: "자연어 이동 (해석기 계약·tape 식별자 설계 포함)" and "지도 시각화
 (known-map 투영 기반 SVG/HTML 렌더러, '지도 본다' 조회)". Do not change SAGA-44's state until
 the PR is merged.
