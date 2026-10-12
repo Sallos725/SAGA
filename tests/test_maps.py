@@ -1,7 +1,10 @@
 """Room-graph validation, the known-map projection and the seeded generator (ADR 0009)."""
 
+import hashlib
+
 import pytest
 
+from saga_trpg.domain.mapgen import MAX_ROOMS, ROOMS, generate_map
 from saga_trpg.domain.maps import (
     known_map,
     map_problems,
@@ -10,6 +13,9 @@ from saga_trpg.domain.maps import (
     scene_text,
 )
 from saga_trpg.domain.models import ActorState, Exit, MapState, Room, WorldState
+
+# generate_map("srd-demo|golden", min_rooms=6, max_rooms=10), GENERATOR_VERSION "1".
+GOLDEN_MAP_SHA256 = "ce760c11178c7e15e5b17c18f5df0f939485157f8afba030dd367e51d7dfbff6"
 
 
 def three_rooms() -> MapState:
@@ -119,3 +125,48 @@ def test_no_map_or_no_location_means_no_scene():
     unplaced.actors["player"].location = None
     assert scene_text(unplaced, "player") is None
     assert scene_text(world(), "nobody") is None
+
+
+# --- generator ----------------------------------------------------------------------------------
+
+
+def test_the_room_table_covers_the_largest_map_without_repeats():
+    assert len(ROOMS) >= MAX_ROOMS
+    assert len({name for name, _ in ROOMS}) == len(ROOMS)
+
+
+def test_same_seed_gives_the_same_map_and_a_pinned_digest():
+    first = generate_map("srd-demo|golden", min_rooms=6, max_rooms=10)
+    again = generate_map("srd-demo|golden", min_rooms=6, max_rooms=10)
+    assert first == again
+    assert hashlib.sha256(first.model_dump_json().encode()).hexdigest() == GOLDEN_MAP_SHA256
+    assert first.start_room == "room_1" and first.rooms["room_1"].name == "입구 홀"
+    assert first.generator.params == {"min_rooms": 6, "max_rooms": 10}
+
+
+def test_different_worlds_get_different_maps():
+    a = generate_map("srd-demo|chat-a", min_rooms=6, max_rooms=10)
+    b = generate_map("srd-demo|chat-b", min_rooms=6, max_rooms=10)
+    assert a != b
+
+
+@pytest.mark.parametrize("bounds", [(2, 2), (2, 30), (30, 30), (6, 10)])
+def test_generated_maps_are_connected_two_way_and_bounded(bounds):
+    low, high = bounds
+    for seed in range(200):
+        game_map = generate_map(f"seed-{seed}", min_rooms=low, max_rooms=high)
+        assert low <= len(game_map.rooms) <= high
+        assert map_problems(game_map) == []
+        names = [room.name for room in game_map.rooms.values()]
+        assert len(set(names)) == len(names)
+        for room_id, room in game_map.rooms.items():
+            assert len(room.exits) <= 6
+            for exit_ in room.exits.values():
+                back = game_map.rooms[exit_.to_room].exits.values()
+                assert any(other.to_room == room_id and other.kind == exit_.kind for other in back)
+
+
+@pytest.mark.parametrize("bounds", [(1, 5), (5, 4), (2, 31)])
+def test_out_of_range_room_counts_are_refused(bounds):
+    with pytest.raises(ValueError, match="room count"):
+        generate_map("x", min_rooms=bounds[0], max_rooms=bounds[1])
