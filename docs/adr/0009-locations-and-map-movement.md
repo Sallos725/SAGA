@@ -23,8 +23,8 @@ and belongs in the deterministic core, not behind a tool port or in NMOS
 | --- | --- |
 | `schema_version` | `1` |
 | `start_room` | Room id where actors without a placement begin |
-| `rooms` | `id → {name, description}` |
-| `exits` | `id → {from_room, to_room, label, kind}`; `kind` is `open` (archway, corridor) or `door`. Exits are directed; a two-way passage is two exits. |
+| `rooms` | `id → {name, description, exits}` |
+| `rooms.<id>.exits` | `key → {to_room, label, kind}`. `key` is a lower-case identifier unique within the room (`north`, `up`, `cellar_stairs`); `label` is display text; `kind` is `open` (archway, corridor) or `door`. Exits are directed; a two-way passage is one exit in each room. |
 | `generator` | `{name, version, params}` when generated, absent when hand-authored |
 
 Each actor gains `location` (room id) and `visited_rooms` (set of room ids). In a world with a
@@ -35,12 +35,15 @@ coordinates, distances or line-of-sight rules; tactical grids are out of scope.
 **State additions are hash-neutral when empty.** `stable_model_hash` covers the whole dump, so
 a plain new field with a default would change the hash of every stored state and fail
 snapshot verification for existing worlds. `map`, `location` and `visited_rooms` are omitted
-from serialization while unset or empty. A world without a map dumps, stores and hashes
+from serialization while unset or empty. The omission is value-based (a wrap serializer drops
+`None` and empty values), not `exclude_unset`, because rules build states with
+`model_copy(update=...)`; it applies to both `model_dump()` (hashing) and `model_dump_json()`
+(storage). `visited_rooms` is serialized sorted, like `conditions`. A world without a map dumps, stores and hashes
 byte-for-byte as before; `RUNTIME_VERSION` and the storage version do not change. This is the
 rule for any future optional state field.
 
 **Maps exist from world creation.** A rulebook's `example_world.map` is either a hand-authored
-`{start_room, rooms, exits}` or `{generate: {seed, rooms: [min, max]}}`. `example_world` builds
+`{start_room, rooms, placements}` or `{generate: {seed, rooms: [min, max]}}`. `example_world` builds
 the map when the world is created and the result is stored in the initial state. Replay starts
 from that stored state and never reruns the generator, so later generator changes cannot
 alter an existing world. Generating new areas during play is not part of this slice.
@@ -51,19 +54,25 @@ alter an existing world. Generating new areas during play is not part of this sl
 room count is drawn from `rooms: [min, max]` within 2..30. The generator builds a random
 spanning tree over the rooms so every room is reachable from `start_room`, then adds
 `room_count // 4` extra connections for loops. Each connection becomes two exits along one
-direction pair (north/south, east/west, up/down) that is still free in both rooms, so a room
-has at most six exits and labels read consistently both ways ("north door" / "south door").
+direction pair (north/south, east/west, up/down) that is still free in both rooms; the
+direction is the exit key, so a room has at most six exits and labels read consistently both
+ways ("north door" / "south door").
 An exit pair is a `door` with probability 1/3, otherwise `open`. Room names and exit labels
 come from a built-in table (Korean in this slice, matching the RisuAI host); names do not
 repeat within a map. `generator.version` names the algorithm and table revision.
 
 **Movement is the core builtin `map_move`.** A rulebook opts in by declaring an action with
-`builtin: map_move` (input: `exit`). The rule accepts the move only if the world has a map, the
-actor has a location and the exit leaves the actor's current room. It sets `location` to the
+`builtin: map_move` (input: `exit`, an exit key). Command parsing stays stateless: the event
+payload carries the key as given, and `map_move` resolves it against the actor's current room
+in `state` when the event is applied, so parsing and replay never depend on where the actor
+stands. The rule accepts the move only if the world has a map, the actor has a location and
+the current room has an exit with that key. It sets `location` to the
 exit's `to_room`, adds the room to `visited_rooms`, and records patches, a fact and a trace
 like any builtin. An invalid move raises the same validation error as other builtins and is
 rejected without a journal entry. Moving does not advance simulated time. The closed command
-is `move <exit>`, where the exit is matched by id or label among the current room's exits.
+is `move <exit key>` (`move north`); labels are not matched because they contain spaces and
+the command grammar is positional. The natural-language interpreter is given the current
+room's exit keys with their labels and must emit a key.
 New bundled versions `srd-5.2.1@0.6.0` (with a generated example map) and
 `fate-condensed@0.5.0` (with a small hand-authored map) declare the action; earlier versions
 are unchanged.
@@ -86,8 +95,8 @@ dungeon, but here judging is the runtime's job and narration is the model's, and
 "treasure in the storeroom (undiscovered)" tends to leak it into prose. A deliberate GM-only
 hint field can be added later if a design needs one.
 
-**Validation happens when a rulebook is checked.** Duplicate room or exit ids, exits to unknown
-rooms, a missing start room, rooms unreachable from the start, actors placed in unknown rooms
+**Validation happens when a rulebook is checked.** Duplicate room ids, exit keys that are not
+lower-case identifiers, exits to unknown rooms, a missing start room, rooms unreachable from the start, actors placed in unknown rooms
 and out-of-range generator parameters are reported by entry path in plain language, and an
 invalid map stops world creation.
 
@@ -101,7 +110,13 @@ invalid map stops world creation.
   pins that.
 - NMOS is unaffected. Moves reach memory through the existing semantic projection (action kind
   and text inputs), and the map itself is never stored there.
-- Benchmark runs stay comparable: scenarios pin a rulebook version, and the map arrives with it.
+- Benchmark runs stay comparable. The runner builds worlds from the scenario's
+  `initial_world` (world id `bench-<scenario>`), not from `example_world`, so the generator
+  never runs there; a scenario that needs a map spells it out, and it is part of the recorded
+  initial world.
+- `srd-5.2.1@0.6.0` becomes the latest bundled SRD, which is what new RisuAI chats pin by
+  default. New chats therefore start in a generated dungeon; existing chats keep their pinned
+  version and have no map. This is a product change, not only an added feature.
 - Room names come from one built-in table in this slice. Themed tables are a later parameter.
 
 ## Not in this slice
@@ -113,7 +128,9 @@ decision on how check outcomes, records and the projection interact.
 
 ## Evidence (to be added with the implementation)
 
-Planned tests: same seed and world give the same map and different worlds differ; reachability
+Planned tests, starting with the hash-neutrality golden test (the hash and stored JSON of a
+map-less world are unchanged, and history verification still passes) before any other code:
+same seed and world give the same map and different worlds differ; reachability
 holds across several hundred seeds; moves are accepted and rejected as specified; journal,
 replay and rerender leave state unchanged; the projection hides unvisited rooms; the hash of
-a map-less world is unchanged.
+a map-less world is unchanged (first test above).
