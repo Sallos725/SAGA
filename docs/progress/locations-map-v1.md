@@ -1,7 +1,7 @@
 # Locations and map movement v1
 
-Date: 2026-10-12 (Asia/Seoul). Status: implemented, tested offline and deployed to the 6131 test
-backend; not deployed to 6011. Spec: [ADR 0009](../adr/0009-locations-and-map-movement.md). Tracks SAGA-44 (first slice).
+Date: 2026-10-12 (Asia/Seoul). Status: merged (Sallos725/SAGA#31) and deployed to the 6131 test backend
+and the 6011 playtest backend on 2026-10-12. Spec: [ADR 0009](../adr/0009-locations-and-map-movement.md). Tracks SAGA-44 (first slice).
 Plan: [implementation plan](../superpowers/plans/2026-10-12-locations-map-movement.md).
 
 ## Changed
@@ -52,6 +52,11 @@ Plan: [implementation plan](../superpowers/plans/2026-10-12-locations-map-moveme
   `move south` moved the player and the footer showed
   `player 20/20 · opponent 30/30 · ⏱ 0s · 📍 지하 호수 · 출구 north, south`. Rollback material: image tag
   `saga-runtime:risu-6131-pre-maps` and a SQLite backup taken before the rebuild.
+- 6011 playtest backend (`saga-runtime`, rebuilt with `--no-deps`, PocketRisu untouched): before
+  the rebuild, every successful turn in the host's request log (32 turns, all on worlds pinned to
+  SRD 0.1.0) re-derived the same event identity with the new code and found its committed
+  prefix in a copy of the database; after the rebuild all 5 worlds (17 branches) replay
+  unchanged. Rollback material: image tag `saga-runtime:risu-6011-pre-maps` and a SQLite backup.
 - CLAUDE.md checks:
   1. Dice/tools twice on rerender: no. Moves roll nothing; a move replays three times with an
      unchanged journal and no dice calls; the scene and footer are pure reads of the committed
@@ -74,7 +79,7 @@ Plan: [implementation plan](../superpowers/plans/2026-10-12-locations-map-moveme
 - Benchmark scenarios that spell out a map in `initial_world` are not validated by
   `map_problems`; a dangling exit there would surface as an error at move time.
 - Vertex narration with the map block was not exercised live (no credentials on the test
-  chat); 6011 stays untouched until approved.
+  chat).
 - Host pitfalls seen on 6131: a chat with an older SAGA module enabled pins that rulebook, so it
   has no map and `move` is treated as natural language ("Vertex required" error, which is
   misleading there); a rejected message left in the chat makes the next turn 409 until it is
