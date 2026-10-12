@@ -70,7 +70,8 @@ always the table's entrance hall and names do not repeat within a map. `generato
 payload carries the key as given, and `map_move` resolves it against the actor's current room
 in `state` when the event is applied, so parsing and replay never depend on where the actor
 stands. The rule accepts the move only if the world has a map, the actor has a location and
-the current room has an exit with that key. It sets `location` to the
+the current room has an exit with that key, and refuses an actor with a condition whose
+`cannot_act` is set (moving is the actor's own action, like a check). It sets `location` to the
 exit's `to_room`, adds the room to `visited_rooms`, and records patches, a fact and a trace
 like any builtin. An invalid move raises the same validation error as other builtins and is
 rejected without a journal entry. Moving does not advance simulated time. The closed command
@@ -104,7 +105,7 @@ dungeon, but here judging is the runtime's job and narration is the model's, and
 hint field can be added later if a design needs one.
 
 **Validation happens when a rulebook is checked.** Room ids and exit keys that are not
-lower-case identifiers, exits to unknown rooms, a missing start room, rooms unreachable from the start, actors placed in unknown rooms
+lower-case identifiers, hand-authored maps over 200 rooms, exits to unknown rooms, a missing start room, rooms unreachable from the start, actors placed in unknown rooms
 and out-of-range generator parameters are reported by entry path in plain language, and an
 invalid map stops world creation.
 
