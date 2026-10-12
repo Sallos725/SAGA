@@ -2,7 +2,9 @@
 
 Pure: the same seed material always gives the same map. A generated map is stored in the
 world's initial state, so changing this module (and bumping GENERATOR_VERSION) never alters
-an existing world; replay reads the stored map and does not call the generator.
+an existing world; replay reads the stored map and does not call the generator. Python only
+documents `random()` itself as reproducible across versions, so the stored map, not
+regeneration, is the replay guarantee; the golden digest test catches drift between versions.
 """
 
 from __future__ import annotations

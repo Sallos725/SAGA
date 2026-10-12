@@ -4,7 +4,7 @@ import hashlib
 
 import pytest
 
-from saga_trpg.domain.mapgen import MAX_ROOMS, ROOMS, generate_map
+from saga_trpg.domain.mapgen import MAX_ROOMS, OPPOSITE, ROOMS, generate_map
 from saga_trpg.domain.maps import (
     known_map,
     map_problems,
@@ -119,6 +119,13 @@ def test_rendered_block_lists_current_room_exits_and_visited_rooms():
     )
 
 
+def test_returning_marks_visited_exits_and_keeps_far_rooms_in_the_visited_list():
+    view = known_map(world(location="store", visited=("hall", "guard", "store")), "player")
+    assert [(e.key, e.destination, e.visited) for e in view.exits] == [("west", "입구 홀", True)]
+    assert view.visited == ["경비실", "입구 홀", "창고"]
+    assert "- west: 서쪽 통로 → 입구 홀 (가봄)" in render_known_map(view)
+
+
 def test_no_map_or_no_location_means_no_scene():
     assert scene_text(WorldState(world_id="w"), "player") is None
     unplaced = world()
@@ -153,17 +160,26 @@ def test_different_worlds_get_different_maps():
 @pytest.mark.parametrize("bounds", [(2, 2), (2, 30), (30, 30), (6, 10)])
 def test_generated_maps_are_connected_two_way_and_bounded(bounds):
     low, high = bounds
+    looped = False
     for seed in range(200):
         game_map = generate_map(f"seed-{seed}", min_rooms=low, max_rooms=high)
         assert low <= len(game_map.rooms) <= high
         assert map_problems(game_map) == []
         names = [room.name for room in game_map.rooms.values()]
         assert len(set(names)) == len(names)
+        links = 0
         for room_id, room in game_map.rooms.items():
             assert len(room.exits) <= 6
-            for exit_ in room.exits.values():
-                back = game_map.rooms[exit_.to_room].exits.values()
-                assert any(other.to_room == room_id and other.kind == exit_.kind for other in back)
+            # At most one link between two rooms, and each exit returns along its opposite key.
+            assert len({exit_.to_room for exit_ in room.exits.values()}) == len(room.exits)
+            for key, exit_ in room.exits.items():
+                back = game_map.rooms[exit_.to_room].exits.get(OPPOSITE[key])
+                assert back is not None
+                assert (back.to_room, back.kind) == (room_id, exit_.kind)
+            links += len(room.exits)
+        looped |= links // 2 > len(game_map.rooms) - 1
+    # Loop attempts start at four rooms; below that every map is a tree.
+    assert looped or high < 4
 
 
 @pytest.mark.parametrize("bounds", [(1, 5), (5, 4), (2, 31)])

@@ -102,7 +102,7 @@ def known_map(state: WorldState, actor_id: str) -> KnownMap | None:
         for other_id, other in state.actors.items()
         if other_id != actor_id and other.location == actor.location
     )
-    visited_names = [rooms[room_id].name for room_id in sorted(actor.visited_rooms)]
+    visited_names = sorted(rooms[room_id].name for room_id in actor.visited_rooms)
     return KnownMap(
         room_id=actor.location,
         room_name=room.name,
