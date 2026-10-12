@@ -2,6 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Status:** executed 2026-10-12. Code blocks show the final, reviewed code; review-driven
+> changes against the original plan are listed in
+> [the progress report](../../progress/locations-map-v1.md). Test counts in the steps are the
+> original plan's; the final suite is 608.
+
 **Goal:** Worlds get a room-graph map in authoritative state, players move with `move <exit>`, and the narrator and footer see only what the player knows.
 
 **Architecture:** Optional `WorldState.map` plus per-actor `location`/`visited_rooms`, omitted from serialization while empty so existing worlds keep their exact hash. A pure seeded generator and a pure projection live in `domain/`; the rulebook engine gains the `map_move` builtin and builds maps in `example_world`; new bundled versions `srd-5.2.1@0.6.0` and `fate-condensed@0.5.0` opt in. Spec: [ADR 0009](../../adr/0009-locations-and-map-movement.md).
@@ -938,6 +943,19 @@ def test_invalid_maps_are_reported_by_entry_path(change, message):
     assert message in str(error.value)
 
 
+def test_hand_authored_maps_have_a_room_limit():
+    rooms = {
+        f"r{index}": {
+            "name": f"방 {index}",
+            "exits": {"next": {"to_room": f"r{index + 1}", "label": "앞"}},
+        }
+        for index in range(200)
+    }
+    rooms["r200"] = {"name": "끝"}
+    with pytest.raises(RulebookError, match="example_world.map.rooms: at most 200 rooms"):
+        parse_rulebook(srd_with({"start_room": "r0", "rooms": rooms}))
+
+
 @pytest.mark.parametrize("rooms", [[1, 4], [8, 6], [2, 31]])
 def test_generator_room_bounds_are_checked(rooms):
     with pytest.raises(RulebookError, match="example_world.map.generate.rooms"):
@@ -964,6 +982,16 @@ def test_a_generated_map_depends_on_seed_and_world_id():
     assert a.map == again.map == generate_map("demo|chat-a", min_rooms=6, max_rooms=10)
     assert a.map != b.map
     assert {actor.location for actor in a.actors.values()} == {a.map.start_room}
+
+
+def test_worlds_never_share_the_rulebooks_map_objects():
+    spec = parse_rulebook(srd_with(HAND_MAP))
+    rules = DataRules(spec)
+    first = rules.example_world("a")
+    first.map.rooms["hall"].name = "changed"
+    first.map.rooms["hall"].exits["north"].label = "changed"
+    assert rules.example_world("b").map.rooms["hall"].name == "입구 홀"
+    assert spec.example_world.map.rooms["hall"].exits["north"].label == "북쪽 문"
 
 
 def test_worlds_without_a_map_are_unchanged():
@@ -998,6 +1026,24 @@ def test_moves_that_do_not_leave_the_current_room_are_rejected_without_a_journal
     with pytest.raises(ValueError, match="입구 홀 has no exit"):
         runtime.dispatch(move(spec, text, "m1"))
     assert runtime.journal.entries() == [] and runtime.state == before
+
+
+@pytest.mark.parametrize("condition", ["paralyzed", "petrified", "incapacitated"])
+def test_actors_that_cannot_act_cannot_move(condition):
+    spec = parse_rulebook(srd_with(HAND_MAP))
+    runtime = engine(spec)
+    runtime.state.actors["player"].conditions.add(condition)
+    with pytest.raises(ValueError, match=f"player cannot act while {condition}"):
+        runtime.dispatch(move(spec, "move north", "m1"))
+    assert runtime.journal.entries() == [] and runtime.state.actors["player"].location == "hall"
+
+
+def test_an_actor_off_the_map_cannot_move():
+    spec = parse_rulebook(srd_with(HAND_MAP))
+    runtime = engine(spec)
+    runtime.state.actors["player"].location = None
+    with pytest.raises(ValueError, match="player is not on the map"):
+        runtime.dispatch(move(spec, "move north", "m1"))
 
 
 def test_move_in_a_world_without_a_map_is_rejected():
@@ -1037,7 +1083,7 @@ Expected: failures — `RulebookError` for the unknown `example_world.map` field
 - [ ] **Step 3: Implement the loader**
 
 ```diff
-@@ -15,7 +15,9 @@
+@@ -15,9 +15,12 @@
  
  from pydantic import BaseModel, ConfigDict, Field, ValidationError
  
@@ -1047,8 +1093,11 @@ Expected: failures — `RulebookError` for the unknown `example_world.map` field
 +from saga_trpg.domain.models import MapState, Room, RuleResolution
  from saga_trpg.rulebooks.expr import ExpressionError, compile_expression
  
++MAX_AUTHORED_ROOMS = 200  # keeps stored state and the narrator's map block bounded
  KEY = r"^[a-z][a-z0-9_]{0,39}$"
-@@ -34,6 +36,7 @@
+ FAMILY_KEY = r"^[a-z][a-z0-9_]{0,39}:\*$"
+ VERSION = r"^[0-9]+\.[0-9]+\.[0-9]+$"
+@@ -34,6 +37,7 @@
      "inventory_remove",
      "record_adjust",
      "record_remove",
@@ -1056,7 +1105,7 @@ Expected: failures — `RulebookError` for the unknown `example_world.map` field
  ]
  
  
-@@ -165,9 +168,24 @@
+@@ -165,9 +169,24 @@
      conditions: list[str] = Field(default_factory=list)
  
  
@@ -1081,7 +1130,7 @@ Expected: failures — `RulebookError` for the unknown `example_world.map` field
  
  
  class DisplaySpec(Closed):
-@@ -207,6 +225,7 @@
+@@ -207,6 +226,7 @@
      "time_advance": {"amount", "unit"},
      "inventory_add": {"target_id", "item", "amount"},
      "inventory_remove": {"target_id", "item", "amount"},
@@ -1089,7 +1138,7 @@ Expected: failures — `RulebookError` for the unknown `example_world.map` field
  }
  
  
-@@ -479,7 +498,7 @@
+@@ -479,7 +499,7 @@
      for section, allowed in (
          ("actor", builtin_actor | set(spec.stats)),
          ("records", set(spec.records)),
@@ -1098,7 +1147,7 @@ Expected: failures — `RulebookError` for the unknown `example_world.map` field
      ):
          entries = getattr(spec.display, section)
          for entry in entries:
-@@ -509,6 +528,34 @@
+@@ -509,6 +529,37 @@
                      )
              if not 0 <= actor.hp <= actor.max_hp or actor.max_hp <= 0:
                  yield f"example_world.actors.{actor_id}: hp must be within 0..max_hp"
@@ -1121,6 +1170,9 @@ Expected: failures — `RulebookError` for the unknown `example_world.map` field
 +        return
 +    if spec_map.start_room is None or not spec_map.rooms:
 +        yield f"{location}: a hand-authored map needs start_room and rooms"
++        return
++    if len(spec_map.rooms) > MAX_AUTHORED_ROOMS:
++        yield f"{location}.rooms: at most {MAX_AUTHORED_ROOMS} rooms"
 +        return
 +    yield from map_problems(
 +        MapState(start_room=spec_map.start_room, rooms=spec_map.rooms), location
@@ -1197,7 +1249,7 @@ and the module-level `_example_map` helper:
          target = actor_in(state, data["target_id"])
          self._hp_sane(target)
          changed = next_state.actors[target.actor_id]
-@@ -613,6 +629,59 @@
+@@ -613,6 +629,63 @@
              trace=self._trace(event, f"builtin={action.builtin}"),
          )
  
@@ -1211,6 +1263,10 @@ and the module-level `_example_map` helper:
 +        actor = actor_in(state, event.actor_id)
 +        if actor.location is None:
 +            raise ValueError(f"{actor.actor_id} is not on the map")
++        # Moving is the actor's own action, so conditions that stop actions stop it too.
++        for condition in sorted(actor.conditions):
++            if self.spec.conditions.get(condition) and self.spec.conditions[condition].cannot_act:
++                raise ValueError(f"{actor.actor_id} cannot act while {condition}")
 +        room = state.map.rooms[actor.location]
 +        exit_ = room.exits.get(data["exit"])
 +        if exit_ is None:
@@ -1306,6 +1362,16 @@ def test_footer_shows_the_viewers_room_and_exit_keys():
     assert render_display(spec, state)["world"] == ["⏱ 0s", "📍 입구 홀 · 출구 east, north"]
     no_map = DataRules(load_rulebook(rulebook_path("srd-5.2.1", "0.5.0"))).example_world("w")
     assert render_display(spec, no_map)["world"] == ["⏱ 0s"]
+
+
+def test_footer_for_a_dead_end_room_and_an_unplaced_viewer():
+    data = srd_with({"start_room": "cell", "rooms": {"cell": {"name": "독방"}}})
+    data["display"]["world"] = ["location"]
+    spec = parse_rulebook(data)
+    state = DataRules(spec).example_world("w")
+    assert render_display(spec, state)["world"] == ["📍 독방"]
+    state.actors["player"].location = None
+    assert render_display(spec, state)["world"] == []
 ```
 
 - [ ] **Step 2: Run to see it fail**
@@ -1430,9 +1496,10 @@ d["not_implemented"] = [
     for x in d["not_implemented"]
 ]
 d["narration"] = d["narration"].replace("version 0.5.0.", "version 0.6.0.") + (
-    "\nEach world starts in a generated dungeon. Move with move <exit>, where the exit key is "
-    "shown in the status line. Describe only the current room and what the map block lists; "
-    "never describe rooms behind ??? exits."
+    "\nEach world starts in a generated dungeon. The player changes rooms only when a recorded "
+    "move result says so; if they describe walking somewhere without one, tell them to type "
+    "move <exit> with an exit key from the status line, and do not narrate arriving. Describe "
+    "only the current room and what the map block lists; never describe rooms behind ??? exits."
 )
 open(B + "srd-5.2.1@0.6.0.json", "w", encoding="utf-8").write(json.dumps(d, indent=2, ensure_ascii=False) + "\n")
 
@@ -1457,8 +1524,10 @@ f["example_world"]["map"] = {
 f["display"]["world"] = ["location"]
 f["implemented"].append("hand-authored room-graph map; move between connected rooms")
 f["narration"] = f["narration"].replace("version 0.4.0.", "version 0.5.0.") + (
-    "\nMove with move <exit>, where the exit key is shown in the status line. Describe only the "
-    "current room and what the map block lists; never describe rooms behind ??? exits."
+    "\nThe player changes rooms only when a recorded move result says so; if they describe "
+    "walking somewhere without one, tell them to type move <exit> with an exit key from the "
+    "status line, and do not narrate arriving. Describe only the current room and what the map "
+    "block lists; never describe rooms behind ??? exits."
 )
 open(B + "fate-condensed@0.5.0.json", "w", encoding="utf-8").write(json.dumps(f, indent=2, ensure_ascii=False) + "\n")
 EOF
@@ -1757,6 +1826,61 @@ def test_vertex_prompt_carries_the_known_map_and_never_the_full_map(
     assert hidden, "the generated demo map should have rooms the player has not seen"
     prompt = "\n".join(texts)
     assert not any(name in prompt for name in hidden)
+    assert "room_" not in prompt  # no room ids at all: positions travel only inside the scene
+
+
+def test_vertex_prompt_hides_npcs_placed_in_unseen_rooms(fake_credentials):
+    from saga_trpg.domain.events import GameEvent
+    from saga_trpg.domain.maps import scene_text
+    from saga_trpg.domain.models import ActorState, Exit, MapState, Room, RuleResult, WorldState
+    from saga_trpg.ports.narrator import NarrationRequest
+
+    seen = []
+
+    def remote(req):
+        seen.append(json.loads(req.content))
+        return httpx.Response(
+            200, json={"candidates": [{"content": {"parts": [{"text": "prose"}]}}]}
+        )
+
+    door = {"kind": "door"}
+    state = WorldState(
+        world_id="w",
+        map=MapState(
+            start_room="hall",
+            rooms={
+                "hall": Room(
+                    name="입구 홀",
+                    exits={"north": Exit(to_room="dragon_lair", label="북쪽 문", **door)},
+                ),
+                "dragon_lair": Room(
+                    name="용의 둥지",
+                    description="금화 더미가 쌓여 있다.",
+                    exits={"south": Exit(to_room="hall", label="남쪽 문", **door)},
+                ),
+            },
+        ),
+        actors={
+            "player": ActorState(actor_id="player", location="hall", visited_rooms={"hall"}),
+            "dragon": ActorState(
+                actor_id="dragon", location="dragon_lair", visited_rooms={"dragon_lair"}
+            ),
+        },
+    )
+    narrator = VertexNarrator(SecretStr(json.dumps(ACCOUNT)), transport=httpx.MockTransport(remote))
+    request = NarrationRequest(
+        world_id="w",
+        event=GameEvent(event_id="e1", kind="wait", actor_id="player"),
+        result=RuleResult(state=state),
+        scene=scene_text(state, "player"),
+    )
+    assert asyncio.run(narrator.render(request)) == "prose"
+    prompt = "\n".join(
+        part["text"] for content in seen[-1]["contents"] for part in content["parts"]
+    )
+    assert "현재 위치: 입구 홀" in prompt and "북쪽 문 → ???" in prompt
+    for secret in ("dragon_lair", "용의 둥지", "금화 더미"):
+        assert secret not in prompt
 ```
 
 - [ ] **Step 2: Run to see them fail**
@@ -1780,17 +1904,26 @@ Expected: the bridge tests pass already (Tasks 5–7); the Vertex test fails wit
 ```
 
 ```diff
-@@ -110,7 +110,8 @@
+@@ -17,6 +17,7 @@
+ TOKEN_URL = "https://oauth2.googleapis.com/token"
+ MODEL = "gemini-3.8-flash"
+ NARRATION_TIMEOUT_SECONDS = 25
++NARRATOR_HIDDEN = {"map": True, "actors": {"__all__": {"location", "visited_rooms"}}}
+ 
+ 
+ class VertexResponseError(ValueError):
+@@ -110,7 +111,9 @@
              "world_id": request.world_id,
              "event_id": request.event.event_id,
              "facts": request.result.facts,
 -            "state": request.result.state.model_dump(mode="json"),
-+            # The full map stays with the runtime; the narrator sees only `scene` (ADR 0009).
-+            "state": request.result.state.model_dump(mode="json", exclude={"map"}),
++            # The map and where actors stand stay with the runtime; the narrator sees only
++            # `scene`, the player's known map (ADR 0009).
++            "state": request.result.state.model_dump(mode="json", exclude=NARRATOR_HIDDEN),
              "rolls": [roll.model_dump(mode="json") for roll in request.result.rolls],
              "resolution": request.result.resolution.model_dump(mode="json")
              if request.result.resolution
-@@ -153,6 +154,24 @@
+@@ -153,6 +156,24 @@
                      if request.memories
                      else []
                  ),
@@ -1834,18 +1967,38 @@ Expected: the bridge tests pass already (Tasks 5–7); the Vertex test fails wit
          )
          try:
              prose = await narrator.render(narration)
+@@ -650,7 +652,7 @@
+                 "replayed": replayed,
+                 # Footer lines rendered from the rulebook's display declaration; the host
+                 # prints them without knowing what a stat or a record means.
+-                "display": render_display(spec, saved.result.state),
++                "display": render_display(spec, saved.result.state, viewer=turn.actor_id),
+                 **result,
+             },
+         }
 ```
 
 Update the existing assertion that compared the narrator's state to the whole stored state:
 
 ```diff
-@@ -80,7 +80,8 @@
+@@ -11,6 +11,8 @@
+ from pydantic import SecretStr
+ from test_risu_api import request, setup
+ 
++from saga_trpg.adapters.narrator.vertex import NARRATOR_HIDDEN, VertexNarrator
++
+ SECRET = "SYNTHETIC_PRIVATE_KEY_DO_NOT_LEAK"
+ TOKEN = "SYNTHETIC_ACCESS_TOKEN_DO_NOT_LEAK"
+ ACCOUNT = {
+@@ -80,7 +82,10 @@
          event_id = committed["event_id"]
          saved = repo.get_event(committed["world_id"], event_id)
          assert saved is not None
 -        assert committed["state"] == saved.result.state.model_dump(mode="json")
-+        # Everything but the map; the narrator gets the known map separately (ADR 0009).
-+        assert committed["state"] == saved.result.state.model_dump(mode="json", exclude={"map"})
++        # Everything but the map and positions; the narrator gets the known map separately.
++        assert committed["state"] == saved.result.state.model_dump(
++            mode="json", exclude=NARRATOR_HIDDEN
++        )
          assert str(req.url) == (
              "https://aiplatform.googleapis.com/v1/projects/saga-test-project/locations/"
              "global/publishers/google/models/gemini-3.8-flash:generateContent"
