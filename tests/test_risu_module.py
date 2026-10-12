@@ -14,8 +14,9 @@ from saga_trpg.rulebooks.risu_module import (
 )
 from saga_trpg.rulebooks.store import RulebookStore
 
-SRD_TEXT = rulebook_path("srd-5.2.1").read_text(encoding="utf-8")
-FATE_TEXT = rulebook_path("fate-condensed").read_text(encoding="utf-8")
+# Export and import are tested on fixed versions so a new bundled release does not move them.
+SRD_TEXT = rulebook_path("srd-5.2.1", "0.5.0").read_text(encoding="utf-8")
+FATE_TEXT = rulebook_path("fate-condensed", "0.4.0").read_text(encoding="utf-8")
 
 
 def sha(text):
@@ -34,7 +35,9 @@ def test_module_json_is_the_plain_import_shape_with_two_lorebook_entries():
     narration, data = module["lorebook"]
     assert narration["comment"] == "saga:narration:srd-5.2.1@0.5.0"
     assert narration["alwaysActive"] is True and narration["mode"] == "constant"
-    assert narration["content"] == narration_text(load_rulebook(rulebook_path("srd-5.2.1")))
+    assert narration["content"] == narration_text(
+        load_rulebook(rulebook_path("srd-5.2.1", "0.5.0"))
+    )
     assert "Not implemented:" in narration["content"]
     assert data["comment"] == f"saga:rulebook:srd-5.2.1@0.5.0:{sha(SRD_TEXT)}"
     assert data["useRegex"] is True and data["key"] == "(?!)"

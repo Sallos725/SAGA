@@ -11,6 +11,8 @@ from google.oauth2 import service_account
 from pydantic import SecretStr
 from test_risu_api import request, setup
 
+from saga_trpg.adapters.narrator.vertex import NARRATOR_HIDDEN, VertexNarrator
+
 SECRET = "SYNTHETIC_PRIVATE_KEY_DO_NOT_LEAK"
 TOKEN = "SYNTHETIC_ACCESS_TOKEN_DO_NOT_LEAK"
 ACCOUNT = {
@@ -80,7 +82,10 @@ def test_one_json_input_derives_fixed_endpoint_after_commit_and_replays(
         event_id = committed["event_id"]
         saved = repo.get_event(committed["world_id"], event_id)
         assert saved is not None
-        assert committed["state"] == saved.result.state.model_dump(mode="json")
+        # Everything but the map and positions; the narrator gets the known map separately.
+        assert committed["state"] == saved.result.state.model_dump(
+            mode="json", exclude=NARRATOR_HIDDEN
+        )
         assert str(req.url) == (
             "https://aiplatform.googleapis.com/v1/projects/saga-test-project/locations/"
             "global/publishers/google/models/gemini-3.8-flash:generateContent"
@@ -396,3 +401,90 @@ def test_recalled_memories_reach_the_vertex_prompt_as_non_authoritative_context(
     assert "non-authoritative" in recalled[0]
     # The authoritative JSON stays separate and last.
     assert json.loads(texts[-1])["event_id"]
+
+
+def test_vertex_prompt_carries_the_known_map_and_never_the_full_map(
+    tmp_path, monkeypatch, fake_credentials
+):
+    from saga_trpg.domain.maps import known_map
+
+    repo, dice, intent, client = setup(tmp_path)
+    seen = []
+
+    def remote(req):
+        seen.append(json.loads(req.content))
+        return httpx.Response(
+            200, json={"candidates": [{"content": {"parts": [{"text": "prose"}]}}]}
+        )
+
+    install_vertex(monkeypatch, remote)
+    response = vertex_post(client)
+    assert response.status_code == 200, response.text
+    saga = response.json()["saga"]
+    state = repo.get_state(saga["world_id"], branch_id=saga["branch_id"])
+    texts = [part["text"] for content in seen[-1]["contents"] for part in content["parts"]]
+    committed = json.loads(texts[-1])
+    assert "map" not in committed["state"]
+    scene = [t for t in texts if t.startswith("Map (everything the player knows")]
+    assert scene and "현재 위치: 입구 홀" in scene[0]
+    view = known_map(state, "player")
+    shown = {view.room_name, *(e.destination for e in view.exits)}
+    hidden = [room.name for room in state.map.rooms.values() if room.name not in shown]
+    assert hidden, "the generated demo map should have rooms the player has not seen"
+    prompt = "\n".join(texts)
+    assert not any(name in prompt for name in hidden)
+    assert "room_" not in prompt  # no room ids at all: positions travel only inside the scene
+
+
+def test_vertex_prompt_hides_npcs_placed_in_unseen_rooms(fake_credentials):
+    from saga_trpg.domain.events import GameEvent
+    from saga_trpg.domain.maps import scene_text
+    from saga_trpg.domain.models import ActorState, Exit, MapState, Room, RuleResult, WorldState
+    from saga_trpg.ports.narrator import NarrationRequest
+
+    seen = []
+
+    def remote(req):
+        seen.append(json.loads(req.content))
+        return httpx.Response(
+            200, json={"candidates": [{"content": {"parts": [{"text": "prose"}]}}]}
+        )
+
+    door = {"kind": "door"}
+    state = WorldState(
+        world_id="w",
+        map=MapState(
+            start_room="hall",
+            rooms={
+                "hall": Room(
+                    name="입구 홀",
+                    exits={"north": Exit(to_room="dragon_lair", label="북쪽 문", **door)},
+                ),
+                "dragon_lair": Room(
+                    name="용의 둥지",
+                    description="금화 더미가 쌓여 있다.",
+                    exits={"south": Exit(to_room="hall", label="남쪽 문", **door)},
+                ),
+            },
+        ),
+        actors={
+            "player": ActorState(actor_id="player", location="hall", visited_rooms={"hall"}),
+            "dragon": ActorState(
+                actor_id="dragon", location="dragon_lair", visited_rooms={"dragon_lair"}
+            ),
+        },
+    )
+    narrator = VertexNarrator(SecretStr(json.dumps(ACCOUNT)), transport=httpx.MockTransport(remote))
+    request = NarrationRequest(
+        world_id="w",
+        event=GameEvent(event_id="e1", kind="wait", actor_id="player"),
+        result=RuleResult(state=state),
+        scene=scene_text(state, "player"),
+    )
+    assert asyncio.run(narrator.render(request)) == "prose"
+    prompt = "\n".join(
+        part["text"] for content in seen[-1]["contents"] for part in content["parts"]
+    )
+    assert "현재 위치: 입구 홀" in prompt and "북쪽 문 → ???" in prompt
+    for secret in ("dragon_lair", "용의 둥지", "금화 더미"):
+        assert secret not in prompt

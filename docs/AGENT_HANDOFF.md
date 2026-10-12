@@ -6,7 +6,7 @@ Current checkpoint (2026-10-06, later): rulebooks are data. Read
 [ADR 0007](adr/0007-rulebooks-as-data.md), [the creator guide](RULEBOOKS.md) and
 [the rulebooks report](progress/rulebooks-v1.md) before touching rules: new system
 behaviour goes into a rulebook JSON interpreted by `saga_trpg.rulebooks.engine`, not into
-Python under `modules/`. `srd-5.2.1@0.5.0` is the latest bundled rulebook (`0.4.0` stays bundled byte for byte); `0.1.0`–`0.3.0` stay
+Python under `modules/`. `srd-5.2.1@0.6.0` is the latest bundled rulebook (earlier data versions stay bundled byte for byte); `0.1.0`–`0.3.0` stay
 registered as Python oracles for pinned worlds and the equivalence test. Scripts in
 rulebooks remain closed pending a further ADR. Rulebooks ship as RisuAI modules
 ([RISUAI_MODULES.md](RISUAI_MODULES.md), [ADR 0008](adr/0008-rulebooks-in-risuai-modules.md));

@@ -61,7 +61,16 @@ def _record_item(fields: list[str], record: Any) -> str:
     return f"{name} ({', '.join(rest)})" if rest else str(name)
 
 
-def render_display(spec: RulebookSpec, state: WorldState) -> dict[str, Any]:
+def _location(state: WorldState, viewer: str) -> str | None:
+    actor = state.actors.get(viewer)
+    if state.map is None or actor is None or actor.location is None:
+        return None
+    room = state.map.rooms[actor.location]
+    exits = ", ".join(sorted(room.exits))
+    return f"📍 {room.name} · 출구 {exits}" if exits else f"📍 {room.name}"
+
+
+def render_display(spec: RulebookSpec, state: WorldState, viewer: str = "player") -> dict[str, Any]:
     actors = []
     for actor_id, actor in state.actors.items():
         items = [_actor_item(spec, actor, entry) for entry in spec.display.actor]
@@ -81,4 +90,8 @@ def render_display(spec: RulebookSpec, state: WorldState) -> dict[str, Any]:
     world = []
     if "time" in spec.display.world:
         world.append(f"⏱ {format_time(state.simulated_time)}")
+    if "location" in spec.display.world:
+        location = _location(state, viewer)
+        if location:
+            world.append(location)
     return {"actors": actors, "records": records, "world": world}

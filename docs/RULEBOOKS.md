@@ -164,6 +164,13 @@ HP is clamped to `0..max_hp`; adding a present condition or removing an absent o
 rejected; taking more than is held is rejected. Nothing happens automatically at 0 HP unless
 your actions say so.
 
+One more moves the acting actor between rooms: `"move": { "builtin": "map_move" }`. Its only
+input is `exit`, the key of an exit of the actor's current room (`move north`). The key is
+checked against the room when the event is applied, so a command never depends on where the
+actor stands; a move from a world without a map, or through an exit the room does not have,
+is rejected without a journal entry. An actor with a condition whose `cannot_act` is set cannot
+move. Moving does not advance time.
+
 ### 5. `conditions` — named states and their effect on rolls
 
 ```json
@@ -178,8 +185,8 @@ your actions say so.
 
 - `attacker` applies when the actor attacks, `target` when the actor is attacked, `check` to
   check-role actions, `save` to save-role actions. Values are `advantage` or `disadvantage`.
-- `cannot_act: true` rejects every check action by that actor until the condition is removed.
-  Builtin actions (healing, removing the condition) still work.
+- `cannot_act: true` rejects every check action and `map_move` by that actor until the
+  condition is removed. The other builtin actions (healing, removing the condition) still work.
 - The engine writes every applied effect into the trace, so a replay shows why two dice were
   rolled.
 
@@ -223,13 +230,45 @@ Actor ids are lower-case identifiers so commands can address them (`attack oppon
 enum members may use any case and commands match them case-insensitively.
 Add `"flags": { "fate_aspects": {} }` to start record collections empty.
 
+`map` (optional) gives the world a room graph ([ADR 0009](adr/0009-locations-and-map-movement.md)).
+Hand-authored:
+
+```json
+"map": {
+  "start_room": "hall",
+  "rooms": {
+    "hall":  { "name": "입구 홀", "description": "…",
+               "exits": { "north": { "to_room": "guard", "label": "북쪽 문", "kind": "door" } } },
+    "guard": { "name": "경비실",
+               "exits": { "south": { "to_room": "hall", "label": "남쪽 문", "kind": "door" } } }
+  },
+  "placements": { "opponent": "guard" }
+}
+```
+
+Room ids and exit keys are lower-case identifiers; exits are one-way, so a two-way passage is
+an exit in each room. `kind` is `open` (the next room's name is visible) or `door` (it shows as
+`???` until visited). Every room must be reachable from `start_room`. A hand-authored map has at
+most 200 rooms. Exit labels are shown to the player and the narrator even when the door is
+closed, so do not name what lies behind them ("북쪽 문", not "보물고 문"). Actors without a
+placement start in `start_room`.
+
+Generated: `"map": { "generate": { "seed": "my-dungeon", "rooms": [6, 10] } }` builds 2..30
+rooms from the seed and the world id, so each RisuAI chat gets its own dungeon and the same
+chat always the same one. The generated map is stored when the world is created; later
+changes to the generator never alter it. `seed` is 1..80 characters and `rooms` (default
+`[6, 10]`) is `[min, max]` with min <= max. `generate` cannot be combined with `start_room`,
+`rooms` or `placements`: generated room ids are not known in advance, so every actor starts in
+the start room. Room names and exit labels are at most 80 characters, descriptions 2000, and
+placements must name actors from `example_world.actors`.
+
 ### 8. `display` — what the status footer shows
 
 ```json
 "display": {
   "actor": ["hp", "conditions", "inventory"],   // per actor; or stat names, or a family such as "skill:*"
   "records": ["fate_aspects"],                   // record collections to list (empty ones are skipped)
-  "world": ["time"]                              // world-level items; [] hides simulated time
+  "world": ["time", "location"]                  // world-level items; [] hides time; "location" shows the player's room and exit keys
 }
 ```
 

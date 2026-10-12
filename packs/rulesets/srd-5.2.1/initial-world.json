@@ -24,7 +24,11 @@
         "weapon_damage": "1d8",
         "weapon_proficient": true,
         "armor_class": 15
-      }
+      },
+      "location": "room_1",
+      "visited_rooms": [
+        "room_1"
+      ]
     },
     "opponent": {
       "actor_id": "opponent",
@@ -34,9 +38,123 @@
       "conditions": [],
       "stats": {
         "armor_class": 13
-      }
+      },
+      "location": "room_1",
+      "visited_rooms": [
+        "room_1"
+      ]
     }
   },
   "flags": {},
-  "quest_state": {}
+  "quest_state": {},
+  "map": {
+    "schema_version": 1,
+    "start_room": "room_1",
+    "rooms": {
+      "room_1": {
+        "name": "입구 홀",
+        "description": "먼지 쌓인 돌바닥에 오래된 발자국이 흐릿하게 남아 있다.",
+        "exits": {
+          "down": {
+            "to_room": "room_4",
+            "label": "아래쪽 통로",
+            "kind": "open"
+          },
+          "up": {
+            "to_room": "room_2",
+            "label": "위쪽 문",
+            "kind": "door"
+          },
+          "west": {
+            "to_room": "room_3",
+            "label": "서쪽 통로",
+            "kind": "open"
+          }
+        }
+      },
+      "room_2": {
+        "name": "경비실",
+        "description": "낡은 무기 거치대가 벽을 따라 늘어선 좁은 방.",
+        "exits": {
+          "down": {
+            "to_room": "room_1",
+            "label": "아래쪽 문",
+            "kind": "door"
+          },
+          "south": {
+            "to_room": "room_4",
+            "label": "남쪽 통로",
+            "kind": "open"
+          }
+        }
+      },
+      "room_3": {
+        "name": "연금술 작업실",
+        "description": "깨진 유리 기구에서 시큼한 냄새가 난다.",
+        "exits": {
+          "east": {
+            "to_room": "room_1",
+            "label": "동쪽 통로",
+            "kind": "open"
+          },
+          "north": {
+            "to_room": "room_5",
+            "label": "북쪽 통로",
+            "kind": "open"
+          }
+        }
+      },
+      "room_4": {
+        "name": "석상 회랑",
+        "description": "얼굴이 깎여 나간 석상들이 양쪽에 서 있다.",
+        "exits": {
+          "north": {
+            "to_room": "room_2",
+            "label": "북쪽 통로",
+            "kind": "open"
+          },
+          "up": {
+            "to_room": "room_1",
+            "label": "위쪽 통로",
+            "kind": "open"
+          }
+        }
+      },
+      "room_5": {
+        "name": "마구간",
+        "description": "오래된 건초 냄새가 아직 남아 있다.",
+        "exits": {
+          "south": {
+            "to_room": "room_3",
+            "label": "남쪽 통로",
+            "kind": "open"
+          },
+          "west": {
+            "to_room": "room_6",
+            "label": "서쪽 통로",
+            "kind": "open"
+          }
+        }
+      },
+      "room_6": {
+        "name": "지도실",
+        "description": "벽에 바랜 지도가 핀으로 고정되어 있다.",
+        "exits": {
+          "east": {
+            "to_room": "room_5",
+            "label": "동쪽 통로",
+            "kind": "open"
+          }
+        }
+      }
+    },
+    "generator": {
+      "name": "saga-rooms",
+      "version": "1",
+      "params": {
+        "min_rooms": 6,
+        "max_rooms": 10
+      }
+    }
+  }
 }

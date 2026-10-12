@@ -17,6 +17,7 @@ from saga_trpg.ports.narrator import NarrationRequest
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 MODEL = "gemini-3.8-flash"
 NARRATION_TIMEOUT_SECONDS = 25
+NARRATOR_HIDDEN = {"map": True, "actors": {"__all__": {"location", "visited_rooms"}}}
 
 
 class VertexResponseError(ValueError):
@@ -110,7 +111,9 @@ class VertexNarrator:
             "world_id": request.world_id,
             "event_id": request.event.event_id,
             "facts": request.result.facts,
-            "state": request.result.state.model_dump(mode="json"),
+            # The map and where actors stand stay with the runtime; the narrator sees only
+            # `scene`, the player's known map (ADR 0009).
+            "state": request.result.state.model_dump(mode="json", exclude=NARRATOR_HIDDEN),
             "rolls": [roll.model_dump(mode="json") for roll in request.result.rolls],
             "resolution": request.result.resolution.model_dump(mode="json")
             if request.result.resolution
@@ -151,6 +154,24 @@ class VertexNarrator:
                         }
                     ]
                     if request.memories
+                    else []
+                ),
+                *(
+                    [
+                        {
+                            "role": "user",
+                            "parts": [
+                                {
+                                    "text": (
+                                        "Map (everything the player knows; describe nothing "
+                                        "beyond it, and nothing behind ??? exits):\n"
+                                        + request.scene
+                                    )
+                                }
+                            ],
+                        }
+                    ]
+                    if request.scene
                     else []
                 ),
                 {

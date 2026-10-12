@@ -19,11 +19,17 @@ def fate_rules():
 
 def test_fate_rulebook_loads_with_records_and_graded_outcomes():
     spec = load_rulebook(FATE_PATH)
-    assert (spec.id, spec.version) == ("fate-condensed", "0.4.0")
+    assert (spec.id, spec.version) == ("fate-condensed", "0.5.0")
     assert set(spec.records) == {"fate_aspects", "fate_boosts"}
     assert spec.records["fate_aspects"].unique == ["name"]
     rules = fate_rules()
-    assert set(rules.payload_models) == {"overcome", "create_advantage", "invoke", "use_boost"}
+    assert set(rules.payload_models) == {
+        "overcome",
+        "create_advantage",
+        "invoke",
+        "use_boost",
+        "move",
+    }
     schema = rules.payload_models["overcome"].model_json_schema()
     assert schema["properties"]["boost_name"]["default"] == "Temporary advantage"
     assert "advantage" not in schema["properties"]

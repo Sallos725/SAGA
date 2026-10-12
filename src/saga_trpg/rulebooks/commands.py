@@ -33,6 +33,7 @@ _BUILTIN_ORDER = {
     "time_advance": ["amount", "unit"],
     "inventory_add": ["target_id", "item", "amount"],
     "inventory_remove": ["target_id", "item", "amount"],
+    "map_move": ["exit"],
 }
 _INTEGER = re.compile(r"^-?[0-9]{1,9}$")
 

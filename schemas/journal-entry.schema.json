@@ -26,6 +26,19 @@
           "title": "Inventory",
           "type": "object"
         },
+        "location": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Location"
+        },
         "max_hp": {
           "default": 10,
           "title": "Max Hp",
@@ -50,6 +63,14 @@
           },
           "title": "Stats",
           "type": "object"
+        },
+        "visited_rooms": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Visited Rooms",
+          "type": "array",
+          "uniqueItems": true
         }
       },
       "required": [
@@ -83,6 +104,37 @@
         "state_hash_after"
       ],
       "title": "CommittedEvent",
+      "type": "object"
+    },
+    "Exit": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "default": "open",
+          "enum": [
+            "open",
+            "door"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "to_room": {
+          "minLength": 1,
+          "title": "To Room",
+          "type": "string"
+        }
+      },
+      "required": [
+        "to_room",
+        "label"
+      ],
+      "title": "Exit",
       "type": "object"
     },
     "GameEvent": {
@@ -156,6 +208,83 @@
       "title": "GameEvent",
       "type": "object"
     },
+    "MapGenerator": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "title": "Params",
+          "type": "object"
+        },
+        "version": {
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "title": "MapGenerator",
+      "type": "object"
+    },
+    "MapState": {
+      "additionalProperties": false,
+      "description": "A room graph. Exits are directed and keyed per room (ADR 0009).",
+      "properties": {
+        "generator": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MapGenerator"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "rooms": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Room"
+          },
+          "minProperties": 1,
+          "title": "Rooms",
+          "type": "object"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "start_room": {
+          "minLength": 1,
+          "title": "Start Room",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start_room",
+        "rooms"
+      ],
+      "title": "MapState",
+      "type": "object"
+    },
     "RollRecord": {
       "properties": {
         "expression": {
@@ -190,6 +319,35 @@
         "total"
       ],
       "title": "RollRecord",
+      "type": "object"
+    },
+    "Room": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "default": "",
+          "maxLength": 2000,
+          "title": "Description",
+          "type": "string"
+        },
+        "exits": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Exit"
+          },
+          "title": "Exits",
+          "type": "object"
+        },
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "Room",
       "type": "object"
     },
     "RuleResolution": {
@@ -328,6 +486,17 @@
           "additionalProperties": true,
           "title": "Flags",
           "type": "object"
+        },
+        "map": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MapState"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "quest_state": {
           "additionalProperties": true,

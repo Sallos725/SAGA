@@ -15,6 +15,8 @@ class NarrationRequest(BaseModel):
     result: RuleResult
     memories: list[MemoryHit] = Field(default_factory=list)
     recent_dialogue: list[str] = Field(default_factory=list)
+    # The player's known map (ADR 0009). Narrators get this projection, never the full map.
+    scene: str | None = None
 
 
 class NarratorPort(Protocol):

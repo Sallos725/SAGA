@@ -51,6 +51,21 @@
       "title": "Invoke",
       "type": "object"
     },
+    "move": {
+      "additionalProperties": false,
+      "properties": {
+        "exit": {
+          "pattern": "^[a-z][a-z0-9_]{0,39}$",
+          "title": "Exit",
+          "type": "string"
+        }
+      },
+      "required": [
+        "exit"
+      ],
+      "title": "Move",
+      "type": "object"
+    },
     "overcome": {
       "additionalProperties": false,
       "properties": {
@@ -103,12 +118,13 @@
     "one/two free invokes on new aspects",
     "boost records",
     "spending free invokes on an aspect",
-    "using (removing) a boost"
+    "using (removing) a boost",
+    "hand-authored room-graph map; move between connected rooms"
   ],
   "license_id": "CC-BY-3.0",
   "license_url": "https://creativecommons.org/licenses/by/3.0/",
   "modifications": "Selected unmodified-roll mechanics expressed as rulebook data; 4d3-8 represents four Fate dice. Original example actors and prompts. Costs remain explicit pending adjudications.",
-  "narrator_instructions": "Selected system: Fate Condensed example, version 0.4.0.\nUse overcome or create_advantage against static opposition, with a stored skill:<name> rating.\nFour journaled d3 faces map 1/2/3 to -1/0/+1. The recorded total includes the skill rating.\nAn overcome failure/tie, or failed advantage, leaves a fictional choice pending; do not state that\na cost or adverse aspect was applied. Successful new aspects and boosts are stored in world flags.\nUse invoke to spend one free invoke on a named aspect (rejected at zero) and use_boost to\nremove a named boost; neither changes a roll in this example, only the recorded counts.\nDo not use generic HP or SRD combat mechanics to fill in unsupported Fate rules.\n",
+  "narrator_instructions": "Selected system: Fate Condensed example, version 0.5.0.\nUse overcome or create_advantage against static opposition, with a stored skill:<name> rating.\nFour journaled d3 faces map 1/2/3 to -1/0/+1. The recorded total includes the skill rating.\nAn overcome failure/tie, or failed advantage, leaves a fictional choice pending; do not state that\na cost or adverse aspect was applied. Successful new aspects and boosts are stored in world flags.\nUse invoke to spend one free invoke on a named aspect (rejected at zero) and use_boost to\nremove a named boost; neither changes a roll in this example, only the recorded counts.\nDo not use generic HP or SRD combat mechanics to fill in unsupported Fate rules.\n\nThe player changes rooms only when a recorded move result says so; if they describe walking somewhere without one, tell them to type move <exit> with an exit key from the status line, and do not narrate arriving. Describe only the current room and what the map block lists; never describe rooms behind ??? exits.",
   "not_implemented": [
     "character creation and advancement",
     "rerolls",
@@ -118,7 +134,7 @@
     "paid invocations, invoke effects on rolls, and applying costs"
   ],
   "ruleset_id": "fate-condensed",
-  "ruleset_version": "0.4.0",
+  "ruleset_version": "0.5.0",
   "schema_version": 1,
   "source_revision": "Fate-Condensed-SRD-CC-BY.html; SHA256 a0f556ce2415fe4dc88ff71e56755bb92e113a52f8041bda69b759b63782544e; checked 2026-10-04",
   "source_url": "https://fate-srd.com/downloads/CC-BY-SRDs.zip",

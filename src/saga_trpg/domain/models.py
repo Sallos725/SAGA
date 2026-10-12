@@ -2,7 +2,20 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
+
+
+def _absent(value: Any) -> bool:
+    return value is None
+
+
+def _empty(value: Any) -> bool:
+    return not value
+
+
+# Fields added after storage v2 are excluded from dumps while unset or empty, so a state saved
+# before them keeps its exact JSON and hash (ADR 0009). Exclusion is by value, not
+# exclude_unset, because rules build states with model_copy(update=...).
 
 
 class ActorState(BaseModel):
@@ -12,11 +25,48 @@ class ActorState(BaseModel):
     inventory: dict[str, int] = Field(default_factory=dict)
     conditions: set[str] = Field(default_factory=set)
     stats: dict[str, int | float | str | bool] = Field(default_factory=dict)
+    location: str | None = Field(default=None, min_length=1, exclude_if=_absent)
+    visited_rooms: set[str] = Field(default_factory=set, exclude_if=_empty)
 
-    @field_serializer("conditions")
-    def _sorted_conditions(self, conditions: set[str]) -> list[str]:
+    @field_serializer("conditions", "visited_rooms")
+    def _sorted_sets(self, values: set[str]) -> list[str]:
         # Set iteration order depends on the hash seed; responses and stored JSON must not.
-        return sorted(conditions)
+        return sorted(values)
+
+
+class Exit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    to_room: str = Field(min_length=1)
+    label: str = Field(min_length=1, max_length=80)
+    kind: Literal["open", "door"] = "open"
+
+
+class Room(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=80)
+    description: str = Field(default="", max_length=2000)
+    exits: dict[str, Exit] = Field(default_factory=dict)
+
+
+class MapGenerator(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1)
+    version: str = Field(min_length=1)
+    params: dict[str, int | str] = Field(default_factory=dict)
+
+
+class MapState(BaseModel):
+    """A room graph. Exits are directed and keyed per room (ADR 0009)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = 1
+    start_room: str = Field(min_length=1)
+    rooms: dict[str, Room] = Field(min_length=1)
+    generator: MapGenerator | None = None
 
 
 class WorldState(BaseModel):
@@ -27,6 +77,7 @@ class WorldState(BaseModel):
     actors: dict[str, ActorState] = Field(default_factory=dict)
     flags: dict[str, Any] = Field(default_factory=dict)
     quest_state: dict[str, Any] = Field(default_factory=dict)
+    map: MapState | None = Field(default=None, exclude_if=_absent)
 
 
 class RollRecord(BaseModel):

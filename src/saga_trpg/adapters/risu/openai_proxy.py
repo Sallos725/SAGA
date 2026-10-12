@@ -28,6 +28,7 @@ from saga_trpg.adapters.storage.sqlite import (
     SQLiteWorldRepository,
 )
 from saga_trpg.domain.events import GameEvent
+from saga_trpg.domain.maps import scene_text
 from saga_trpg.domain.models import WorldState
 from saga_trpg.domain.tools import ToolCall
 from saga_trpg.modules.srd_5_2_1.rules import ROLL_ACTIONS
@@ -115,9 +116,12 @@ class CompletionRequest(ClosedModel):
         return self
 
 
-# The bundled SRD rulebook is the default for new worlds without an attached rulebook, and the
-# command grammar for worlds pinned to the hand-written SRD versions (same payload shapes).
+# The latest bundled SRD rulebook is the default for new worlds without an attached rulebook.
 DEFAULT_SPEC = load_rulebook(rulebook_path("srd-5.2.1"))
+# Worlds pinned to the hand-written SRD versions (0.1.0–0.3.0) derive command identities with
+# this frozen grammar. Using the latest SRD would let a new verb (`move` in 0.6.0) turn an
+# already committed natural-language action into a command and change its identity.
+LEGACY_SRD_SPEC = load_rulebook(rulebook_path("srd-5.2.1", "0.5.0"))
 
 
 def supported_commands(spec: RulebookSpec) -> str:
@@ -262,8 +266,9 @@ class RisuBridge:
 
         An existing world keeps the rulebook it was created with. A new world takes the
         attached rulebook (validated and registered first) or the bundled SRD. Worlds pinned
-        to a hand-written SRD version parse commands with the bundled SRD grammar, whose
-        payload shapes are identical for the actions those versions have."""
+        to a hand-written SRD version parse commands with the frozen `LEGACY_SRD_SPEC`
+        grammar, whose payload shapes are identical for the actions those versions have and
+        whose verbs never change, so their action identities stay stable."""
         try:
             selection = self.repository.ruleset_for_world(world_id)
         except RepositoryNotFound:
@@ -272,7 +277,7 @@ class RisuBridge:
             manifest, _ = self.repository.register_rulebook(turn.rulebook.content)
             selection = manifest
         rules = self.repository.registry.get(selection.ruleset_id, selection.ruleset_version).rules
-        return rules.spec if isinstance(rules, DataRules) else DEFAULT_SPEC
+        return rules.spec if isinstance(rules, DataRules) else LEGACY_SRD_SPEC
 
     def _ensure_world(self, world_id: str, spec: RulebookSpec) -> WorldState:
         # New worlds pin the given rulebook; existing worlds keep the version they were
@@ -610,6 +615,7 @@ class RisuBridge:
             result=saved.result.model_copy(deep=True),
             memories=memories,
             recent_dialogue=request.narration.context if request.narration else [],
+            scene=scene_text(saved.result.state, turn.actor_id),
         )
         try:
             prose = await narrator.render(narration)
@@ -650,7 +656,7 @@ class RisuBridge:
                 "replayed": replayed,
                 # Footer lines rendered from the rulebook's display declaration; the host
                 # prints them without knowing what a stat or a record means.
-                "display": render_display(spec, saved.result.state),
+                "display": render_display(spec, saved.result.state, viewer=turn.actor_id),
                 **result,
             },
         }

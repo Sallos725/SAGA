@@ -823,7 +823,7 @@ def test_bridge_worlds_on_040_apply_condition_effects_from_the_rulebook(tmp_path
         response = client.post("/v1/chat/completions", json=request(*turns[: index + 1]))
         assert response.status_code == 200, response.text
     result = response.json()["saga"]
-    assert repo.ruleset_for_world(result["world_id"]).ruleset_version == "0.5.0"
+    assert repo.ruleset_for_world(result["world_id"]).ruleset_version == SRD_LATEST
     d20s = [roll for roll in result["rolls"] if roll["roll_key"].startswith("attack:")]
     assert len(d20s) == 2
     assert any("prone" in line for line in result["trace"])
@@ -931,7 +931,8 @@ def test_response_carries_rendered_display_lines_from_the_rulebook(tmp_path):
     srd = client.post("/v1/chat/completions", json=request(("u1", "inflict opponent prone")))
     display = srd.json()["saga"]["display"]
     assert display["actors"][1] == {"id": "opponent", "items": ["30/30", "prone"]}
-    assert display["world"] == ["⏱ 0s"] and display["records"] == []
+    assert display["world"][0] == "⏱ 0s" and display["records"] == []
+    assert display["world"][1].startswith("📍 입구 홀 · 출구 ")
     fate = client.post(
         "/v1/chat/completions",
         json=fate_request(("u1", 'create_advantage notice 1 "Mapped route"')),
@@ -940,7 +941,7 @@ def test_response_carries_rendered_display_lines_from_the_rulebook(tmp_path):
     assert display["actors"] == [
         {"id": "player", "items": ["athletics +1, investigate +2, notice +3"]}
     ]
-    assert display["world"] == []
+    assert display["world"] == ["📍 부두 · 출구 east, north"]
     if fate.json()["saga"]["resolution"]["outcome"] in {"success", "success_with_style"}:
         assert display["records"][0]["label"] == "fate_aspects"
         assert display["records"][0]["items"][0].startswith("Mapped route")
@@ -1078,3 +1079,62 @@ def test_regenerating_a_historical_turn_does_not_recall_later_memory(tmp_path):
     # Regenerating the head still recalls.
     client.post("/v1/chat/completions", json=request(*turns))
     assert len(memory.queries) == queries_before + 1
+
+
+def test_hand_written_srd_worlds_keep_their_identities_when_new_verbs_ship(tmp_path):
+    # 0.6.0 added `move`; a committed natural action starting with "Move" in a world pinned
+    # to 0.1.0 must keep the identity it was committed under (captured with 0.4.0/0.5.0).
+    repo, _, _, client = setup(tmp_path)
+    body = request(("u1", "Move toward the goblin"), ("u2", "attack opponent"), version=3)
+    turn = CompletionRequest.model_validate(body).saga
+    world_id = RisuBridge.world_id_for(turn)
+    legacy = repo.registry.get("srd-5.2.1", "0.1.0")
+    repo.create_world(
+        legacy.example_world(world_id), ruleset_id="srd-5.2.1", ruleset_version="0.1.0"
+    )
+    spec = client.app.state.risu_bridge._spec_for(world_id, turn)
+    assert (spec.id, spec.version) == ("srd-5.2.1", "0.5.0")
+    assert RisuBridge.identities(turn, spec=spec)[1] == [
+        "risu-beedab53c2c6c357670efa9b49933489b9f235eba7644e95931c09d41df9237e",
+        "risu-6a1ee61a183ac16b293ed5465447872fa3fab1e903a3bd88788d7c5cb21efddd",
+    ]
+
+
+# --- maps (ADR 0009) -------------------------------------------------------------------------
+
+
+def test_new_chats_start_on_a_generated_map_and_move_commits_once(tmp_path):
+    repo, dice, intent, client = setup(tmp_path)
+    first = client.post("/v1/chat/completions", json=request(("u1", "wait 1 round")))
+    assert first.status_code == 200, first.text
+    saved = first.json()["saga"]
+    state = repo.get_state(saved["world_id"], branch_id=saved["branch_id"])
+    start = state.map.start_room
+    assert state.actors["player"].location == start
+    key = sorted(state.map.rooms[start].exits)[0]
+    destination = state.map.rooms[start].exits[key].to_room
+    turns = [("u1", "wait 1 round"), ("u2", f"move {key}")]
+    moved = client.post("/v1/chat/completions", json=request(*turns))
+    assert moved.status_code == 200, moved.text
+    result = moved.json()["saga"]
+    assert result["state"]["actors"]["player"]["location"] == destination
+    assert result["display"]["world"][1].startswith(
+        "📍 " + state.map.rooms[destination].name + " · 출구 "
+    )
+    entries = repo.entries(result["world_id"], branch_id=result["branch_id"])
+    for _ in range(3):
+        again = client.post("/v1/chat/completions", json=request(*turns)).json()["saga"]
+        assert again == {**result, "replayed": True}
+    assert repo.entries(result["world_id"], branch_id=result["branch_id"]) == entries
+    assert dice.calls == 0
+
+
+def test_a_move_without_a_matching_exit_is_rejected_without_a_commit(tmp_path):
+    repo, _, _, client = setup(tmp_path)
+    first = client.post("/v1/chat/completions", json=request(("u1", "wait 1 round"))).json()
+    world_id, branch_id = first["saga"]["world_id"], first["saga"]["branch_id"]
+    rejected = client.post(
+        "/v1/chat/completions", json=request(("u1", "wait 1 round"), ("u2", "move nowhere"))
+    )
+    assert rejected.status_code == 422 and "has no exit 'nowhere'" in rejected.json()["detail"]
+    assert len(repo.entries(world_id, branch_id=branch_id)) == 1
