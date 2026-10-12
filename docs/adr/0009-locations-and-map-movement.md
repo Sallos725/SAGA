@@ -94,7 +94,9 @@ are unchanged.
 
 The rendered block is a plain list (current room, occupants, exits, visited rooms), which models
 read more reliably than ASCII art of a graph. It goes into the narrator prompt as its own part,
-and the committed state the narrator receives has `map` removed. A rulebook can add `location`
+and the committed state the narrator receives has `map` and every actor's `location` and
+`visited_rooms` removed, so room ids and NPC whereabouts reach the model only through the
+projection. A rulebook can add `location`
 to `display.world` so the RisuAI footer shows the player's room and exit keys on one line
 (`📍 입구 홀 · 출구 east, north`). The bridge response's machine-readable `state` still carries
 the full map for the host plugin, which prints only prose and the footer.
