@@ -55,7 +55,7 @@ def move(spec, text, event_id):
     return event.model_copy(update={"event_id": event_id})
 
 
-# --- loader -------------------------------------------------------------------------------------
+# --- loader ----------------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -93,13 +93,26 @@ def test_invalid_maps_are_reported_by_entry_path(change, message):
     assert message in str(error.value)
 
 
+def test_hand_authored_maps_have_a_room_limit():
+    rooms = {
+        f"r{index}": {
+            "name": f"방 {index}",
+            "exits": {"next": {"to_room": f"r{index + 1}", "label": "앞"}},
+        }
+        for index in range(200)
+    }
+    rooms["r200"] = {"name": "끝"}
+    with pytest.raises(RulebookError, match="example_world.map.rooms: at most 200 rooms"):
+        parse_rulebook(srd_with({"start_room": "r0", "rooms": rooms}))
+
+
 @pytest.mark.parametrize("rooms", [[1, 4], [8, 6], [2, 31]])
 def test_generator_room_bounds_are_checked(rooms):
     with pytest.raises(RulebookError, match="example_world.map.generate.rooms"):
         parse_rulebook(srd_with({"generate": {"seed": "x", "rooms": rooms}}))
 
 
-# --- worlds -------------------------------------------------------------------------------------
+# --- worlds ----------------------------------------------------------------------------------
 
 
 def test_a_hand_authored_map_places_actors_and_marks_start_rooms_visited():
@@ -121,13 +134,23 @@ def test_a_generated_map_depends_on_seed_and_world_id():
     assert {actor.location for actor in a.actors.values()} == {a.map.start_room}
 
 
+def test_worlds_never_share_the_rulebooks_map_objects():
+    spec = parse_rulebook(srd_with(HAND_MAP))
+    rules = DataRules(spec)
+    first = rules.example_world("a")
+    first.map.rooms["hall"].name = "changed"
+    first.map.rooms["hall"].exits["north"].label = "changed"
+    assert rules.example_world("b").map.rooms["hall"].name == "입구 홀"
+    assert spec.example_world.map.rooms["hall"].exits["north"].label == "북쪽 문"
+
+
 def test_worlds_without_a_map_are_unchanged():
     state = DataRules(load_rulebook(rulebook_path("srd-5.2.1", "0.5.0"))).example_world("w")
     assert state.map is None
     assert all(actor.location is None for actor in state.actors.values())
 
 
-# --- map_move -----------------------------------------------------------------------------------
+# --- map_move --------------------------------------------------------------------------------
 
 
 def test_move_follows_an_exit_and_records_patches_and_a_fact():
@@ -153,6 +176,24 @@ def test_moves_that_do_not_leave_the_current_room_are_rejected_without_a_journal
     with pytest.raises(ValueError, match="입구 홀 has no exit"):
         runtime.dispatch(move(spec, text, "m1"))
     assert runtime.journal.entries() == [] and runtime.state == before
+
+
+@pytest.mark.parametrize("condition", ["paralyzed", "petrified", "incapacitated"])
+def test_actors_that_cannot_act_cannot_move(condition):
+    spec = parse_rulebook(srd_with(HAND_MAP))
+    runtime = engine(spec)
+    runtime.state.actors["player"].conditions.add(condition)
+    with pytest.raises(ValueError, match=f"player cannot act while {condition}"):
+        runtime.dispatch(move(spec, "move north", "m1"))
+    assert runtime.journal.entries() == [] and runtime.state.actors["player"].location == "hall"
+
+
+def test_an_actor_off_the_map_cannot_move():
+    spec = parse_rulebook(srd_with(HAND_MAP))
+    runtime = engine(spec)
+    runtime.state.actors["player"].location = None
+    with pytest.raises(ValueError, match="player is not on the map"):
+        runtime.dispatch(move(spec, "move north", "m1"))
 
 
 def test_move_in_a_world_without_a_map_is_rejected():

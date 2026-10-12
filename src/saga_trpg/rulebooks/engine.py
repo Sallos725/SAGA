@@ -639,6 +639,10 @@ class DataRules:
         actor = actor_in(state, event.actor_id)
         if actor.location is None:
             raise ValueError(f"{actor.actor_id} is not on the map")
+        # Moving is the actor's own action, so conditions that stop actions stop it too.
+        for condition in sorted(actor.conditions):
+            if self.spec.conditions.get(condition) and self.spec.conditions[condition].cannot_act:
+                raise ValueError(f"{actor.actor_id} cannot act while {condition}")
         room = state.map.rooms[actor.location]
         exit_ = room.exits.get(data["exit"])
         if exit_ is None:

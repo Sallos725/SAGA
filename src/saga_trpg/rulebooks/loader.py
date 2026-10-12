@@ -20,6 +20,7 @@ from saga_trpg.domain.maps import map_problems
 from saga_trpg.domain.models import MapState, Room, RuleResolution
 from saga_trpg.rulebooks.expr import ExpressionError, compile_expression
 
+MAX_AUTHORED_ROOMS = 200  # keeps stored state and the narrator's map block bounded
 KEY = r"^[a-z][a-z0-9_]{0,39}$"
 FAMILY_KEY = r"^[a-z][a-z0-9_]{0,39}:\*$"
 VERSION = r"^[0-9]+\.[0-9]+\.[0-9]+$"
@@ -547,6 +548,9 @@ def _check_map(world: ExampleWorld):
         return
     if spec_map.start_room is None or not spec_map.rooms:
         yield f"{location}: a hand-authored map needs start_room and rooms"
+        return
+    if len(spec_map.rooms) > MAX_AUTHORED_ROOMS:
+        yield f"{location}.rooms: at most {MAX_AUTHORED_ROOMS} rooms"
         return
     yield from map_problems(
         MapState(start_room=spec_map.start_room, rooms=spec_map.rooms), location
