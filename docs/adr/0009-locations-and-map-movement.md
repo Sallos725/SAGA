@@ -55,14 +55,15 @@ alter an existing world. Generating new areas during play is not part of this sl
 `"<declared seed>|<world_id>"`, hashed with SHA-256 as the reference dice do; each RisuAI chat
 (a world) therefore gets its own dungeon, and the same chat always gets the same one. The
 room count is drawn from `rooms: [min, max]` within 2..30. The generator builds a random
-spanning tree over the rooms so every room is reachable from `start_room`, then adds
-`room_count // 4` extra connections for loops. Each connection becomes two exits along one
+spanning tree over the rooms so every room is reachable from `start_room`, then makes
+`room_count // 4` attempts at an extra connection for loops (an attempt is skipped when the
+two rooms are already linked or share no free direction). Each connection becomes two exits along one
 direction pair (north/south, east/west, up/down) that is still free in both rooms; the
 direction is the exit key, so a room has at most six exits and labels read consistently both
 ways ("north door" / "south door").
 An exit pair is a `door` with probability 1/3, otherwise `open`. Room names and exit labels
-come from a built-in table (Korean in this slice, matching the RisuAI host); names do not
-repeat within a map. `generator.version` names the algorithm and table revision.
+come from a built-in table (Korean in this slice, matching the RisuAI host); the start room is
+always the table's entrance hall and names do not repeat within a map. `generator.version` names the algorithm and table revision.
 
 **Movement is the core builtin `map_move`.** A rulebook opts in by declaring an action with
 `builtin: map_move` (input: `exit`, an exit key). Command parsing stays stateless: the event
@@ -74,31 +75,35 @@ exit's `to_room`, adds the room to `visited_rooms`, and records patches, a fact 
 like any builtin. An invalid move raises the same validation error as other builtins and is
 rejected without a journal entry. Moving does not advance simulated time. The closed command
 is `move <exit key>` (`move north`); labels are not matched because they contain spaces and
-the command grammar is positional. The natural-language interpreter is given the current
-room's exit keys with their labels and must emit a key.
+the command grammar is positional. Natural-language movement ("북쪽으로 간다") is not
+part of this slice: the interpreter is bound to SRD roll actions and to the durable tape's
+tool identity, and changing its contract needs its own design so that rerolling an old turn
+can never call the model again. Until then the footer lists the exit keys a player types.
 New bundled versions `srd-5.2.1@0.6.0` (with a generated example map) and
 `fate-condensed@0.5.0` (with a small hand-authored map) declare the action; earlier versions
 are unchanged.
 
 **What the player and the narrator see is a projection.** `known_map(state, actor_id)` is pure:
 
-- visited rooms show name, description and exits;
+- the current room shows its name, description, the other actors in it and its exits;
 - an exit's destination shows its name if the destination was visited or the exit is `open`,
   otherwise `???`;
-- the current room also lists the actors placed in it;
+- visited rooms are listed by name;
 - nothing seen-but-unvisited is stored; the projection is recomputed from state each time.
 
 The rendered block is a plain list (current room, occupants, exits, visited rooms), which models
-read more reliably than ASCII art of a graph. It goes into the narrator prompt and the
-natural-language interpreter prompt; the RisuAI footer shows the current room on one line.
-The interpreter sees only the current room's exits, so an invented exit fails validation.
+read more reliably than ASCII art of a graph. It goes into the narrator prompt as its own part,
+and the committed state the narrator receives has `map` removed. A rulebook can add `location`
+to `display.world` so the RisuAI footer shows the player's room and exit keys on one line
+(`📍 입구 홀 · 출구 east, north`). The bridge response's machine-readable `state` still carries
+the full map for the host plugin, which prints only prose and the footer.
 
 The narrator receives the projection, not the full map. In table play the GM knows the whole
 dungeon, but here judging is the runtime's job and narration is the model's, and a model given
 "treasure in the storeroom (undiscovered)" tends to leak it into prose. A deliberate GM-only
 hint field can be added later if a design needs one.
 
-**Validation happens when a rulebook is checked.** Duplicate room ids, exit keys that are not
+**Validation happens when a rulebook is checked.** Room ids and exit keys that are not
 lower-case identifiers, exits to unknown rooms, a missing start room, rooms unreachable from the start, actors placed in unknown rooms
 and out-of-range generator parameters are reported by entry path in plain language, and an
 invalid map stops world creation.
@@ -124,7 +129,7 @@ invalid map stops world creation.
 
 ## Not in this slice
 
-Discovering hidden exits by a check, locked doors, one-time loot, generating areas during
+Natural-language movement, discovering hidden exits by a check, locked doors, one-time loot, generating areas during
 play, NPC movement, time cost of travel, and a visual map (SVG, Mermaid or an HTML view
 rendered from the same projection, shown when a player asks to see the map). Each needs its own
 decision on how check outcomes, records and the projection interact.
