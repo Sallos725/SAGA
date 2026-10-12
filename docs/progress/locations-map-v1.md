@@ -47,7 +47,10 @@ Plan: [implementation plan](../superpowers/plans/2026-10-12-locations-map-moveme
   generated map with the footer `📍 입구 홀 · 출구 north, up, west`; `move north` committed
   and updated the footer; resending the same turn returned the same event (`replayed`); a
   bad exit was rejected with 422. Prose was the fallback narrator (no Vertex credentials).
-  Not yet checked in a real RisuAI client. Rollback material: image tag
+  In a real RisuAI client (PocketRisu 1.14.0 on 6131, plugin 0.7.0, new chat with no SAGA
+  module): `move north` from a room without that exit was rejected with the room's exit keys;
+  `move south` moved the player and the footer showed
+  `player 20/20 · opponent 30/30 · ⏱ 0s · 📍 지하 호수 · 출구 north, south`. Rollback material: image tag
   `saga-runtime:risu-6131-pre-maps` and a SQLite backup taken before the rebuild.
 - CLAUDE.md checks:
   1. Dice/tools twice on rerender: no. Moves roll nothing; a move replays three times with an
@@ -70,7 +73,11 @@ Plan: [implementation plan](../superpowers/plans/2026-10-12-locations-map-moveme
   identity design; until then players type `move <exit>` from the footer.
 - Benchmark scenarios that spell out a map in `initial_world` are not validated by
   `map_problems`; a dangling exit there would surface as an error at move time.
-- Not yet checked in a real RisuAI client on 6131 (footer rendering in the plugin, Vertex
-  narration with the map block); 6011 stays untouched until approved.
+- Vertex narration with the map block was not exercised live (no credentials on the test
+  chat); 6011 stays untouched until approved.
+- Host pitfalls seen on 6131: a chat with an older SAGA module enabled pins that rulebook, so it
+  has no map and `move` is treated as natural language ("Vertex required" error, which is
+  misleading there); a rejected message left in the chat makes the next turn 409 until it is
+  removed or edited.
 - Discovery by checks, locked doors, loot, NPC movement, play-time generation and a visual map
   are later slices (ADR 0009, Not in this slice).
