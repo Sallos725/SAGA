@@ -185,8 +185,8 @@ move. Moving does not advance time.
 
 - `attacker` applies when the actor attacks, `target` when the actor is attacked, `check` to
   check-role actions, `save` to save-role actions. Values are `advantage` or `disadvantage`.
-- `cannot_act: true` rejects every check action by that actor until the condition is removed.
-  Builtin actions (healing, removing the condition) still work.
+- `cannot_act: true` rejects every check action and `map_move` by that actor until the
+  condition is removed. The other builtin actions (healing, removing the condition) still work.
 - The engine writes every applied effect into the trace, so a replay shows why two dice were
   rolled.
 
@@ -256,7 +256,11 @@ placement start in `start_room`.
 Generated: `"map": { "generate": { "seed": "my-dungeon", "rooms": [6, 10] } }` builds 2..30
 rooms from the seed and the world id, so each RisuAI chat gets its own dungeon and the same
 chat always the same one. The generated map is stored when the world is created; later
-changes to the generator never alter it.
+changes to the generator never alter it. `seed` is 1..80 characters and `rooms` (default
+`[6, 10]`) is `[min, max]` with min <= max. `generate` cannot be combined with `start_room`,
+`rooms` or `placements`: generated room ids are not known in advance, so every actor starts in
+the start room. Room names and exit labels are at most 80 characters, descriptions 2000, and
+placements must name actors from `example_world.actors`.
 
 ### 8. `display` — what the status footer shows
 

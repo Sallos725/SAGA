@@ -268,8 +268,7 @@ Implemented:
   engine, a `check` command with errors by entry; `srd-5.2.1@0.6.0` and `fate-condensed@0.5.0`
   are the latest bundled rulebooks, with room-graph maps and `move <exit>`
   ([ADR 0009](docs/adr/0009-locations-and-map-movement.md)); older bundled versions stay
-  registered byte for byte; rulebooks
-  ship as RisuAI modules, import at `POST /rulebooks`, and drive commands and the footer
+  registered byte for byte; rulebooks ship as RisuAI modules, import at `POST /rulebooks`, and drive commands and the footer
   ([guide](docs/RULEBOOKS.md), [module format](docs/RISUAI_MODULES.md),
   [ADR 0007](docs/adr/0007-rulebooks-as-data.md))
 - PocketRisu commands for those actions (`damage`, `heal`, `inflict`, `cure`, `wait`,
