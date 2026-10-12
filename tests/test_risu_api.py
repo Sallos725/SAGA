@@ -1081,6 +1081,25 @@ def test_regenerating_a_historical_turn_does_not_recall_later_memory(tmp_path):
     assert len(memory.queries) == queries_before + 1
 
 
+def test_hand_written_srd_worlds_keep_their_identities_when_new_verbs_ship(tmp_path):
+    # 0.6.0 added `move`; a committed natural action starting with "Move" in a world pinned
+    # to 0.1.0 must keep the identity it was committed under (captured with 0.4.0/0.5.0).
+    repo, _, _, client = setup(tmp_path)
+    body = request(("u1", "Move toward the goblin"), ("u2", "attack opponent"), version=3)
+    turn = CompletionRequest.model_validate(body).saga
+    world_id = RisuBridge.world_id_for(turn)
+    legacy = repo.registry.get("srd-5.2.1", "0.1.0")
+    repo.create_world(
+        legacy.example_world(world_id), ruleset_id="srd-5.2.1", ruleset_version="0.1.0"
+    )
+    spec = client.app.state.risu_bridge._spec_for(world_id, turn)
+    assert (spec.id, spec.version) == ("srd-5.2.1", "0.5.0")
+    assert RisuBridge.identities(turn, spec=spec)[1] == [
+        "risu-beedab53c2c6c357670efa9b49933489b9f235eba7644e95931c09d41df9237e",
+        "risu-6a1ee61a183ac16b293ed5465447872fa3fab1e903a3bd88788d7c5cb21efddd",
+    ]
+
+
 # --- maps (ADR 0009) -------------------------------------------------------------------------
 
 
