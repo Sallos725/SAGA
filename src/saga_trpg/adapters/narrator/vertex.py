@@ -110,7 +110,8 @@ class VertexNarrator:
             "world_id": request.world_id,
             "event_id": request.event.event_id,
             "facts": request.result.facts,
-            "state": request.result.state.model_dump(mode="json"),
+            # The full map stays with the runtime; the narrator sees only `scene` (ADR 0009).
+            "state": request.result.state.model_dump(mode="json", exclude={"map"}),
             "rolls": [roll.model_dump(mode="json") for roll in request.result.rolls],
             "resolution": request.result.resolution.model_dump(mode="json")
             if request.result.resolution
@@ -151,6 +152,24 @@ class VertexNarrator:
                         }
                     ]
                     if request.memories
+                    else []
+                ),
+                *(
+                    [
+                        {
+                            "role": "user",
+                            "parts": [
+                                {
+                                    "text": (
+                                        "Map (everything the player knows; describe nothing "
+                                        "beyond it, and nothing behind ??? exits):\n"
+                                        + request.scene
+                                    )
+                                }
+                            ],
+                        }
+                    ]
+                    if request.scene
                     else []
                 ),
                 {

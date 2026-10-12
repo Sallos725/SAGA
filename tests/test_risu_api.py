@@ -1079,3 +1079,43 @@ def test_regenerating_a_historical_turn_does_not_recall_later_memory(tmp_path):
     # Regenerating the head still recalls.
     client.post("/v1/chat/completions", json=request(*turns))
     assert len(memory.queries) == queries_before + 1
+
+
+# --- maps (ADR 0009) -------------------------------------------------------------------------
+
+
+def test_new_chats_start_on_a_generated_map_and_move_commits_once(tmp_path):
+    repo, dice, intent, client = setup(tmp_path)
+    first = client.post("/v1/chat/completions", json=request(("u1", "wait 1 round")))
+    assert first.status_code == 200, first.text
+    saved = first.json()["saga"]
+    state = repo.get_state(saved["world_id"], branch_id=saved["branch_id"])
+    start = state.map.start_room
+    assert state.actors["player"].location == start
+    key = sorted(state.map.rooms[start].exits)[0]
+    destination = state.map.rooms[start].exits[key].to_room
+    turns = [("u1", "wait 1 round"), ("u2", f"move {key}")]
+    moved = client.post("/v1/chat/completions", json=request(*turns))
+    assert moved.status_code == 200, moved.text
+    result = moved.json()["saga"]
+    assert result["state"]["actors"]["player"]["location"] == destination
+    assert result["display"]["world"][1].startswith(
+        "📍 " + state.map.rooms[destination].name + " · 출구 "
+    )
+    entries = repo.entries(result["world_id"], branch_id=result["branch_id"])
+    for _ in range(3):
+        again = client.post("/v1/chat/completions", json=request(*turns)).json()["saga"]
+        assert again == {**result, "replayed": True}
+    assert repo.entries(result["world_id"], branch_id=result["branch_id"]) == entries
+    assert dice.calls == 0
+
+
+def test_a_move_without_a_matching_exit_is_rejected_without_a_commit(tmp_path):
+    repo, _, _, client = setup(tmp_path)
+    first = client.post("/v1/chat/completions", json=request(("u1", "wait 1 round"))).json()
+    world_id, branch_id = first["saga"]["world_id"], first["saga"]["branch_id"]
+    rejected = client.post(
+        "/v1/chat/completions", json=request(("u1", "wait 1 round"), ("u2", "move nowhere"))
+    )
+    assert rejected.status_code == 422 and "has no exit 'nowhere'" in rejected.json()["detail"]
+    assert len(repo.entries(world_id, branch_id=branch_id)) == 1

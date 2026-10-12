@@ -80,7 +80,8 @@ def test_one_json_input_derives_fixed_endpoint_after_commit_and_replays(
         event_id = committed["event_id"]
         saved = repo.get_event(committed["world_id"], event_id)
         assert saved is not None
-        assert committed["state"] == saved.result.state.model_dump(mode="json")
+        # Everything but the map; the narrator gets the known map separately (ADR 0009).
+        assert committed["state"] == saved.result.state.model_dump(mode="json", exclude={"map"})
         assert str(req.url) == (
             "https://aiplatform.googleapis.com/v1/projects/saga-test-project/locations/"
             "global/publishers/google/models/gemini-3.8-flash:generateContent"
@@ -396,3 +397,35 @@ def test_recalled_memories_reach_the_vertex_prompt_as_non_authoritative_context(
     assert "non-authoritative" in recalled[0]
     # The authoritative JSON stays separate and last.
     assert json.loads(texts[-1])["event_id"]
+
+
+def test_vertex_prompt_carries_the_known_map_and_never_the_full_map(
+    tmp_path, monkeypatch, fake_credentials
+):
+    from saga_trpg.domain.maps import known_map
+
+    repo, dice, intent, client = setup(tmp_path)
+    seen = []
+
+    def remote(req):
+        seen.append(json.loads(req.content))
+        return httpx.Response(
+            200, json={"candidates": [{"content": {"parts": [{"text": "prose"}]}}]}
+        )
+
+    install_vertex(monkeypatch, remote)
+    response = vertex_post(client)
+    assert response.status_code == 200, response.text
+    saga = response.json()["saga"]
+    state = repo.get_state(saga["world_id"], branch_id=saga["branch_id"])
+    texts = [part["text"] for content in seen[-1]["contents"] for part in content["parts"]]
+    committed = json.loads(texts[-1])
+    assert "map" not in committed["state"]
+    scene = [t for t in texts if t.startswith("Map (everything the player knows")]
+    assert scene and "현재 위치: 입구 홀" in scene[0]
+    view = known_map(state, "player")
+    shown = {view.room_name, *(e.destination for e in view.exits)}
+    hidden = [room.name for room in state.map.rooms.values() if room.name not in shown]
+    assert hidden, "the generated demo map should have rooms the player has not seen"
+    prompt = "\n".join(texts)
+    assert not any(name in prompt for name in hidden)

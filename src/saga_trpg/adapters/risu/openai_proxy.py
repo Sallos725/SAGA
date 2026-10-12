@@ -28,6 +28,7 @@ from saga_trpg.adapters.storage.sqlite import (
     SQLiteWorldRepository,
 )
 from saga_trpg.domain.events import GameEvent
+from saga_trpg.domain.maps import scene_text
 from saga_trpg.domain.models import WorldState
 from saga_trpg.domain.tools import ToolCall
 from saga_trpg.modules.srd_5_2_1.rules import ROLL_ACTIONS
@@ -610,6 +611,7 @@ class RisuBridge:
             result=saved.result.model_copy(deep=True),
             memories=memories,
             recent_dialogue=request.narration.context if request.narration else [],
+            scene=scene_text(saved.result.state, turn.actor_id),
         )
         try:
             prose = await narrator.render(narration)
@@ -650,7 +652,7 @@ class RisuBridge:
                 "replayed": replayed,
                 # Footer lines rendered from the rulebook's display declaration; the host
                 # prints them without knowing what a stat or a record means.
-                "display": render_display(spec, saved.result.state),
+                "display": render_display(spec, saved.result.state, viewer=turn.actor_id),
                 **result,
             },
         }
