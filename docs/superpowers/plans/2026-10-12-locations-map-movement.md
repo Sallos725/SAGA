@@ -315,6 +315,7 @@ from saga_trpg.domain.maps import (
 )
 from saga_trpg.domain.models import ActorState, Exit, MapState, Room, WorldState
 
+
 def three_rooms() -> MapState:
     return MapState(
         start_room="hall",
@@ -381,7 +382,6 @@ def test_map_problems_name_the_entry(change, message):
     assert any(problem.startswith(message) for problem in map_problems(game_map)), map_problems(
         game_map
     )
-
 
 
 # --- projection ---------------------------------------------------------------------------------
@@ -944,7 +944,6 @@ def test_generator_room_bounds_are_checked(rooms):
         parse_rulebook(srd_with({"generate": {"seed": "x", "rooms": rooms}}))
 
 
-
 # --- worlds ----------------------------------------------------------------------------------
 
 
@@ -971,7 +970,6 @@ def test_worlds_without_a_map_are_unchanged():
     state = DataRules(load_rulebook(rulebook_path("srd-5.2.1", "0.5.0"))).example_world("w")
     assert state.map is None
     assert all(actor.location is None for actor in state.actors.values())
-
 
 
 # --- map_move --------------------------------------------------------------------------------
