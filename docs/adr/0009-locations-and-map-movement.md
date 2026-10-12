@@ -43,7 +43,10 @@ byte-for-byte as before; `RUNTIME_VERSION` and the storage version do not change
 rule for any future optional state field.
 
 **Maps exist from world creation.** A rulebook's `example_world.map` is either a hand-authored
-`{start_room, rooms, placements}` or `{generate: {seed, rooms: [min, max]}}`. `example_world` builds
+`{start_room, rooms, placements}` or `{generate: {seed, rooms: [min, max]}}`.
+`placements` maps actor ids to room ids ("the wolf is in the guard room"); it is optional, only
+places actors and never moves them later. Generated room ids are not known in advance, so a
+generated map has no placements and every actor starts in `start_room`. `example_world` builds
 the map when the world is created and the result is stored in the initial state. Replay starts
 from that stored state and never reruns the generator, so later generator changes cannot
 alter an existing world. Generating new areas during play is not part of this slice.
