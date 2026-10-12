@@ -5,7 +5,7 @@
 > **Status:** executed 2026-10-12. Code blocks show the final, reviewed code; review-driven
 > changes against the original plan are listed in
 > [the progress report](../../progress/locations-map-v1.md). Test counts in the steps are the
-> original plan's; the final suite is 608.
+> original plan's; the final suite is 609.
 
 **Goal:** Worlds get a room-graph map in authoritative state, players move with `move <exit>`, and the narrator and footer see only what the player knows.
 

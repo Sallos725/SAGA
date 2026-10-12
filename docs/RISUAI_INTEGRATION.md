@@ -200,7 +200,9 @@ HP/conditions/inventory in the plugin.
 Commands are parsed by the world's rulebook (`saga_trpg.rulebooks.commands`): the action name
 or an alias, positional values in input order, `name=value`, quoted text, and the advantage
 flags for roll-twice checks. Closed choices are lower-cased; free text keeps its case. Worlds
-pinned to hand-written SRD versions use the bundled SRD grammar, whose payload shapes match.
+pinned to hand-written SRD versions use a frozen `srd-5.2.1@0.5.0` grammar (`LEGACY_SRD_SPEC`),
+whose payload shapes match and whose verbs never change, so a verb added to a later SRD (such
+as `move` in `0.6.0`) cannot change the identity of an action they already committed.
 The turn may carry `rulebook: { content }`; it is validated and registered, and pins the
 world only when the world is created. Natural-language interpretation stays limited to the SRD
 demo rulebook.

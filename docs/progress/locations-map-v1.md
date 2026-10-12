@@ -31,10 +31,14 @@ Plan: [implementation plan](../superpowers/plans/2026-10-12-locations-map-moveme
   leaked an unseen room id and an NPC's whereabouts.
 - `cannot_act` guard on `map_move`, the 200-room cap, the narration rule about unrecorded
   movement, and stronger generator and projection tests.
+- Worlds pinned to hand-written SRD 0.1.0–0.3.0 used the latest SRD's command grammar; with
+  `move` added in 0.6.0, a committed v3 action such as "Move toward the goblin" would have lost
+  its identity and broken the chat. Those worlds now use a frozen 0.5.0 grammar
+  (`LEGACY_SRD_SPEC`), pinned by a regression test.
 
 ## Verification
 
-- `pytest` 608 passed on Python 3.11, 3.12 and 3.13; `ruff check`, `ruff format --check`,
+- `pytest` 609 passed on Python 3.11, 3.12 and 3.13; `ruff check`, `ruff format --check`,
   `compileall`, `node --test tests/risu_provider.test.cjs` (27 passed) and
   `scripts/export_rulesets.py --check` clean.
 - CLAUDE.md checks:
@@ -51,6 +55,9 @@ Plan: [implementation plan](../superpowers/plans/2026-10-12-locations-map-moveme
 
 ## Unresolved
 
+- No rollback after deploy: older code cannot verify worlds created with a map.
+- A v3 message starting with "move" is now a command (rejected with help) rather than natural
+  language, like `give`/`take`/`heal` already are.
 - Natural-language movement ("북쪽으로 간다") needs an interpreter contract change with a tape
   identity design; until then players type `move <exit>` from the footer.
 - Benchmark scenarios that spell out a map in `initial_world` are not validated by

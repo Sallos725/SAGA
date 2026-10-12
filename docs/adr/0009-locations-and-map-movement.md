@@ -25,7 +25,7 @@ and belongs in the deterministic core, not behind a tool port or in NMOS
 | `start_room` | Room id where actors without a placement begin |
 | `rooms` | `id → {name, description, exits}` |
 | `rooms.<id>.exits` | `key → {to_room, label, kind}`. `key` is a lower-case identifier unique within the room (`north`, `up`, `cellar_stairs`); `label` is display text; `kind` is `open` (archway, corridor) or `door`. Exits are directed; a two-way passage is one exit in each room. |
-| `generator` | `{name, version, params}` when generated, absent when hand-authored |
+| `generator` | `{name, version, params}` when generated, `null` when hand-authored |
 
 Each actor gains `location` (room id) and `visited_rooms` (set of room ids). In a world with a
 map, an actor without an explicit placement starts in `start_room`, and every actor's starting
@@ -80,6 +80,9 @@ the command grammar is positional. Natural-language movement ("북쪽으로 간�
 part of this slice: the interpreter is bound to SRD roll actions and to the durable tape's
 tool identity, and changing its contract needs its own design so that rerolling an old turn
 can never call the model again. Until then the footer lists the exit keys a player types.
+Because `move` is now a command verb, a v3 message that starts with "move" (for example
+"move quietly to the door") is parsed as a command and rejected with the command help instead
+of going to the interpreter, as already happens for `give`, `take` and `heal`.
 New bundled versions `srd-5.2.1@0.6.0` (with a generated example map) and
 `fate-condensed@0.5.0` (with a small hand-authored map) declare the action; earlier versions
 are unchanged.
@@ -118,7 +121,11 @@ invalid map stops world creation.
 - Rerendering reads committed state only. The map is never generated, and no move is applied,
   during regeneration.
 - Existing worlds and their pinned rulebook versions replay unchanged; a golden-hash test
-  pins that.
+  pins that. Their action identities are unchanged too: worlds on the hand-written SRD
+  versions derive identities with a frozen `srd-5.2.1@0.5.0` grammar, so the new `move` verb
+  cannot turn a committed natural-language action into a command.
+- There is no rollback after deploy: code from before this change ignores `map` when loading a
+  world created on `srd-5.2.1@0.6.0`, so its snapshot hashes would no longer verify.
 - NMOS is unaffected. Moves reach memory through the existing semantic projection (action kind
   and text inputs), and the map itself is never stored there.
 - Benchmark runs stay comparable. The runner builds worlds from the scenario's
@@ -150,4 +157,4 @@ retries, footer, bundled versions), `tests/test_risu_api.py` (a new chat starts 
 map; a move commits once across regenerations; a bad exit is rejected) and
 `tests/test_vertex_narration.py` (the prompt carries the known map and no unseen room name,
 room id or NPC position, also for an authored map with an NPC behind a closed door). Full
-suite: 608 passed. Progress report: [locations and map movement v1](../progress/locations-map-v1.md).
+suite: 609 passed. Progress report: [locations and map movement v1](../progress/locations-map-v1.md).
