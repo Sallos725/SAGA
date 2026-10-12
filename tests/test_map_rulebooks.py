@@ -237,6 +237,16 @@ def test_footer_shows_the_viewers_room_and_exit_keys():
     assert render_display(spec, no_map)["world"] == ["⏱ 0s"]
 
 
+def test_footer_for_a_dead_end_room_and_an_unplaced_viewer():
+    data = srd_with({"start_room": "cell", "rooms": {"cell": {"name": "독방"}}})
+    data["display"]["world"] = ["location"]
+    spec = parse_rulebook(data)
+    state = DataRules(spec).example_world("w")
+    assert render_display(spec, state)["world"] == ["📍 독방"]
+    state.actors["player"].location = None
+    assert render_display(spec, state)["world"] == []
+
+
 # --- bundled versions ------------------------------------------------------------------------
 
 
