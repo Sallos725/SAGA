@@ -9,8 +9,11 @@ from typing import Any, Literal
 from pydantic import Field, create_model
 
 from saga_trpg.domain.events import GameEvent
+from saga_trpg.domain.mapgen import generate_map
+from saga_trpg.domain.maps import EXIT_KEY
 from saga_trpg.domain.models import (
     ActorState,
+    MapState,
     RuleResolution,
     RuleResult,
     StatePatch,
@@ -23,6 +26,7 @@ from saga_trpg.rulebooks.loader import (
     ITEM_KEY,
     BuiltinAction,
     CheckAction,
+    ExampleMap,
     InputSpec,
     RecordField,
     RulebookSpec,
@@ -201,8 +205,10 @@ class DataRules:
                 fields["disadvantage"] = (bool, False)
         else:
             builtin = action.builtin
-            if builtin != "time_advance":
+            if builtin not in ("time_advance", "map_move"):
                 fields["target_id"] = (str, Field(min_length=1))
+            if builtin == "map_move":
+                fields["exit"] = (str, Field(pattern=EXIT_KEY))
             if builtin == "hp_change" or builtin.startswith("inventory_"):
                 fields["amount"] = (int, Field(ge=1, le=1000))
             if builtin.startswith("condition_"):
@@ -252,7 +258,15 @@ class DataRules:
                     conditions=set(actor.conditions),
                 )
         flags = dict(self.spec.example_world.flags) if self.spec.example_world else {}
-        return WorldState(world_id=world_id, actors=actors, flags=flags)
+        state = WorldState(world_id=world_id, actors=actors, flags=flags)
+        spec_map = self.spec.example_world.map if self.spec.example_world else None
+        if spec_map is not None:
+            state.map = _example_map(spec_map, world_id)
+            for actor_id, actor in state.actors.items():
+                room_id = spec_map.placements.get(actor_id, state.map.start_room)
+                actor.location = room_id
+                actor.visited_rooms = {room_id}
+        return state
 
     # -- dispatch ----------------------------------------------------------------------------
 
@@ -556,6 +570,8 @@ class DataRules:
             )
         if action.builtin.startswith("record_"):
             return self._record(state, next_state, event, action, data)
+        if action.builtin == "map_move":
+            return self._move(state, next_state, event, data)
         target = actor_in(state, data["target_id"])
         self._hp_sane(target)
         changed = next_state.actors[target.actor_id]
@@ -612,6 +628,59 @@ class DataRules:
             facts=[fact],
             trace=self._trace(event, f"builtin={action.builtin}"),
         )
+
+    def _move(
+        self, state: WorldState, next_state: WorldState, event: GameEvent, data: dict[str, Any]
+    ) -> RuleResult:
+        # The exit key is resolved against the actor's room in this state, at apply time, so
+        # command parsing stays stateless and replay reads the recorded result (ADR 0009).
+        if state.map is None:
+            raise ValueError("this world has no map")
+        actor = actor_in(state, event.actor_id)
+        if actor.location is None:
+            raise ValueError(f"{actor.actor_id} is not on the map")
+        room = state.map.rooms[actor.location]
+        exit_ = room.exits.get(data["exit"])
+        if exit_ is None:
+            known = ", ".join(sorted(room.exits)) or "none"
+            raise ValueError(f"{room.name} has no exit {data['exit']!r}; exits: {known}")
+        moved = next_state.actors[actor.actor_id]
+        moved.location = exit_.to_room
+        moved.visited_rooms.add(exit_.to_room)
+        destination = state.map.rooms[exit_.to_room]
+        return RuleResult(
+            state=next_state,
+            patches=[
+                StatePatch(
+                    path=f"actors.{actor.actor_id}.location",
+                    before=actor.location,
+                    after=exit_.to_room,
+                ),
+                StatePatch(
+                    path=f"actors.{actor.actor_id}.visited_rooms",
+                    before=sorted(actor.visited_rooms),
+                    after=sorted(moved.visited_rooms),
+                ),
+            ],
+            facts=[
+                f"{actor.actor_id}: {event.kind} through {exit_.label} "
+                f"from {room.name} to {destination.name}."
+            ],
+            trace=self._trace(
+                event, f"builtin=map_move; exit={data['exit']}; {actor.location}->{exit_.to_room}"
+            ),
+        )
+
+
+def _example_map(spec_map: ExampleMap, world_id: str) -> MapState:
+    if spec_map.generate is not None:
+        low, high = spec_map.generate.rooms
+        # Each world (a RisuAI chat) gets its own dungeon; the same world always the same one.
+        return generate_map(f"{spec_map.generate.seed}|{world_id}", min_rooms=low, max_rooms=high)
+    return MapState(
+        start_room=spec_map.start_room,
+        rooms={room_id: room.model_copy(deep=True) for room_id, room in spec_map.rooms.items()},
+    )
 
 
 def _find_record(state: WorldState, collection: str, field: str, value: Any) -> str | None:

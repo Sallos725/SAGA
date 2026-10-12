@@ -15,7 +15,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from saga_trpg.domain.models import RuleResolution
+from saga_trpg.domain.mapgen import MAX_ROOMS, MIN_ROOMS
+from saga_trpg.domain.maps import map_problems
+from saga_trpg.domain.models import MapState, Room, RuleResolution
 from saga_trpg.rulebooks.expr import ExpressionError, compile_expression
 
 KEY = r"^[a-z][a-z0-9_]{0,39}$"
@@ -34,6 +36,7 @@ Builtin = Literal[
     "inventory_remove",
     "record_adjust",
     "record_remove",
+    "map_move",
 ]
 
 
@@ -165,9 +168,24 @@ class ExampleActor(Closed):
     conditions: list[str] = Field(default_factory=list)
 
 
+class MapGenerate(Closed):
+    seed: str = Field(min_length=1, max_length=80)
+    rooms: tuple[int, int] = (6, 10)
+
+
+class ExampleMap(Closed):
+    """Either a hand-authored room graph or a generator request (ADR 0009)."""
+
+    start_room: str | None = None
+    rooms: dict[str, Room] = Field(default_factory=dict)
+    placements: dict[str, str] = Field(default_factory=dict)
+    generate: MapGenerate | None = None
+
+
 class ExampleWorld(Closed):
     actors: dict[str, ExampleActor]
     flags: dict[str, Any] = Field(default_factory=dict)
+    map: ExampleMap | None = None
 
 
 class DisplaySpec(Closed):
@@ -207,6 +225,7 @@ _BUILTIN_PAYLOAD_INPUTS = {
     "time_advance": {"amount", "unit"},
     "inventory_add": {"target_id", "item", "amount"},
     "inventory_remove": {"target_id", "item", "amount"},
+    "map_move": {"exit"},
 }
 
 
@@ -479,7 +498,7 @@ def _cross_check(spec: RulebookSpec):  # noqa: C901
     for section, allowed in (
         ("actor", builtin_actor | set(spec.stats)),
         ("records", set(spec.records)),
-        ("world", {"time"}),
+        ("world", {"time", "location"}),
     ):
         entries = getattr(spec.display, section)
         for entry in entries:
@@ -509,6 +528,34 @@ def _cross_check(spec: RulebookSpec):  # noqa: C901
                     )
             if not 0 <= actor.hp <= actor.max_hp or actor.max_hp <= 0:
                 yield f"example_world.actors.{actor_id}: hp must be within 0..max_hp"
+        if spec.example_world.map is not None:
+            yield from _check_map(spec.example_world)
+
+
+def _check_map(world: ExampleWorld):
+    spec_map = world.map
+    location = "example_world.map"
+    if spec_map.generate is not None:
+        if spec_map.rooms or spec_map.start_room is not None or spec_map.placements:
+            yield f"{location}: give either generate or start_room/rooms/placements, not both"
+        low, high = spec_map.generate.rooms
+        if not MIN_ROOMS <= low <= high <= MAX_ROOMS:
+            yield (
+                f"{location}.generate.rooms: needs [min, max] with "
+                f"{MIN_ROOMS} <= min <= max <= {MAX_ROOMS}"
+            )
+        return
+    if spec_map.start_room is None or not spec_map.rooms:
+        yield f"{location}: a hand-authored map needs start_room and rooms"
+        return
+    yield from map_problems(
+        MapState(start_room=spec_map.start_room, rooms=spec_map.rooms), location
+    )
+    for actor_id, room_id in spec_map.placements.items():
+        if actor_id not in world.actors:
+            yield f"{location}.placements.{actor_id}: unknown actor"
+        elif room_id not in spec_map.rooms:
+            yield f"{location}.placements.{actor_id}: unknown room {room_id!r}"
 
 
 _RESERVED_NAMES = frozenset(
