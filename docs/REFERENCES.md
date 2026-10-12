@@ -70,6 +70,14 @@ and the proposed SAGA mapping. The files were inspected without executing the pl
 The host-local MCP registration does not establish a backend transport; any live
 binding must use SAGA's durable result tape and preserve ruleset-owned adjudication.
 
+## External TRPG plugin review
+
+The owner supplied an external RisuAI TRPG and memory plugin for an offline feature review.
+See [the TRPG feature review](TRPG_FEATURE_REVIEW.md) for player-facing value, features
+worth changing the product for, and additive features. Product names, file hashes and
+offline check results are intentionally not recorded. The review is a proposal, not an
+accepted ADR or authorization to implement it. It imports no reference code.
+
 ## NMOS
 
 Repository: https://github.com/Sallos725/NMOS

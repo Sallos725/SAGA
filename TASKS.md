@@ -1,5 +1,8 @@
 # Tasks
 
+Active issue tracking is in Plane; see [the tracking checkpoint](docs/ISSUE_TRACKING.md).
+The checklist below is a repository summary and can lag newer progress reports.
+
 ## P0 — Runtime correctness
 
 - [x] persistent world repository
