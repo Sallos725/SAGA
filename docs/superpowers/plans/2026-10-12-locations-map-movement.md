@@ -70,7 +70,7 @@ the constants.
 
 import hashlib
 
-from saga_trpg.domain.models import WorldState
+from saga_trpg.domain.models import ActorState, Exit, MapState, Room, WorldState
 from saga_trpg.modules.catalog import RulesetRegistry
 from saga_trpg.runtime.hashing import stable_model_hash
 
@@ -144,15 +144,41 @@ def test_unplaced_actor_fields_are_omitted_from_both_dumps():
 
 def test_a_map_and_placement_are_serialized_sorted_and_round_trip():
     state = golden_state()
-    state.map = MapState(start_room="hall", rooms={"hall": Room(name="입구 홀")})
+    state.map = MapState(
+        start_room="hall",
+        rooms={
+            "hall": Room(name="입구 홀", exits={"down": Exit(to_room="cellar", label="계단")}),
+            "cellar": Room(name="지하실"),
+        },
+    )
     state.actors["player"].location = "hall"
     state.actors["player"].visited_rooms = {"hall", "cellar"}
     dumped = state.model_dump(mode="json")
-    assert dumped["map"]["start_room"] == "hall"
+    assert dumped["map"]["rooms"]["hall"]["exits"]["down"]["to_room"] == "cellar"
+    assert dumped["actors"]["player"]["location"] == "hall"
     assert dumped["actors"]["player"]["visited_rooms"] == ["cellar", "hall"]
     assert "location" not in dumped["actors"]["opponent"]
     assert WorldState.model_validate_json(state.model_dump_json()) == state
-    assert stable_model_hash(state) != GOLDEN_STATE_HASH
+
+
+def test_clearing_a_placement_and_map_restores_the_golden_hash():
+    state = golden_state()
+    state.map = MapState(start_room="hall", rooms={"hall": Room(name="입구 홀")})
+    placed = state.actors["player"].model_copy(
+        update={"location": "hall", "visited_rooms": {"hall"}}
+    )
+    state.actors["player"] = placed.model_copy(update={"location": None, "visited_rooms": set()})
+    state.map = None
+    assert stable_model_hash(state) == GOLDEN_STATE_HASH
+    assert hashlib.sha256(state.model_dump_json().encode()).hexdigest() == GOLDEN_JSON_SHA256
+
+
+def test_the_documented_schema_keeps_every_field():
+    # FastAPI documents responses with the serialization schema; it must stay structured.
+    schema = WorldState.model_json_schema(mode="serialization")
+    assert "map" in schema["properties"]
+    actor = schema["$defs"]["ActorState"]["properties"]
+    assert {"location", "visited_rooms", "conditions", "hp"} <= set(actor)
 ```
 
 - [ ] **Step 2: Run to see them fail**
@@ -166,28 +192,34 @@ Apply this change to `src/saga_trpg/domain/models.py`. The wrap serializers drop
 by value (not `exclude_unset`), because rules build states with `model_copy(update=...)`.
 
 ```diff
-@@ -2,7 +2,14 @@
+@@ -2,7 +2,20 @@
  
  from typing import Any, Literal
  
 -from pydantic import BaseModel, Field, field_serializer
-+from pydantic import (
-+    BaseModel,
-+    ConfigDict,
-+    Field,
-+    SerializerFunctionWrapHandler,
-+    field_serializer,
-+    model_serializer,
-+)
++from pydantic import BaseModel, ConfigDict, Field, field_serializer
++
++
++def _absent(value: Any) -> bool:
++    return value is None
++
++
++def _empty(value: Any) -> bool:
++    return not value
++
++
++# Fields added after storage v2 are excluded from dumps while unset or empty, so a state saved
++# before them keeps its exact JSON and hash (ADR 0009). Exclusion is by value, not
++# exclude_unset, because rules build states with model_copy(update=...).
  
  
  class ActorState(BaseModel):
-@@ -12,11 +19,59 @@
+@@ -12,11 +25,48 @@
      inventory: dict[str, int] = Field(default_factory=dict)
      conditions: set[str] = Field(default_factory=set)
      stats: dict[str, int | float | str | bool] = Field(default_factory=dict)
-+    location: str | None = None
-+    visited_rooms: set[str] = Field(default_factory=set)
++    location: str | None = Field(default=None, min_length=1, exclude_if=_absent)
++    visited_rooms: set[str] = Field(default_factory=set, exclude_if=_empty)
  
 -    @field_serializer("conditions")
 -    def _sorted_conditions(self, conditions: set[str]) -> list[str]:
@@ -196,17 +228,6 @@ by value (not `exclude_unset`), because rules build states with `model_copy(upda
          # Set iteration order depends on the hash seed; responses and stored JSON must not.
 -        return sorted(conditions)
 +        return sorted(values)
-+
-+    @model_serializer(mode="wrap")
-+    def _omit_unplaced(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
-+        # Fields added after storage v2 disappear while empty, so actors saved before them keep
-+        # their exact JSON and state hash (ADR 0009).
-+        data = handler(self)
-+        if data.get("location") is None:
-+            data.pop("location", None)
-+        if not data.get("visited_rooms"):
-+            data.pop("visited_rooms", None)
-+        return data
 +
 +
 +class Exit(BaseModel):
@@ -245,19 +266,11 @@ by value (not `exclude_unset`), because rules build states with `model_copy(upda
  
  
  class WorldState(BaseModel):
-@@ -27,6 +82,15 @@
+@@ -27,6 +77,7 @@
      actors: dict[str, ActorState] = Field(default_factory=dict)
      flags: dict[str, Any] = Field(default_factory=dict)
      quest_state: dict[str, Any] = Field(default_factory=dict)
-+    map: MapState | None = None
-+
-+    @model_serializer(mode="wrap")
-+    def _omit_absent_map(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
-+        # A world without a map dumps, stores and hashes exactly as before ADR 0009.
-+        data = handler(self)
-+        if data.get("map") is None:
-+            data.pop("map", None)
-+        return data
++    map: MapState | None = Field(default=None, exclude_if=_absent)
  
  
  class RollRecord(BaseModel):
@@ -292,6 +305,7 @@ git commit -m "feat: optional map and actor location in state, omitted while emp
 
 import pytest
 
+from saga_trpg.domain.mapgen import MAX_ROOMS, OPPOSITE, ROOMS, generate_map
 from saga_trpg.domain.maps import (
     known_map,
     map_problems,
@@ -401,6 +415,13 @@ def test_rendered_block_lists_current_room_exits_and_visited_rooms():
             "가본 곳: 입구 홀",
         ]
     )
+
+
+def test_returning_marks_visited_exits_and_keeps_far_rooms_in_the_visited_list():
+    view = known_map(world(location="store", visited=("hall", "guard", "store")), "player")
+    assert [(e.key, e.destination, e.visited) for e in view.exits] == [("west", "입구 홀", True)]
+    assert view.visited == ["경비실", "입구 홀", "창고"]
+    assert "- west: 서쪽 통로 → 입구 홀 (가봄)" in render_known_map(view)
 
 
 def test_no_map_or_no_location_means_no_scene():
@@ -523,7 +544,7 @@ def known_map(state: WorldState, actor_id: str) -> KnownMap | None:
         for other_id, other in state.actors.items()
         if other_id != actor_id and other.location == actor.location
     )
-    visited_names = [rooms[room_id].name for room_id in sorted(actor.visited_rooms)]
+    visited_names = sorted(rooms[room_id].name for room_id in actor.visited_rooms)
     return KnownMap(
         room_id=actor.location,
         room_name=room.name,
@@ -619,17 +640,26 @@ def test_different_worlds_get_different_maps():
 @pytest.mark.parametrize("bounds", [(2, 2), (2, 30), (30, 30), (6, 10)])
 def test_generated_maps_are_connected_two_way_and_bounded(bounds):
     low, high = bounds
+    looped = False
     for seed in range(200):
         game_map = generate_map(f"seed-{seed}", min_rooms=low, max_rooms=high)
         assert low <= len(game_map.rooms) <= high
         assert map_problems(game_map) == []
         names = [room.name for room in game_map.rooms.values()]
         assert len(set(names)) == len(names)
+        links = 0
         for room_id, room in game_map.rooms.items():
             assert len(room.exits) <= 6
-            for exit_ in room.exits.values():
-                back = game_map.rooms[exit_.to_room].exits.values()
-                assert any(other.to_room == room_id and other.kind == exit_.kind for other in back)
+            # At most one link between two rooms, and each exit returns along its opposite key.
+            assert len({exit_.to_room for exit_ in room.exits.values()}) == len(room.exits)
+            for key, exit_ in room.exits.items():
+                back = game_map.rooms[exit_.to_room].exits.get(OPPOSITE[key])
+                assert back is not None
+                assert (back.to_room, back.kind) == (room_id, exit_.kind)
+            links += len(room.exits)
+        looped |= links // 2 > len(game_map.rooms) - 1
+    # Loop attempts start at four rooms; below that every map is a tree.
+    assert looped or high < 4
 
 
 @pytest.mark.parametrize("bounds", [(1, 5), (5, 4), (2, 31)])
@@ -656,7 +686,9 @@ determinism bug in the generator to fix, never a constant to loosen.
 
 Pure: the same seed material always gives the same map. A generated map is stored in the
 world's initial state, so changing this module (and bumping GENERATOR_VERSION) never alters
-an existing world; replay reads the stored map and does not call the generator.
+an existing world; replay reads the stored map and does not call the generator. Python only
+documents `random()` itself as reproducible across versions, so the stored map, not
+regeneration, is the replay guarantee; the golden digest test catches drift between versions.
 """
 
 from __future__ import annotations
@@ -868,7 +900,7 @@ def move(spec, text, event_id):
     return event.model_copy(update={"event_id": event_id})
 
 
-# --- loader -------------------------------------------------------------------------------------
+# --- loader ----------------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -913,7 +945,7 @@ def test_generator_room_bounds_are_checked(rooms):
 
 
 
-# --- worlds -------------------------------------------------------------------------------------
+# --- worlds ----------------------------------------------------------------------------------
 
 
 def test_a_hand_authored_map_places_actors_and_marks_start_rooms_visited():
@@ -942,7 +974,7 @@ def test_worlds_without_a_map_are_unchanged():
 
 
 
-# --- map_move -----------------------------------------------------------------------------------
+# --- map_move --------------------------------------------------------------------------------
 
 
 def test_move_follows_an_exit_and_records_patches_and_a_fact():
@@ -1239,6 +1271,7 @@ and the module-level `_example_map` helper:
 +    "map_move": ["exit"],
  }
  _INTEGER = re.compile(r"^-?[0-9]{1,9}$")
+ 
 ```
 
 - [ ] **Step 6: Run**
@@ -1264,7 +1297,7 @@ git commit -m "feat: example_world.map in rulebooks, map_move builtin and move <
 - [ ] **Step 1: Write the failing test** — append:
 
 ```python
-# --- footer -------------------------------------------------------------------------------------
+# --- footer ----------------------------------------------------------------------------------
 
 
 def test_footer_shows_the_viewers_room_and_exit_keys():
@@ -1341,7 +1374,7 @@ New Risu chats pin the latest SRD, so after this task they start in a generated 
 - [ ] **Step 1: Write the failing test** — append to `tests/test_map_rulebooks.py`:
 
 ```python
-# --- bundled versions ---------------------------------------------------------------------------
+# --- bundled versions ------------------------------------------------------------------------
 
 
 def test_new_bundled_versions_declare_move_and_an_example_map():
