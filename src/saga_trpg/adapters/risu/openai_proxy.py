@@ -116,8 +116,7 @@ class CompletionRequest(ClosedModel):
         return self
 
 
-# The bundled SRD rulebook is the default for new worlds without an attached rulebook, and the
-# command grammar for worlds pinned to the hand-written SRD versions (same payload shapes).
+# The latest bundled SRD rulebook is the default for new worlds without an attached rulebook.
 DEFAULT_SPEC = load_rulebook(rulebook_path("srd-5.2.1"))
 # Worlds pinned to the hand-written SRD versions (0.1.0–0.3.0) derive command identities with
 # this frozen grammar. Using the latest SRD would let a new verb (`move` in 0.6.0) turn an
