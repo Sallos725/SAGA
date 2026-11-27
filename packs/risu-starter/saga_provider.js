@@ -1,7 +1,7 @@
 //@name saga_runtime
 //@display-name SAGA SRD Demo
 //@api 3.0
-//@version 0.8.0
+//@version 0.8.2
 //@arg server_url string SAGA URL (default http://saga-runtime:4850)
 //@arg host_instance_id string Stable host identity (set it explicitly; empty generates one via plugin storage, which hung on one host)
 //@arg integration_mode string provider | hook (default: provider). hook uses RisuAI's own main model (presets & streaming) while SAGA adjudicates in beforeRequest/afterRequest.
@@ -11,10 +11,14 @@
 
 (() => {
   "use strict";
+  const VERSION = "0.8.2";
   const PROVIDER = "SAGA SRD Demo";
   const MARKER = "SAGA request ticket: ";
   const HOOK_MARKER = "[SAGA Hook Context]";
   const HOOK_CHATS_KEY = "saga:hook-chats:v1";
+  const UI_SETTINGS_KEY = "saga:ui-settings:v1";
+  const SAGA_ICON =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 21 7 21 17 12 22 3 17 3 7 12 2"/><polyline points="3.3 7 12 12 20.7 7"/><line x1="12" y1="22" x2="12" y2="12"/></svg>';
   const HELP = "명령은 룰북의 행동 이름과 입력 순서를 따릅니다: attack opponent / check strength 10 / damage opponent 5 / give player torch 1, 또는 overcome investigate 2 처럼요. name=value로 지정하거나 따옴표로 묶을 수 있고, 판정 명령 뒤에 advantage/disadvantage를 붙일 수 있습니다. 잘못된 명령의 오류 메시지에 그 룰북의 전체 명령 목록이 나옵니다. SAGA 룰북 모듈을 켜고 새 채팅을 시작하면 그 룰북으로 플레이합니다. Vertex JSON 설정 시 SRD 데모에서 자연어 단일 행동도 지원합니다.";
 
   function narrationContext(prompt) {
@@ -97,7 +101,7 @@
     const line1 = displayLines(state).join(" · ");
     const line2 = ["🎲 " + (rolls.length ? rolls.join(" · ") : "주사위 없음"), "턴 " + escapeHtml(state.seq) + (state.replayed ? " · 기록 재사용" : ""),
       "<code>" + escapeHtml(state.event_id) + "</code>"].join(" · ");
-    return '<div style="margin-top:0.75em;padding-top:0.4em;border-top:1px solid rgba(128,128,128,0.35);font-size:0.78em;line-height:1.6;opacity:0.85">' +
+    return '<div style="margin-top:0.75em;padding-top:0.4em;border-top:1px solid rgba(128,128,128,0.35);font-size:0.78em;line-height:1.6;opacity:0.85;max-width:100%;overflow-wrap:anywhere;word-break:break-word">' +
       line1 + "<br>" + line2 + "</div>";
   }
 
@@ -114,7 +118,7 @@
     const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
     return Array.from(new Uint8Array(digest)).map(byte => byte.toString(16).padStart(2, "0")).join("");
   }
-  async function attachedRulebook(api) {
+  async function attachedRulebookInfo(api) {
     if (typeof api.getCurrentLorebookEntries !== "function") return null;
     let entries;
     try { entries = await api.getCurrentLorebookEntries(); } catch { return null; }
@@ -129,8 +133,12 @@
     if (found.size > 1) {
       throw new Error("SAGA 룰북 모듈이 여러 개 켜져 있습니다 (" + [...found.keys()].join(", ") + "). 하나만 켜고 다시 시도하세요.");
     }
-    const [content] = found.values();
-    return content ? { content } : null;
+    const [pair] = found.entries();
+    return pair ? { id: pair[0], content: pair[1] } : null;
+  }
+  async function attachedRulebook(api) {
+    const info = await attachedRulebookInfo(api);
+    return info ? { content: info.content } : null;
   }
 
   function extractJsonProposal(text) {
@@ -163,6 +171,41 @@
     const argument = async name => String((await api.getArgument(name)) ?? "").trim();
     const isTruthy = value => ["1", "true", "yes", "on"].includes(String(value ?? "").trim().toLowerCase());
 
+    async function readJsonStorage(key) {
+      if (!api.pluginStorage || typeof api.pluginStorage.getItem !== "function") return {};
+      const saved = await api.pluginStorage.getItem(key);
+      if (saved && typeof saved === "object" && !Array.isArray(saved)) return { ...saved };
+      if (typeof saved === "string" && saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+        } catch {
+          return {};
+        }
+      }
+      return {};
+    }
+
+    async function writeJsonStorage(key, value) {
+      if (!api.pluginStorage || typeof api.pluginStorage.setItem !== "function") return;
+      await api.pluginStorage.setItem(key, JSON.stringify(value));
+    }
+
+    async function readUiSettings() {
+      return readJsonStorage(UI_SETTINGS_KEY);
+    }
+
+    async function saveUiSettings(patch) {
+      const currentSettings = await readUiSettings();
+      const next = { ...currentSettings };
+      for (const [k, v] of Object.entries(patch)) {
+        if (v === undefined || v === null || v === "") delete next[k];
+        else next[k] = v;
+      }
+      await writeJsonStorage(UI_SETTINGS_KEY, next);
+      return next;
+    }
+
     async function current() {
       const selection = await api.getCurrentCharacterIndex();
       const character = await api.getCharacter();
@@ -171,12 +214,13 @@
     }
 
     async function config() {
-      const base = await argument("server_url") || "http://saga-runtime:4850";
+      const ui = await readUiSettings();
+      const base = String(ui.serverUrl || await argument("server_url") || "http://saga-runtime:4850").trim();
       const url = new URL(base);
       if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash || !["", "/"].includes(url.pathname)) {
         throw new Error("SAGA 서버의 기본 URL을 확인하세요.");
       }
-      let instance = await argument("host_instance_id");
+      let instance = String(ui.hostInstanceId || await argument("host_instance_id") || "").trim();
       if (!instance) {
         identityPromise ??= (async () => {
           let saved = await api.pluginStorage.getItem("saga:host-instance:v1");
@@ -191,39 +235,23 @@
       if (typeof instance !== "string" || !/^\S{1,200}$/.test(instance)) throw new Error("호스트 식별자 형식이 잘못되었습니다.");
       const credentials = await argument("vertex_service_account_json");
       if (new TextEncoder().encode(credentials).length > 16000) throw new Error("Vertex 서비스 계정 JSON이 너무 깁니다. 파일 내용만 붙여넣으세요.");
-      const rawMode = (await argument("integration_mode")).toLowerCase();
+      const rawMode = String(ui.integrationMode || await argument("integration_mode") || "provider").trim().toLowerCase();
       const integrationMode = rawMode === "hook" ? "hook" : "provider";
-      const providerStream = isTruthy(await argument("provider_stream"));
-      const useAuxIntent = isTruthy(await argument("use_risu_aux_intent"));
+      const providerStream = typeof ui.providerStream === "boolean" ? ui.providerStream : isTruthy(await argument("provider_stream"));
+      const useAuxIntent = typeof ui.useAuxIntent === "boolean" ? ui.useAuxIntent : isTruthy(await argument("use_risu_aux_intent"));
       return { base: url.origin, instance, credentials, integrationMode, providerStream, useAuxIntent };
     }
 
-    async function readHookChats() {
-      if (!api.pluginStorage || typeof api.pluginStorage.getItem !== "function") return {};
-      const saved = await api.pluginStorage.getItem(HOOK_CHATS_KEY);
-      if (saved && typeof saved === "object" && !Array.isArray(saved)) return { ...saved };
-      if (typeof saved === "string" && saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
-        } catch {
-          return {};
-        }
-      }
-      return {};
-    }
-
     async function isChatHookEnabled(chatId) {
-      const map = await readHookChats();
+      const map = await readJsonStorage(HOOK_CHATS_KEY);
       return Boolean(map[chatId]);
     }
 
     async function setChatHookEnabled(chatId, enabled) {
-      if (!api.pluginStorage || typeof api.pluginStorage.setItem !== "function") return false;
-      const map = await readHookChats();
+      const map = await readJsonStorage(HOOK_CHATS_KEY);
       if (enabled) map[chatId] = true;
       else delete map[chatId];
-      await api.pluginStorage.setItem(HOOK_CHATS_KEY, JSON.stringify(map));
+      await writeJsonStorage(HOOK_CHATS_KEY, map);
       return Boolean(enabled);
     }
 
@@ -232,6 +260,15 @@
       const next = !(await isChatHookEnabled(snapshot.chatId));
       await setChatHookEnabled(snapshot.chatId, next);
       return { chatId: snapshot.chatId, enabled: next };
+    }
+
+    async function checkHealth() {
+      const settings = await config();
+      const response = await api.nativeFetch(settings.base + "/health", {
+        method: "GET", headers: {}, networkRoute: "local_network", requestTimeoutMs: 5000,
+      });
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      return { ok: true, base: settings.base };
     }
 
     const signature = value => JSON.stringify(value);
@@ -526,12 +563,266 @@
       pendingFooters.clear();
     }
 
-    return { current, beforeRequest, afterRequest, provider, toggleChatHook, isChatHookEnabled, setChatHookEnabled, dispose };
+    return {
+      current, config, readUiSettings, saveUiSettings, checkHealth,
+      beforeRequest, afterRequest, provider,
+      toggleChatHook, isChatHookEnabled, setChatHookEnabled, dispose,
+    };
   }
 
-  globalThis.SagaRisu = { snapshotOf, createClient, PROVIDER, HOOK_MARKER };
+  // Host-theme-aware control panel UI built strictly with safe DOM APIs (no innerHTML).
+  const PANEL_CSS = [
+    ":root{--bg:#14161a;--card:#1d2026;--border:#2e333d;--fg:#eef1f6;--muted:#98a2b3;--accent:#3b82f6;--ok:#10b981;--err:#ef4444;}",
+    "*{box-sizing:border-box;}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;}",
+    ".saga-wrap{max-width:620px;margin:0 auto;padding:18px 16px 28px;display:flex;flex-direction:column;gap:14px;}",
+    ".saga-head{display:flex;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid var(--border);padding-bottom:10px;}",
+    ".saga-title{font-size:17px;font-weight:700;display:flex;align-items:center;gap:8px;}",
+    ".saga-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px;}",
+    ".saga-card h3{margin:0;font-size:13px;font-weight:700;color:var(--muted);letter-spacing:0.02em;}",
+    ".saga-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}",
+    ".saga-badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;border:1px solid var(--border);}",
+    ".saga-badge.on{background:rgba(16,185,129,0.16);border-color:var(--ok);color:var(--ok);}",
+    ".saga-badge.off{background:rgba(152,162,179,0.12);color:var(--muted);}",
+    ".saga-btn{appearance:none;border:1px solid var(--border);background:transparent;color:var(--fg);padding:7px 12px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;}",
+    ".saga-btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;}",
+    ".saga-btn.on{background:rgba(16,185,129,0.18);border-color:var(--ok);color:var(--ok);}",
+    ".saga-seg{display:grid;grid-template-columns:1fr 1fr;gap:8px;}",
+    ".saga-field{display:flex;flex-direction:column;gap:4px;}",
+    ".saga-field label{font-size:12px;color:var(--muted);}",
+    ".saga-field input{width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--fg);font-size:13px;}",
+    ".saga-mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--muted);word-break:break-all;}",
+    ".saga-toast{min-height:20px;font-size:12px;color:var(--ok);}.saga-toast.err{color:var(--err);}",
+  ].join("");
+
+  function el(doc, tag, props = {}, ...children) {
+    const node = doc.createElement(tag);
+    for (const [key, value] of Object.entries(props)) {
+      if (value === undefined || value === null) continue;
+      if (key === "class") node.setAttribute("class", value);
+      else if (key === "onclick") node.addEventListener("click", value);
+      else if (key === "value") node.value = value;
+      else if (key === "disabled") node.disabled = Boolean(value);
+      else node.setAttribute(key, String(value));
+    }
+    for (const child of children) {
+      if (child === undefined || child === null || child === false) continue;
+      node.appendChild(typeof child === "string" ? doc.createTextNode(child) : child);
+    }
+    return node;
+  }
+
+  async function applyHostTheme(doc, api) {
+    if (typeof api.getColorScheme !== "function") return;
+    try {
+      const res = await api.getColorScheme();
+      const s = res?.scheme;
+      if (!s) return;
+      const root = doc.documentElement.style;
+      if (s.darkbg) root.setProperty("--bg", s.darkbg);
+      if (s.bgcolor) root.setProperty("--card", s.bgcolor);
+      if (s.darkBorderc || s.borderc) root.setProperty("--border", s.darkBorderc || s.borderc);
+      if (s.textcolor) root.setProperty("--fg", s.textcolor);
+      if (s.textcolor2) root.setProperty("--muted", s.textcolor2);
+      if (s.primary || s.selected) root.setProperty("--accent", s.primary || s.selected);
+      if (s.draculared) root.setProperty("--err", s.draculared);
+    } catch { /* keep dark fallback */ }
+  }
+
+  async function renderPanel(doc, api, client) {
+    doc.body.replaceChildren();
+    if (!doc.getElementById("saga-panel-style")) {
+      doc.head.appendChild(el(doc, "style", { id: "saga-panel-style" }, PANEL_CSS));
+    }
+    await applyHostTheme(doc, api);
+
+    const toast = el(doc, "div", { class: "saga-toast", role: "status" });
+    const notify = (msg, err = false) => {
+      toast.textContent = msg;
+      toast.setAttribute("class", err ? "saga-toast err" : "saga-toast");
+    };
+
+    const close = () => {
+      doc.removeEventListener("keydown", onKey);
+      if (typeof doc.activeElement?.blur === "function") doc.activeElement.blur();
+      if (typeof api.hideContainer === "function") void api.hideContainer();
+    };
+    const onKey = e => { if (e.key === "Escape") close(); };
+    doc.addEventListener("keydown", onKey);
+
+    const wrap = el(doc, "div", { class: "saga-wrap" });
+    doc.body.appendChild(wrap);
+
+    async function draw() {
+      let settings;
+      let configError = null;
+      try { settings = await client.config(); }
+      catch (e) { configError = e instanceof Error ? e.message : String(e); }
+
+      let snapshot = null;
+      try { snapshot = await client.current(); } catch { snapshot = null; }
+
+      let rulebookInfo = null;
+      let rulebookError = null;
+      try { rulebookInfo = await attachedRulebookInfo(api); }
+      catch (e) { rulebookError = e instanceof Error ? e.message : String(e); }
+
+      const manualOn = snapshot ? await client.isChatHookEnabled(snapshot.chatId) : false;
+      const hookActive = Boolean(rulebookInfo) || manualOn;
+      const statusLabel = !snapshot
+        ? "채팅 없음"
+        : (settings?.integrationMode !== "hook"
+          ? "Provider 모드 사용 중"
+          : (rulebookInfo ? "ON (룰북 모듈 자동)" : (manualOn ? "ON (이 채팅 수동)" : "OFF")));
+
+      const badgeClass = (settings?.integrationMode === "hook" && hookActive) ? "saga-badge on" : "saga-badge off";
+
+      const head = el(doc, "div", { class: "saga-head" },
+        el(doc, "div", { class: "saga-title" }, "SAGA v" + VERSION),
+        el(doc, "button", { type: "button", class: "saga-btn", onclick: close }, "닫기"),
+      );
+
+      // Card 1: Current chat status & Hook toggle
+      const toggleBtn = snapshot
+        ? el(doc, "button", {
+            type: "button",
+            class: manualOn ? "saga-btn on" : "saga-btn primary",
+            onclick: async () => {
+              try {
+                const res = await client.toggleChatHook();
+                if (res.enabled && settings?.integrationMode !== "hook") {
+                  await client.saveUiSettings({ integrationMode: "hook" });
+                  notify("이 채팅 SAGA Hook ON + 동작 모드를 Hook으로 전환했습니다.");
+                } else {
+                  notify("이 채팅 수동 Hook: " + (res.enabled ? "ON" : "OFF"));
+                }
+                await draw();
+              } catch (e) { notify(e instanceof Error ? e.message : String(e), true); }
+            },
+          }, manualOn ? "이 채팅 Hook 끄기 (현재 ON)" : "이 채팅 Hook 켜기 (현재 OFF)")
+        : null;
+
+      const healthBtn = el(doc, "button", {
+        type: "button",
+        class: "saga-btn",
+        onclick: async () => {
+          notify("서버 연결 확인 중...");
+          try {
+            const res = await client.checkHealth();
+            notify("SAGA 백엔드 연결 정상 (" + res.base + ")");
+          } catch (e) { notify("백엔드 연결 실패: " + (e instanceof Error ? e.message : String(e)), true); }
+        },
+      }, "서버 연결 테스트");
+
+      const chatCard = el(doc, "div", { class: "saga-card" },
+        el(doc, "h3", {}, "현재 채팅 상태"),
+        el(doc, "div", { class: "saga-row" },
+          el(doc, "span", { class: badgeClass, "data-hook-status": statusLabel }, statusLabel),
+          el(doc, "div", { class: "saga-row" }, toggleBtn, healthBtn),
+        ),
+        el(doc, "div", { class: "saga-mono" }, "채팅 ID: " + (snapshot ? snapshot.chatId : "(열린 채팅 없음)")),
+        el(doc, "div", { class: "saga-mono" }, "감지된 룰북 모듈: " + (rulebookError ? "오류 — " + rulebookError : (rulebookInfo ? rulebookInfo.id : "없음"))),
+        rulebookInfo ? el(doc, "div", { class: "saga-mono" }, "※ SAGA 룰북 모듈이 켜져 있으면 Hook 모드에서 자동 활성화됩니다.") : null,
+      );
+
+      // Card 2: Mode & options
+      const curMode = settings?.integrationMode ?? "provider";
+      const modeCard = el(doc, "div", { class: "saga-card" },
+        el(doc, "h3", {}, "동작 모드"),
+        el(doc, "div", { class: "saga-seg" },
+          el(doc, "button", {
+            type: "button",
+            class: curMode === "hook" ? "saga-btn on" : "saga-btn",
+            onclick: async () => {
+              await client.saveUiSettings({ integrationMode: "hook" });
+              notify("Hook 모드로 저장했습니다. (RisuAI 메인 모델 그대로 사용)");
+              await draw();
+            },
+          }, (curMode === "hook" ? "✓ " : "") + "Hook 모드 (RisuAI 메인 모델)"),
+          el(doc, "button", {
+            type: "button",
+            class: curMode === "provider" ? "saga-btn on" : "saga-btn",
+            onclick: async () => {
+              await client.saveUiSettings({ integrationMode: "provider" });
+              notify("Provider 모드로 저장했습니다. (SAGA SRD Demo 프로바이더)");
+              await draw();
+            },
+          }, (curMode === "provider" ? "✓ " : "") + "Provider 모드 (SAGA 프로바이더)"),
+        ),
+        el(doc, "div", { class: "saga-row" },
+          el(doc, "span", {}, "RisuAI 보조 모델 자연어 분류 (Hook 모드)"),
+          el(doc, "button", {
+            type: "button",
+            class: settings?.useAuxIntent ? "saga-btn on" : "saga-btn",
+            onclick: async () => {
+              const next = !settings?.useAuxIntent;
+              await client.saveUiSettings({ useAuxIntent: next });
+              notify("보조 모델 분류: " + (next ? "ON" : "OFF"));
+              await draw();
+            },
+          }, settings?.useAuxIntent ? "ON" : "OFF"),
+        ),
+        el(doc, "div", { class: "saga-row" },
+          el(doc, "span", {}, "Provider v4 SSE 스트리밍 + risu_prompt"),
+          el(doc, "button", {
+            type: "button",
+            class: settings?.providerStream ? "saga-btn on" : "saga-btn",
+            onclick: async () => {
+              const next = !settings?.providerStream;
+              await client.saveUiSettings({ providerStream: next });
+              notify("Provider v4 스트리밍: " + (next ? "ON" : "OFF"));
+              await draw();
+            },
+          }, settings?.providerStream ? "ON" : "OFF"),
+        ),
+      );
+
+      // Card 3: Server connection
+      const urlInput = el(doc, "input", { type: "text", value: settings?.base ?? "http://127.0.0.1:4852", placeholder: "http://127.0.0.1:4852" });
+      const hostInput = el(doc, "input", { type: "text", value: settings?.instance ?? "", placeholder: "risu-6131" });
+      const serverCard = el(doc, "div", { class: "saga-card" },
+        el(doc, "h3", {}, "서버 연결 설정 (플러그인 인자보다 우선 적용)"),
+        configError ? el(doc, "div", { class: "saga-toast err" }, configError) : null,
+        el(doc, "div", { class: "saga-field" }, el(doc, "label", {}, "SAGA Server URL"), urlInput),
+        el(doc, "div", { class: "saga-field" }, el(doc, "label", {}, "Host Instance ID"), hostInput),
+        el(doc, "div", { class: "saga-row" },
+          el(doc, "button", {
+            type: "button",
+            class: "saga-btn primary",
+            onclick: async () => {
+              try {
+                const candidate = urlInput.value.trim();
+                const parsed = new URL(candidate);
+                if (!["http:", "https:"].includes(parsed.protocol)) throw new Error("http:// 또는 https:// URL만 허용됩니다.");
+                await client.saveUiSettings({ serverUrl: parsed.origin, hostInstanceId: hostInput.value.trim() });
+                notify("서버 설정을 저장했습니다.");
+                await draw();
+              } catch (e) { notify(e instanceof Error ? e.message : String(e), true); }
+            },
+          }, "설정 저장"),
+        ),
+      );
+
+      // Card 4: Quick commands
+      const helpCard = el(doc, "div", { class: "saga-card" },
+        el(doc, "h3", {}, "빠른 사용법"),
+        el(doc, "div", { class: "saga-mono" }, "일반 RP: 평소처럼 자유롭게 입력 (자동으로 narrative_turn 커밋)"),
+        el(doc, "div", { class: "saga-mono" }, "명령 예시: move north · attack opponent · check strength 10 · damage opponent 5"),
+      );
+
+      wrap.replaceChildren(head, chatCard, modeCard, serverCard, helpCard, toast);
+    }
+
+    await draw();
+    return { redraw: draw };
+  }
+
+  globalThis.SagaRisu = { snapshotOf, createClient, renderPanel, PROVIDER, HOOK_MARKER, SAGA_ICON };
   if (typeof risuai === "undefined") return;
   const client = createClient(risuai);
+  const openUi = async () => {
+    if (typeof risuai.showContainer === "function") await risuai.showContainer("fullscreen");
+    if (typeof document !== "undefined") await renderPanel(document, risuai, client);
+  };
   async function install() {
     await risuai.onUnload(async () => {
       client.dispose();
@@ -543,10 +834,13 @@
     await risuai.addRisuReplacer("beforeRequest", client.beforeRequest);
     await risuai.addRisuReplacer("afterRequest", client.afterRequest);
     await risuai.addProvider(PROVIDER, client.provider);
+    if (typeof risuai.registerSetting === "function") {
+      await risuai.registerSetting("SAGA", openUi, SAGA_ICON, "html");
+    }
     if (typeof risuai.registerButton === "function") {
       await risuai.registerButton(
-        { name: "SAGA Hook 토글", icon: "🎲", iconType: "none", location: "hamburger", id: "saga-hook-toggle" },
-        () => { void client.toggleChatHook(); },
+        { name: "SAGA", icon: SAGA_ICON, iconType: "html", location: "chat", id: "saga-panel" },
+        openUi,
       );
     }
   }
