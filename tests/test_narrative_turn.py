@@ -345,3 +345,86 @@ def test_exported_risu_turn_schema_matches_model():
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         **TurnRequest.model_json_schema(),
     }
+
+
+def test_intent_context_endpoint_is_readonly_and_detects_commands_and_reroll(tmp_path):
+    import sqlite3
+
+    repo, dice, intent, client = setup(tmp_path)
+
+    def world_count() -> int:
+        with sqlite3.connect(repo.path) as conn:
+            return int(conn.execute("SELECT count(*) FROM worlds").fetchone()[0])
+
+    # 1. Explicit command -> is_command=True, does not create a world
+    cmd_res = client.post("/v1/saga/intent-context", json=turn_request(("u1", "attack opponent")))
+    assert cmd_res.status_code == 200, cmd_res.text
+    assert cmd_res.json() == {
+        "already_committed": False,
+        "is_command": True,
+        "system_instruction": None,
+        "context": None,
+    }
+    assert world_count() == 0
+
+    # 2. New natural-language turn -> grounded context without creating a world
+    nl_body = turn_request(("u1", "상대를 검으로 베어 공격한다."))
+    ctx_res = client.post("/v1/saga/intent-context", json=nl_body)
+    assert ctx_res.status_code == 200, ctx_res.text
+    ctx_data = ctx_res.json()
+    assert ctx_data["already_committed"] is False
+    assert ctx_data["is_command"] is False
+    assert "attack" in ctx_data["context"]["actions"]
+    assert "opponent" in ctx_data["context"]["actors"]
+    assert world_count() == 0
+
+    # 3. Commit the turn via /v1/saga/turn -> subsequent intent-context reports already_committed
+    commit_res = client.post(
+        "/v1/saga/turn",
+        json=turn_request(
+            ("u1", "상대를 검으로 베어 공격한다."),
+            client_proposal={
+                "kind": "attack",
+                "payload": {"target_id": "opponent", "advantage": False, "disadvantage": False},
+            },
+        ),
+    )
+    assert commit_res.status_code == 200, commit_res.text
+    assert len(commit_res.json()["saga"]["rolls"]) >= 1
+
+    reroll_ctx = client.post("/v1/saga/intent-context", json=nl_body)
+    assert reroll_ctx.status_code == 200, reroll_ctx.text
+    assert reroll_ctx.json()["already_committed"] is True
+
+
+def test_intent_only_env_enables_status_and_ui_intent_llm_override_rejects_bad_url(
+    tmp_path, monkeypatch
+):
+    from fastapi.testclient import TestClient
+
+    from saga_trpg.api.app import create_app
+
+    monkeypatch.setenv("TRPG_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("SAGA_LLM_BASE_URL", "https://openrouter.ai/api/v1")
+    monkeypatch.delenv("SAGA_NARRATOR_MODEL", raising=False)
+    monkeypatch.setenv("SAGA_INTENT_MODEL", "google/gemini-2.5-flash")
+    app = create_app()
+    with TestClient(app) as client:
+        status = client.get("/v1/saga/status")
+        assert status.status_code == 200
+        assert status.json() == {
+            "status": "ok",
+            "intent_configured": True,
+            "narrator_configured": False,
+        }
+        bad = client.post(
+            "/v1/saga/turn",
+            json={
+                **turn_request(("u1", "상대를 공격한다.")),
+                "intent_llm": {
+                    "base_url": "http://169.254.169.254/latest/meta-data",
+                    "model": "x",
+                },
+            },
+        )
+        assert bad.status_code == 422

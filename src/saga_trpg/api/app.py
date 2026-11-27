@@ -16,6 +16,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
+from saga_trpg.adapters.narrator.fallback import FallbackNarrator
 from saga_trpg.adapters.narrator.openai_compat import OpenAICompatConfig
 from saga_trpg.adapters.risu.openai_proxy import RisuBridge
 from saga_trpg.adapters.risu.openai_proxy import router as risu_router
@@ -310,14 +311,15 @@ def create_app(
         openai_intent = None
         llm_base_url = os.getenv("SAGA_LLM_BASE_URL", "").strip()
         narrator_model = os.getenv("SAGA_NARRATOR_MODEL", "").strip()
-        if llm_base_url and narrator_model:
+        intent_model = os.getenv("SAGA_INTENT_MODEL", "").strip() or None
+        if llm_base_url and (narrator_model or intent_model):
             from saga_trpg.adapters.intent.openai_compat import OpenAICompatIntentTool
             from saga_trpg.adapters.narrator.openai_compat import OpenAICompatNarrator
 
-            intent_model = os.getenv("SAGA_INTENT_MODEL", "").strip() or None
+            effective_model = narrator_model or intent_model or ""
             server_llm_config = OpenAICompatConfig.from_values(
                 base_url=llm_base_url,
-                narrator_model=narrator_model,
+                narrator_model=effective_model,
                 api_key=os.getenv("SAGA_LLM_API_KEY") or None,
                 intent_model=intent_model,
                 timeout_seconds=float(os.getenv("SAGA_LLM_TIMEOUT_SECONDS", "45")),
@@ -325,12 +327,21 @@ def create_app(
                 custom_headers=os.getenv("SAGA_LLM_CUSTOM_HEADERS") or None,
                 custom_body=os.getenv("SAGA_LLM_CUSTOM_BODY") or None,
             )
-            narrator = OpenAICompatNarrator(server_llm_config)
+            if narrator_model:
+                narrator = OpenAICompatNarrator(server_llm_config)
             if intent_model or os.getenv("SAGA_OPENAI_INTENT", "").strip() in ("1", "true", "yes"):
                 openai_intent = OpenAICompatIntentTool(server_llm_config)
         risu_bridge = RisuBridge(
             worlds, narrator=narrator, memory=memory, openai_intent=openai_intent
         )
+
+    @app.get("/v1/saga/status")
+    async def saga_status() -> dict[str, Any]:
+        return {
+            "status": "ok",
+            "intent_configured": risu_bridge.openai_intent is not None,
+            "narrator_configured": not isinstance(risu_bridge.narrator, FallbackNarrator),
+        }
 
     @app.post("/v1/saga/convert")
     async def convert_card(request: CardConvertRequest) -> dict[str, Any]:
