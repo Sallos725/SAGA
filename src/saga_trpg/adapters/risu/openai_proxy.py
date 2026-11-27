@@ -6,7 +6,8 @@ import asyncio
 import base64
 import contextlib
 import logging
-from typing import Annotated, Literal
+from dataclasses import dataclass
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Header
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
@@ -27,7 +28,7 @@ from saga_trpg.adapters.storage.sqlite import (
     RepositoryNotFound,
     SQLiteWorldRepository,
 )
-from saga_trpg.domain.events import GameEvent
+from saga_trpg.domain.events import NARRATIVE_TURN_KIND, GameEvent, NarrativeTurnPayload
 from saga_trpg.domain.maps import scene_text
 from saga_trpg.domain.models import WorldState
 from saga_trpg.domain.tools import ToolCall
@@ -70,7 +71,7 @@ class RulebookAttachment(ClosedModel):
 
 
 class HostTurn(ClosedModel):
-    schema_version: Literal[1, 2, 3]
+    schema_version: Literal[1, 2, 3, 4]
     host_instance_id: Identity
     chat_id: Identity
     actor_id: Literal["player"]
@@ -86,6 +87,20 @@ class HostTurn(ClosedModel):
         if self.actions[-1].context_hidden:
             raise ValueError("the latest user action is hidden; restore its visibility first")
         return self
+
+
+class ClientProposal(ClosedModel):
+    """Untrusted event proposal (e.g. from RisuAI aux model); always re-validated by SAGA."""
+
+    kind: str = Field(min_length=1, max_length=80)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class TurnRequest(ClosedModel):
+    """Hook-mode adjudication request: commits authoritative state without SAGA narration."""
+
+    saga: HostTurn
+    client_proposal: ClientProposal | None = None
 
 
 class ChatMessage(ClosedModel):
@@ -195,6 +210,98 @@ class CommandInterpreter:
         return canonical_command(actor_id=actor_id, text=text, spec=spec)
 
 
+@dataclass
+class CommittedTurn:
+    schema_version: int
+    identity_version: int
+    legacy_read_only: bool
+    world_id: str
+    branch_id: str
+    event_id: str
+    replayed: bool
+    entry: JournalEntry
+    spec: RulebookSpec
+    display: dict[str, Any]
+    scene: str | None
+    memories: list[MemoryHit]
+
+    def prompt_block(self) -> str:
+        """Read-only authoritative context for Hook mode (ADR 0009/0010).
+
+        Never includes full map data or raw actor locations/visited_rooms; exposes only the
+        player's known-map projection (`scene`), committed turn facts/rolls, and display lines."""
+        event = self.entry.committed.event
+        result = self.entry.result
+        lines = [
+            "[SAGA Authoritative State — Read-Only]",
+            "Treat the committed facts, rolls, status, and known map below as ground truth.",
+            "Never invent dice rolls, damage, item changes, or state mutations.",
+            "Never narrate arriving in another room unless a move event was committed this turn.",
+            f"Turn event: {event.kind} (actor={event.actor_id}, seq={self.entry.committed.seq})",
+        ]
+        if result.facts:
+            lines.append("Committed facts: " + "; ".join(result.facts))
+        if result.rolls:
+            rolls = ", ".join(
+                f"{roll.roll_key}={roll.total} ({roll.expression}: {roll.raw})"
+                for roll in result.rolls
+            )
+            lines.append("Rolls: " + rolls)
+        if result.resolution is not None:
+            res = result.resolution
+            summary = f"{res.outcome} (total {res.total} vs target {res.target})"
+            if res.damage is not None:
+                summary += f", damage {res.damage}"
+            if res.pending_adjudication:
+                summary += ", cost pending adjudication"
+            lines.append("Resolution: " + summary)
+        status_lines: list[str] = []
+        for actor in self.display.get("actors", ()):
+            items = actor.get("items") or []
+            if items:
+                status_lines.append(f"{actor['id']}: {' · '.join(items)}")
+        for record in self.display.get("records", ()):
+            items = record.get("items") or []
+            if items:
+                status_lines.append(f"{record['label']}: {', '.join(items)}")
+        for item in self.display.get("world", ()):
+            status_lines.append(str(item))
+        if status_lines:
+            lines.append("Current status:")
+            lines.extend(f"- {item}" for item in status_lines)
+        if self.scene:
+            lines.append(
+                "Known map (describe nothing beyond visited rooms or behind ??? exits):\n"
+                + self.scene
+            )
+        if self.memories:
+            lines.append(
+                "Recalled memory (non-authoritative story context; never override state):\n"
+                + "\n".join(hit.text for hit in self.memories)
+            )
+        return "\n".join(lines)
+
+    def saga_payload(self, *, include_prompt_block: bool = False) -> dict:
+        data = {
+            "schema_version": self.schema_version,
+            "identity_version": self.identity_version,
+            "legacy_read_only": self.legacy_read_only,
+            "world_id": self.world_id,
+            "branch_id": self.branch_id,
+            "event_id": self.event_id,
+            "seq": self.entry.committed.seq,
+            "replayed": self.replayed,
+            # Footer lines rendered from the rulebook's display declaration; the host
+            # prints them without knowing what a stat or a record means.
+            "display": self.display,
+            **self.entry.result.model_dump(mode="json"),
+        }
+        if include_prompt_block:
+            data["scene"] = self.scene
+            data["prompt_block"] = self.prompt_block()
+        return data
+
+
 class RisuBridge:
     def __init__(
         self,
@@ -211,8 +318,8 @@ class RisuBridge:
         self.memory = memory or NullMemory()
 
     @staticmethod
-    def world_id_for(turn: HostTurn, *, version: Literal[1, 2, 3] | None = None) -> str:
-        version = version or (3 if turn.schema_version == 3 else 2)
+    def world_id_for(turn: HostTurn, *, version: Literal[1, 2, 3, 4] | None = None) -> str:
+        version = version or (turn.schema_version if turn.schema_version in (3, 4) else 2)
         world_version = 1 if version == 1 else 2
         return "risu-" + stable_value_hash(
             [f"saga-risu-v{world_version}", turn.host_instance_id, turn.chat_id]
@@ -222,10 +329,10 @@ class RisuBridge:
     def identities(
         turn: HostTurn,
         *,
-        version: Literal[1, 2, 3] | None = None,
+        version: Literal[1, 2, 3, 4] | None = None,
         spec: RulebookSpec = DEFAULT_SPEC,
     ) -> tuple[str, list[str]]:
-        version = version or (3 if turn.schema_version == 3 else 2)
+        version = version or (turn.schema_version if turn.schema_version in (3, 4) else 2)
         world_id = RisuBridge.world_id_for(turn, version=version)
         identities = []
         parent = None
@@ -233,7 +340,7 @@ class RisuBridge:
             content: str | dict = action.text
             action_version = version
             if version != 1:
-                event = command_for(action, turn.actor_id, natural=version == 3, spec=spec)
+                event = command_for(action, turn.actor_id, natural=version in (3, 4), spec=spec)
                 if event is None:
                     content = {
                         "kind": "natural_language",
@@ -311,6 +418,8 @@ class RisuBridge:
         turn: HostTurn,
         parent: JournalEntry | None,
         vertex: VertexNarrator,
+        *,
+        allow_narrative_fallback: bool = False,
     ) -> GameEvent:
         initial = self._ensure_world(world_id, DEFAULT_SPEC)
         # A branch head can move while inference runs. Only the verified committed prefix
@@ -343,7 +452,12 @@ class RisuBridge:
         except (TimeoutError, ToolExecutionPending):
             # Cancellation does not revoke a durable claim or allow another remote attempt.
             raise ToolExecutionPending(PENDING) from None
-        return event_from_result(execution.result, call.arguments)
+        try:
+            return event_from_result(execution.result, call.arguments)
+        except ValueError:
+            if allow_narrative_fallback:
+                return GameEvent(kind=NARRATIVE_TURN_KIND, actor_id=turn.actor_id, payload={})
+            raise
 
     def _read_prefix(self, world_id: str, identities: list[str]) -> tuple[str, JournalEntry] | None:
         """The committed latest action and its branch, verified against the whole prefix."""
@@ -457,17 +571,13 @@ class RisuBridge:
             logger.warning("memory recall failed; narrating without memories")
             return []
 
-    async def complete(
-        self, request: CompletionRequest, *, vertex_credentials: SecretStr | None = None
-    ) -> dict:
-        if (request.narration is None) != (vertex_credentials is None):
-            raise ValueError(
-                "Vertex narration requires its configuration and service-account JSON."
-            )
-        narrator = (
-            VertexNarrator(vertex_credentials) if vertex_credentials is not None else self.narrator
-        )
-        turn = request.saga
+    async def commit_turn(
+        self,
+        turn: HostTurn,
+        *,
+        vertex_narrator: VertexNarrator | None = None,
+        client_proposal: ClientProposal | None = None,
+    ) -> CommittedTurn:
         replayed = True
         spec = DEFAULT_SPEC
         legacy_world, legacy_ids = self.identities(turn, version=1)
@@ -493,7 +603,7 @@ class RisuBridge:
                 )
             spec = self._spec_for(self.world_id_for(turn), turn)
             world_id, identities = self.identities(turn, spec=spec)
-            if turn.schema_version == 3 and any(
+            if turn.schema_version in (3, 4) and any(
                 command_for(action, turn.actor_id, natural=True, spec=spec) is None
                 for action in turn.actions
             ):
@@ -518,26 +628,50 @@ class RisuBridge:
                     "changed user turn and generate there before adding later actions."
                 )
             expected = command_for(
-                turn.actions[-1], turn.actor_id, natural=turn.schema_version == 3, spec=spec
+                turn.actions[-1],
+                turn.actor_id,
+                natural=turn.schema_version in (3, 4),
+                spec=spec,
             )
             if expected is None:
-                if spec.id != DEFAULT_SPEC.id:
-                    raise ValueError(
-                        "Natural-language actions are only interpreted for the SRD demo "
-                        f"rulebook; use this rulebook's commands. {supported_commands(spec)}"
+                if turn.schema_version == 4:
+                    if client_proposal is not None:
+                        proposed = GameEvent(
+                            kind=client_proposal.kind,
+                            actor_id=turn.actor_id,
+                            payload=client_proposal.payload,
+                        )
+                    elif vertex_narrator is not None and spec.id == DEFAULT_SPEC.id:
+                        proposed = await self._natural_intent(
+                            world_id,
+                            identities,
+                            turn,
+                            parent[1] if parent else None,
+                            vertex_narrator,
+                            allow_narrative_fallback=True,
+                        )
+                    else:
+                        proposed = GameEvent(
+                            kind=NARRATIVE_TURN_KIND, actor_id=turn.actor_id, payload={}
+                        )
+                else:
+                    if spec.id != DEFAULT_SPEC.id:
+                        raise ValueError(
+                            "Natural-language actions are only interpreted for the SRD demo "
+                            f"rulebook; use this rulebook's commands. {supported_commands(spec)}"
+                        )
+                    if vertex_narrator is None:
+                        raise ValueError(
+                            "자연어 행동에는 Vertex 서비스 계정 JSON이 필요합니다. "
+                            "명령은 키 없이 사용할 수 있습니다."
+                        )
+                    proposed = await self._natural_intent(
+                        world_id,
+                        identities,
+                        turn,
+                        parent[1] if parent else None,
+                        vertex_narrator,
                     )
-                if vertex_credentials is None:
-                    raise ValueError(
-                        "자연어 행동에는 Vertex 서비스 계정 JSON이 필요합니다. "
-                        "명령은 키 없이 사용할 수 있습니다."
-                    )
-                proposed = await self._natural_intent(
-                    world_id,
-                    identities,
-                    turn,
-                    parent[1] if parent else None,
-                    narrator,
-                )
             else:
                 arguments = {
                     "world_id": world_id,
@@ -548,9 +682,18 @@ class RisuBridge:
                     arguments["spec"] = spec
                 proposed = await self.interpreter.interpret(**arguments)
                 proposed = GameEvent.model_validate(proposed.model_dump())
-            # Natural-language proposals stay limited to SRD roll actions; commands cover the
+            # Natural-language proposals stay limited to SRD roll actions under v3; v4 allows
+            # validated rulebook actions or a state-neutral narrative_turn; commands cover the
             # whole rulebook.
-            allowed = rules_for(spec).payload_models if expected is not None else ROLL_ACTIONS
+            if expected is not None:
+                allowed = rules_for(spec).payload_models
+            elif turn.schema_version == 4:
+                allowed = {
+                    **rules_for(spec).payload_models,
+                    NARRATIVE_TURN_KIND: NarrativeTurnPayload,
+                }
+            else:
+                allowed = ROLL_ACTIONS
             payload_model = allowed.get(proposed.kind)
             if payload_model is None or proposed.actor_id != turn.actor_id:
                 raise ValueError("intent must select a supported action for the identified actor")
@@ -609,13 +752,55 @@ class RisuBridge:
             if self._is_head(world_id, branch_id, saved)
             else []
         )
-        narration = NarrationRequest(
+        return CommittedTurn(
+            schema_version=turn.schema_version,
+            identity_version=identity_version,
+            legacy_read_only=legacy_exists,
             world_id=world_id,
+            branch_id=branch_id,
+            event_id=event_id,
+            replayed=replayed,
+            entry=saved,
+            spec=spec,
+            display=render_display(spec, saved.result.state, viewer=turn.actor_id),
+            scene=scene_text(saved.result.state, turn.actor_id),
+            memories=memories,
+        )
+
+    async def adjudicate(
+        self, request: TurnRequest, *, vertex_credentials: SecretStr | None = None
+    ) -> dict:
+        """Hook-mode turn commit: returns authoritative result and read-only prompt block."""
+        vertex_narrator = (
+            VertexNarrator(vertex_credentials) if vertex_credentials is not None else None
+        )
+        committed = await self.commit_turn(
+            request.saga,
+            vertex_narrator=vertex_narrator,
+            client_proposal=request.client_proposal,
+        )
+        return {"saga": committed.saga_payload(include_prompt_block=True)}
+
+    async def complete(
+        self, request: CompletionRequest, *, vertex_credentials: SecretStr | None = None
+    ) -> dict:
+        if (request.narration is None) != (vertex_credentials is None):
+            raise ValueError(
+                "Vertex narration requires its configuration and service-account JSON."
+            )
+        vertex_narrator = (
+            VertexNarrator(vertex_credentials) if vertex_credentials is not None else None
+        )
+        narrator = vertex_narrator if vertex_narrator is not None else self.narrator
+        committed = await self.commit_turn(request.saga, vertex_narrator=vertex_narrator)
+        saved = committed.entry
+        narration = NarrationRequest(
+            world_id=committed.world_id,
             event=saved.committed.event.model_copy(deep=True),
             result=saved.result.model_copy(deep=True),
-            memories=memories,
+            memories=committed.memories,
             recent_dialogue=request.narration.context if request.narration else [],
-            scene=scene_text(saved.result.state, turn.actor_id),
+            scene=committed.scene,
         )
         try:
             prose = await narrator.render(narration)
@@ -625,16 +810,15 @@ class RisuBridge:
             logger.warning("Risu narrator failed after commit; using recorded facts")
             prose = await FallbackNarrator().render(
                 NarrationRequest(
-                    world_id=world_id,
+                    world_id=committed.world_id,
                     event=saved.committed.event.model_copy(deep=True),
                     result=saved.result.model_copy(deep=True),
                 )
             )
             if request.narration:
                 prose += "\n\n모델 서술에 실패하여 확정된 기본 서술을 표시합니다."
-        result = saved.result.model_dump(mode="json")
         return {
-            "id": "chatcmpl-" + event_id,
+            "id": "chatcmpl-" + committed.event_id,
             "object": "chat.completion",
             "created": 0,
             "model": request.model,
@@ -645,41 +829,42 @@ class RisuBridge:
                     "finish_reason": "stop",
                 }
             ],
-            "saga": {
-                "schema_version": turn.schema_version,
-                "identity_version": identity_version,
-                "legacy_read_only": legacy_exists,
-                "world_id": world_id,
-                "branch_id": branch_id,
-                "event_id": event_id,
-                "seq": saved.committed.seq,
-                "replayed": replayed,
-                # Footer lines rendered from the rulebook's display declaration; the host
-                # prints them without knowing what a stat or a record means.
-                "display": render_display(spec, saved.result.state, viewer=turn.actor_id),
-                **result,
-            },
+            "saga": committed.saga_payload(),
         }
+
+
+def _decode_vertex_secret(vertex_secret: SecretStr | None) -> SecretStr | None:
+    if vertex_secret is None:
+        return None
+    try:
+        encoded = vertex_secret.get_secret_value()
+        if not 1 <= len(encoded) <= 24000:
+            raise ValueError
+        return SecretStr(base64.b64decode(encoded, validate=True).decode("utf-8"))
+    except Exception:
+        raise ValueError("Vertex 서비스 계정 JSON을 확인하세요.") from None
 
 
 def router(bridge: RisuBridge) -> APIRouter:
     routes = APIRouter()
+
+    @routes.post("/v1/saga/turn")
+    async def adjudicate_turn(
+        request: TurnRequest,
+        vertex_secret: Annotated[SecretStr | None, Header(alias="x-saga-vertex-secret")] = None,
+    ) -> dict:
+        return await bridge.adjudicate(
+            request, vertex_credentials=_decode_vertex_secret(vertex_secret)
+        )
 
     @routes.post("/v1/chat/completions")
     async def complete(
         request: CompletionRequest,
         vertex_secret: Annotated[SecretStr | None, Header(alias="x-saga-vertex-secret")] = None,
     ) -> dict:
-        credentials = None
-        if vertex_secret is not None:
-            try:
-                encoded = vertex_secret.get_secret_value()
-                if not 1 <= len(encoded) <= 24000:
-                    raise ValueError
-                credentials = SecretStr(base64.b64decode(encoded, validate=True).decode("utf-8"))
-            except Exception:
-                raise ValueError("Vertex 서비스 계정 JSON을 확인하세요.") from None
-        return await bridge.complete(request, vertex_credentials=credentials)
+        return await bridge.complete(
+            request, vertex_credentials=_decode_vertex_secret(vertex_secret)
+        )
 
     @routes.get("/v1/models")
     async def models() -> dict:

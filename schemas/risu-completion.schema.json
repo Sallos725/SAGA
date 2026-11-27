@@ -106,7 +106,8 @@
           "enum": [
             1,
             2,
-            3
+            3,
+            4
           ],
           "title": "Schema Version",
           "type": "integer"

@@ -55,10 +55,10 @@ def create_app(
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request: Request, exc: RequestValidationError):
         # FastAPI's default error includes input values, including malformed credentials.
-        if request.url.path == "/v1/chat/completions":
+        if request.url.path in ("/v1/chat/completions", "/v1/saga/turn"):
             return JSONResponse(
                 status_code=422,
-                content={"detail": "SAGA 요청의 식별자·명령·Vertex 설정 형식을 확인하세요."},
+                content={"detail": "SAGA 요청의 식별자·명령·설정 형식을 확인하세요."},
             )
         return await request_validation_exception_handler(request, exc)
 
