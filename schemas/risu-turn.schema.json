@@ -98,6 +98,17 @@
           ],
           "default": null
         },
+        "scenario": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScenarioAttachment"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "schema_version": {
           "enum": [
             1,
@@ -135,6 +146,23 @@
         "content"
       ],
       "title": "RulebookAttachment",
+      "type": "object"
+    },
+    "ScenarioAttachment": {
+      "additionalProperties": false,
+      "description": "A scenario carried by a RisuAI scenario card/module; seeds a world on creation (M2).",
+      "properties": {
+        "content": {
+          "maxLength": 2000000,
+          "minLength": 2,
+          "title": "Content",
+          "type": "string"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "title": "ScenarioAttachment",
       "type": "object"
     }
   },

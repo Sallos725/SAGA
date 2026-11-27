@@ -25,8 +25,10 @@ from saga_trpg.domain.models import ActorState, WorldState
 from saga_trpg.domain.rulesets import CreateWorldRequest, RulesetContext, RulesetManifest
 from saga_trpg.modules.catalog import COMMON_BOT_DESCRIPTION
 from saga_trpg.ports.tools import ToolExecutionPending, ToolIdentityConflict
+from saga_trpg.rulebooks.engine import DataRules
 from saga_trpg.rulebooks.loader import RulebookError
 from saga_trpg.rulebooks.risu_module import sha256_text
+from saga_trpg.rulebooks.scenarios import build_scenario_world, parse_scenario
 from saga_trpg.runtime.engine import IdempotencyConflict
 from saga_trpg.runtime.journal import JournalEntry
 from saga_trpg.runtime.replay import ReplayError
@@ -150,7 +152,13 @@ def create_app(
     @app.post("/worlds/{world_id}", status_code=201)
     def create_world(world_id: str, request: CreateWorldRequest) -> WorldState:
         definition = worlds.registry.get(request.ruleset_id, request.ruleset_version)
-        initial = definition.example_world(world_id)
+        if request.scenario is not None:
+            rulebook = definition.rules.spec if isinstance(definition.rules, DataRules) else None
+            initial = build_scenario_world(
+                parse_scenario(request.scenario), world_id, rulebook=rulebook
+            )
+        else:
+            initial = definition.example_world(world_id)
         worlds.create_world(
             initial,
             ruleset_id=request.ruleset_id,

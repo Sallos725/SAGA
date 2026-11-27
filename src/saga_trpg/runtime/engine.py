@@ -3,12 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from saga_trpg.domain.events import (
+    ADJUDICATE_ACTION_KIND,
     NARRATIVE_TURN_KIND,
+    AdjudicateActionPayload,
     CommittedEvent,
     GameEvent,
     NarrativeTurnPayload,
 )
-from saga_trpg.domain.models import RuleResult, WorldState
+from saga_trpg.domain.models import RuleResolution, RuleResult, WorldState
 from saga_trpg.modules.base import RuleModule
 from saga_trpg.ports.dice import DicePort
 from saga_trpg.runtime.hashing import stable_model_hash
@@ -89,6 +91,8 @@ class RuntimeEngine:
                 trace=[f"runtime:{NARRATIVE_TURN_KIND} actor={event.actor_id}"],
                 resolution=None,
             )
+        elif event.kind == ADJUDICATE_ACTION_KIND:
+            result = self._apply_adjudicate_action(working, event)
         else:
             result = self.rules.apply(state=working, event=event, dice=self.dice)
         result.state.seq = next_seq
@@ -108,6 +112,92 @@ class RuntimeEngine:
         self.journal.append(entry)
         self.state = result.state.model_copy(deep=True)
         return DispatchOutcome(entry=entry, replayed=False)
+
+    def _apply_adjudicate_action(self, working: WorldState, event: GameEvent) -> RuleResult:
+        payload = AdjudicateActionPayload.model_validate(event.payload)
+        if event.actor_id not in working.actors:
+            raise ValueError(f"unknown actor: {event.actor_id}")
+        assert event.event_id is not None
+        if payload.mode == "impossible":
+            reason = f": {payload.reason}" if payload.reason else ""
+            return RuleResult(
+                state=working,
+                facts=[f"{event.actor_id} cannot perform '{payload.description}'{reason}"],
+                rolls=[],
+                patches=[],
+                trace=[f"runtime:{ADJUDICATE_ACTION_KIND} mode=impossible actor={event.actor_id}"],
+                resolution=None,
+            )
+        if payload.mode == "auto_success":
+            reason = f" ({payload.reason})" if payload.reason else ""
+            facts = [f"{event.actor_id} succeeds without a roll: {payload.description}{reason}"]
+            if payload.stakes:
+                facts.append(f"Stakes: {payload.stakes}")
+            return RuleResult(
+                state=working,
+                facts=facts,
+                rolls=[],
+                patches=[],
+                trace=[
+                    f"runtime:{ADJUDICATE_ACTION_KIND} mode=auto_success actor={event.actor_id}"
+                ],
+                resolution=None,
+            )
+        assert payload.difficulty is not None
+        if payload.dice_expression == "1d20" and payload.advantage != payload.disadvantage:
+            r0 = self.dice.roll(
+                world_id=working.world_id,
+                event_id=event.event_id,
+                roll_key="adjudicate:0",
+                expression="1d20",
+            )
+            r1 = self.dice.roll(
+                world_id=working.world_id,
+                event_id=event.event_id,
+                roll_key="adjudicate:1",
+                expression="1d20",
+            )
+            chosen = (
+                r0 if (r0.total >= r1.total if payload.advantage else r0.total <= r1.total) else r1
+            )
+            rolls = [r0, r1]
+        else:
+            r0 = self.dice.roll(
+                world_id=working.world_id,
+                event_id=event.event_id,
+                roll_key="adjudicate:0",
+                expression=payload.dice_expression,
+            )
+            chosen = r0
+            rolls = [r0]
+        total = chosen.total + payload.modifier
+        outcome = "success" if total >= payload.difficulty else "failure"
+        ability_note = f" [{payload.ability}]" if payload.ability else ""
+        facts = [
+            f"{event.actor_id} attempts '{payload.description}'{ability_note}: "
+            f"{outcome} ({total} vs DC {payload.difficulty})"
+        ]
+        if payload.stakes:
+            facts.append(f"Stakes: {payload.stakes}")
+        if payload.reason:
+            facts.append(f"Basis: {payload.reason}")
+        return RuleResult(
+            state=working,
+            facts=facts,
+            rolls=rolls,
+            patches=[],
+            trace=[
+                f"runtime:{ADJUDICATE_ACTION_KIND} mode=check actor={event.actor_id} "
+                f"expr={payload.dice_expression} mod={payload.modifier:+d} "
+                f"total={total} target={payload.difficulty} outcome={outcome}"
+            ],
+            resolution=RuleResolution(
+                outcome=outcome,
+                total=total,
+                target=payload.difficulty,
+                pending_adjudication=False,
+            ),
+        )
 
     def get_event(self, event_id: str) -> JournalEntry | None:
         return self.journal.find_by_event_id(event_id)

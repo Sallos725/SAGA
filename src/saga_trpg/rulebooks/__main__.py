@@ -18,6 +18,12 @@ from saga_trpg.rulebooks.charx import build_card_v3, write_charx
 from saga_trpg.rulebooks.loader import RulebookError, load_rulebook
 from saga_trpg.rulebooks.risu_module import build_module
 from saga_trpg.rulebooks.risum import RPackError, RPackMap, extract_rpack_map, write_risum
+from saga_trpg.rulebooks.scenarios import (
+    ScenarioError,
+    build_scenario_module,
+    load_scenario,
+    scenario_problems,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -41,7 +47,49 @@ def main(argv: list[str] | None = None) -> int:
     charx.add_argument("--rpack-map", required=False)
     charx.add_argument("--icon", help="PNG to use as the main icon (default: placeholder)")
     charx.add_argument("--out", help="output file (default: <card>.charx)")
+    check_sc = commands.add_parser(
+        "check-scenario", help="validate a scenario JSON (optionally against a rulebook)"
+    )
+    check_sc.add_argument("path")
+    check_sc.add_argument("--rulebook", required=False, help="rulebook JSON to cross-check")
+    sc_mod = commands.add_parser(
+        "scenario-module", help="write a RisuAI module JSON carrying a scenario"
+    )
+    sc_mod.add_argument("path")
+    sc_mod.add_argument("--out", help="output file (default: <scenario>.module.json)")
     args = parser.parse_args(argv)
+    if args.command == "check-scenario":
+        try:
+            scenario = load_scenario(args.path)
+            rulebook = load_rulebook(args.rulebook) if args.rulebook else None
+            problems = scenario_problems(scenario, rulebook)
+            if problems:
+                raise ScenarioError("; ".join(problems))
+        except (ScenarioError, RulebookError) as exc:
+            print("scenario problems:", file=sys.stderr)
+            for problem in str(exc).split("; "):
+                print(f"  - {problem}", file=sys.stderr)
+            return 1
+        print(f"{scenario.id}@{scenario.version}: {scenario.title}")
+        print(f"  actors: {', '.join(scenario.actors)}")
+        if scenario.map is not None:
+            kind = "generated" if scenario.map.generate else f"{len(scenario.map.rooms)} rooms"
+            print(f"  map: {kind}")
+        return 0
+    if args.command == "scenario-module":
+        try:
+            text = Path(args.path).read_text(encoding="utf-8")
+            scenario = load_scenario(args.path)
+            module_data = build_scenario_module(text)
+        except (OSError, ScenarioError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        out = Path(args.out) if args.out else Path(args.path).with_suffix(".module.json")
+        out.write_text(
+            json.dumps(module_data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        print(f"{scenario.id}@{scenario.version} -> {out}")
+        return 0
     if args.command == "rpack-map":
         try:
             table = extract_rpack_map(args.source)
