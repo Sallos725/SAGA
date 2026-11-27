@@ -4,6 +4,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+NARRATIVE_TURN_KIND = "narrative_turn"
+
+
+class NarrativeTurnPayload(BaseModel):
+    """Closed empty payload for a state-neutral narrative turn (ADR 0010)."""
+
+    model_config = ConfigDict(extra="forbid")
+
 
 class GameEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")

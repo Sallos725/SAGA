@@ -5,7 +5,7 @@ const vm = require("node:vm");
 const { test } = require("node:test");
 
 const source = fs.readFileSync(path.join(__dirname, "../packs/risu-starter/saga_provider.js"), "utf8");
-const sandbox = { console: { warn() {}, error() {} }, URL, TextEncoder, crypto: require("node:crypto").webcrypto, btoa: value => Buffer.from(value, "binary").toString("base64"), setTimeout, clearTimeout };
+const sandbox = { console: { warn() {}, error() {} }, URL, TextEncoder, TextDecoder, ReadableStream, crypto: require("node:crypto").webcrypto, btoa: value => Buffer.from(value, "binary").toString("base64"), setTimeout, clearTimeout };
 vm.runInNewContext(source, sandbox);
 const { createClient, snapshotOf } = sandbox.SagaRisu;
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -446,4 +446,166 @@ test("footer prints the backend's display lines when present and falls back othe
   f.reply = async () => ({ ok: true, status: 200, json: async () => base });
   const legacy = await f.send(await f.prepare());
   assert.match(legacy.content, /opponent<\/b> 22\/30/);
+});
+
+// --- M1 Slice 3: Hook mode (RisuAI main/aux models) & v4 SSE Provider streaming --------------
+
+function hookFixture() {
+  const f = fixture();
+  f.args.integration_mode = "hook";
+  f.reply = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      saga: {
+        schema_version: 4,
+        identity_version: 3,
+        legacy_read_only: false,
+        event_id: "event-hook-1",
+        seq: 1,
+        replayed: false,
+        rolls: [],
+        state: {
+          actors: {
+            player: { actor_id: "player", hp: 20, max_hp: 20 },
+            opponent: { actor_id: "opponent", hp: 30, max_hp: 30 },
+          },
+        },
+        display: { actors: [{ id: "player", items: ["20/20"] }], records: [], world: ["⏱ 0s"] },
+        prompt_block: "[SAGA Authoritative State — Read-Only]\nTurn event: narrative_turn",
+      },
+    }),
+  });
+  return f;
+}
+
+test("hook mode stays inactive on ordinary chats without a SAGA module or manual toggle", async () => {
+  const f = hookFixture();
+  const out = await f.prepare();
+  assert.deepEqual(out, f.prompt);
+  assert.equal(f.calls.length, 0);
+  const reply = await f.client.afterRequest("Ordinary RP reply.", "model");
+  assert.equal(reply, "Ordinary RP reply.");
+});
+
+test("hook mode auto-activates when a SAGA rulebook module is enabled and injects prompt + footer", async () => {
+  const f = hookFixture();
+  const rulebook = "{\"schema_version\": 1}";
+  const digest = require("node:crypto").createHash("sha256").update(rulebook, "utf8").digest("hex");
+  f.api.getCurrentLorebookEntries = () => [
+    { comment: "saga:rulebook:srd-5.2.1@0.6.0:" + digest, content: rulebook },
+  ];
+  const prompt = await f.prepare();
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.calls[0].url, "http://saga-runtime:4850/v1/saga/turn");
+  assert.equal(f.calls[0].body.saga.schema_version, 4);
+  assert.deepEqual(f.calls[0].body.saga.rulebook, { content: rulebook });
+  const injected = prompt.at(-1);
+  assert.equal(injected.role, "system");
+  assert.match(injected.content, /\[SAGA Hook Context\]/);
+  assert.match(injected.content, /Turn event: narrative_turn/);
+
+  const finalText = await f.client.afterRequest("Main model prose.", "model");
+  assert.match(finalText, /^Main model prose\.\n\n<div /);
+  assert.match(finalText, /event-hook-1/);
+  assert.match(finalText, /주사위 없음/);
+  // Auxiliary mode afterRequest is untouched.
+  assert.equal(await f.client.afterRequest("Summary", "submodel"), "Summary");
+});
+
+test("hook mode per-chat manual toggle activates only the toggled chat (default OFF)", async () => {
+  const f = hookFixture();
+  assert.equal(await f.client.isChatHookEnabled("chat-1"), false);
+  const toggled = await f.client.toggleChatHook();
+  assert.deepEqual(clone(toggled), { chatId: "chat-1", enabled: true });
+  assert.equal(await f.client.isChatHookEnabled("chat-1"), true);
+  assert.equal(await f.client.isChatHookEnabled("chat-2"), false);
+
+  const prompt = await f.prepare();
+  assert.equal(f.calls.length, 1);
+  assert.match(prompt.at(-1).content, /\[SAGA Hook Context\]/);
+
+  // Switching to another chat keeps hook OFF.
+  f.character.chats[0].id = "chat-2";
+  const other = await f.prepare();
+  assert.deepEqual(other, f.prompt);
+  assert.equal(f.calls.length, 1);
+});
+
+test("hook mode fails closed when the SAGA backend returns an error or is unreachable", async () => {
+  const f = hookFixture();
+  await f.client.setChatHookEnabled("chat-1", true);
+  f.reply = async () => ({
+    ok: false,
+    status: 503,
+    json: async () => ({ detail: "backend unavailable" }),
+  });
+  await assert.rejects(() => f.prepare(), /SAGA 판정 실패 \(503\)/);
+
+  f.reply = async () => { throw new Error("ECONNREFUSED"); };
+  await assert.rejects(() => f.prepare(), /ECONNREFUSED/);
+});
+
+test("hook mode optionally queries RisuAI submodel and forwards client_proposal to SAGA", async () => {
+  const f = hookFixture();
+  f.args.use_risu_aux_intent = "true";
+  await f.client.setChatHookEnabled("chat-1", true);
+  const auxCalls = [];
+  f.api.request = async opts => {
+    auxCalls.push(opts);
+    return { content: '{"kind": "attack", "payload": {"target_id": "opponent", "advantage": false, "disadvantage": false}}' };
+  };
+  await f.prepare();
+  assert.equal(auxCalls.length, 1);
+  assert.equal(auxCalls[0].mode, "submodel");
+  assert.equal(auxCalls[0].allowPlugins, false);
+  assert.deepEqual(f.calls[0].body.client_proposal, {
+    kind: "attack",
+    payload: { target_id: "opponent", advantage: false, disadvantage: false },
+  });
+});
+
+test("provider mode v4 streams SSE chunks with risu_prompt and appends authoritative footer", async () => {
+  const f = fixture();
+  f.args.provider_stream = "true";
+  f.prompt = [
+    { role: "system", content: "Preset system instructions" },
+    { role: "user", content: "attack opponent", memo: "u1" },
+  ];
+  const sseText =
+    'data: {"choices":[{"delta":{"content":"검이 "}}]}\n\n' +
+    'data: {"choices":[{"delta":{"content":"번쩍인다."}}]}\n\n' +
+    'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"saga":{"schema_version":4,"identity_version":2,"legacy_read_only":false,"event_id":"event-s1","seq":1,"replayed":false,"rolls":[{"expression":"1d20","raw":[15],"total":15}],"state":{"actors":{"player":{"actor_id":"player","hp":20,"max_hp":20},"opponent":{"actor_id":"opponent","hp":24,"max_hp":30}}}}}\n\n' +
+    "data: [DONE]\n\n";
+  f.reply = async () => ({
+    ok: true,
+    status: 200,
+    headers: { get: name => (name.toLowerCase() === "content-type" ? "text/event-stream" : null) },
+    body: new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(sseText));
+        controller.close();
+      },
+    }),
+  });
+
+  const result = await f.send(await f.prepare());
+  assert.equal(result.success, true);
+  assert.equal(f.calls[0].body.stream, true);
+  assert.equal(f.calls[0].body.saga.schema_version, 4);
+  assert.deepEqual(f.calls[0].body.risu_prompt, [
+    { role: "system", content: "Preset system instructions" },
+    { role: "user", content: "attack opponent" },
+  ]);
+  const reader = result.content.getReader();
+  const chunks = [];
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+  }
+  const full = chunks.join("");
+  assert.match(full, /^검이 번쩍인다\.\n\n<div /);
+  assert.match(full, /1d20 → \[15\] = 15/);
+  assert.match(full, /event-s1/);
 });

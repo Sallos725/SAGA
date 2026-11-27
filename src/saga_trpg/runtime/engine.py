@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from saga_trpg.domain.events import CommittedEvent, GameEvent
+from saga_trpg.domain.events import (
+    NARRATIVE_TURN_KIND,
+    CommittedEvent,
+    GameEvent,
+    NarrativeTurnPayload,
+)
 from saga_trpg.domain.models import RuleResult, WorldState
 from saga_trpg.modules.base import RuleModule
 from saga_trpg.ports.dice import DicePort
@@ -72,7 +77,20 @@ class RuntimeEngine:
 
         before_hash = stable_model_hash(self.state)
         working = self.state.model_copy(deep=True)
-        result: RuleResult = self.rules.apply(state=working, event=event, dice=self.dice)
+        if event.kind == NARRATIVE_TURN_KIND:
+            NarrativeTurnPayload.model_validate(event.payload)
+            if event.actor_id not in working.actors:
+                raise ValueError(f"unknown actor: {event.actor_id}")
+            result = RuleResult(
+                state=working,
+                facts=[f"{event.actor_id} takes a narrative turn"],
+                rolls=[],
+                patches=[],
+                trace=[f"runtime:{NARRATIVE_TURN_KIND} actor={event.actor_id}"],
+                resolution=None,
+            )
+        else:
+            result = self.rules.apply(state=working, event=event, dice=self.dice)
         result.state.seq = next_seq
         after_hash = stable_model_hash(result.state)
 

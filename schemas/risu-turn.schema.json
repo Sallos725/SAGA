@@ -1,0 +1,165 @@
+{
+  "$defs": {
+    "ClientProposal": {
+      "additionalProperties": false,
+      "description": "Untrusted event proposal (e.g. from RisuAI aux model); always re-validated by SAGA.",
+      "properties": {
+        "kind": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Kind",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "ClientProposal",
+      "type": "object"
+    },
+    "HostAction": {
+      "additionalProperties": false,
+      "properties": {
+        "context_hidden": {
+          "default": false,
+          "title": "Context Hidden",
+          "type": "boolean"
+        },
+        "message_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Message Id",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id",
+        "text"
+      ],
+      "title": "HostAction",
+      "type": "object"
+    },
+    "HostTurn": {
+      "additionalProperties": false,
+      "properties": {
+        "actions": {
+          "items": {
+            "$ref": "#/$defs/HostAction"
+          },
+          "maxItems": 256,
+          "minItems": 1,
+          "title": "Actions",
+          "type": "array"
+        },
+        "actor_id": {
+          "const": "player",
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "chat_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Chat Id",
+          "type": "string"
+        },
+        "host_instance_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Host Instance Id",
+          "type": "string"
+        },
+        "purpose": {
+          "const": "action",
+          "title": "Purpose",
+          "type": "string"
+        },
+        "rulebook": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RulebookAttachment"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "schema_version": {
+          "enum": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "host_instance_id",
+        "chat_id",
+        "actor_id",
+        "purpose",
+        "actions"
+      ],
+      "title": "HostTurn",
+      "type": "object"
+    },
+    "RulebookAttachment": {
+      "additionalProperties": false,
+      "description": "A rulebook carried by an enabled RisuAI module; pins a world when it is created.",
+      "properties": {
+        "content": {
+          "maxLength": 2000000,
+          "minLength": 2,
+          "title": "Content",
+          "type": "string"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "title": "RulebookAttachment",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Hook-mode adjudication request: commits authoritative state without SAGA narration.",
+  "properties": {
+    "client_proposal": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ClientProposal"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "saga": {
+      "$ref": "#/$defs/HostTurn"
+    }
+  },
+  "required": [
+    "saga"
+  ],
+  "title": "TurnRequest",
+  "type": "object"
+}
