@@ -1,5 +1,9 @@
 # Tasks
 
+Current product direction and active milestone focus (**M1 — RisuAI play foundation**,
+with NMOS live/visibility, MCP external dice, live RuleCheeseBench runs, and
+Presentation/TTS explicitly deferred) are recorded in [docs/DIRECTION.md](docs/DIRECTION.md).
+
 Active issue tracking is in Plane; see [the tracking checkpoint](docs/ISSUE_TRACKING.md).
 The checklist below is a repository summary and can lag newer progress reports.
 
