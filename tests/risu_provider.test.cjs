@@ -726,3 +726,66 @@ test("hook mode auto-activates for a SAGA scenario module, forwards saga.scenari
   assert.match(finalText, /⚖ hit \(21 vs 13, 피해 6\)/);
   assert.match(finalText, /Δ actors\.raider\.hp: 14 → 8/);
 });
+
+test("A2 convertCurrentCard forwards LLM custom params and setChatScenario auto-activates Hook mode", async () => {
+  const generatedScenario = {
+    schema_version: 1,
+    id: "abbey-card",
+    version: "0.1.0",
+    title: "안개 낀 수도원",
+    actors: { player: { hp: 20, max_hp: 20, stats: {} } },
+  };
+  const f = hookFixture();
+  f.reply = async () => {
+    const url = f.calls.at(-1)?.url || "";
+    if (url.endsWith("/v1/saga/convert")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ scenario: generatedScenario, mode: "llm", warnings: [] }),
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        saga: {
+          schema_version: 4,
+          identity_version: 3,
+          legacy_read_only: false,
+          event_id: "event-a2-1",
+          seq: 1,
+          replayed: false,
+          rolls: [],
+          state: { actors: { player: { actor_id: "player", hp: 20, max_hp: 20 } } },
+          display: { actors: [{ id: "player", items: ["20/20"] }], records: [], world: [] },
+          prompt_block: "[SAGA Authoritative State — Read-Only]",
+        },
+      }),
+    };
+  };
+
+  const converted = await f.client.convertCurrentCard({
+    mode: "backend",
+    useLlm: true,
+    llm: {
+      base_url: "https://openrouter.ai/api/v1",
+      model: "openai/gpt-5",
+      reasoning_effort: "high",
+      custom_headers: { "X-Title": "SAGA" },
+      custom_body: { temperature: 0.2 },
+    },
+  });
+  assert.equal(converted.mode, "llm");
+  assert.equal(f.calls.length, 1);
+  assert.ok(f.calls[0].url.endsWith("/v1/saga/convert"));
+  assert.equal(f.calls[0].body.llm.reasoning_effort, "high");
+  assert.deepEqual(clone(f.calls[0].body.llm.custom_headers), { "X-Title": "SAGA" });
+  assert.deepEqual(clone(f.calls[0].body.llm.custom_body), { temperature: 0.2 });
+
+  await f.client.setChatScenario("chat-1", JSON.stringify(generatedScenario));
+  await f.prepare();
+  assert.equal(f.calls.length, 2);
+  assert.ok(f.calls[1].url.endsWith("/v1/saga/turn"));
+  assert.deepEqual(JSON.parse(f.calls[1].body.saga.scenario.content), generatedScenario);
+});

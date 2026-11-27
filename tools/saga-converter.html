@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SAGA A2 — 카드 → 시나리오 변환기</title>
+  <style>
+    :root {
+      --bg: #0f131a;
+      --card: #171c26;
+      --surface: #1f2634;
+      --border: #2c3547;
+      --text: #e8edf5;
+      --muted: #98a4b8;
+      --accent: #5b8cff;
+      --accent-hover: #739eff;
+      --ok: #38b87c;
+      --warn: #e0a63b;
+      --err: #e05d6f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .wrap {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 20px 16px 48px;
+      display: grid;
+      gap: 16px;
+    }
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 14px;
+    }
+    header h1 { margin: 0; font-size: 20px; }
+    header p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      display: grid;
+      gap: 12px;
+    }
+    .panel h2 {
+      margin: 0;
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+    .dropzone {
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      padding: 24px 16px;
+      text-align: center;
+      background: var(--surface);
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .dropzone.dragover { border-color: var(--accent); background: #232d40; }
+    .dropzone strong { display: block; font-size: 14px; margin-bottom: 4px; }
+    .dropzone span { font-size: 12px; color: var(--muted); }
+    label.field { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+    input, select, textarea {
+      width: 100%;
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font: inherit;
+      font-size: 13px;
+    }
+    textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    button {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      padding: 8px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button.primary:hover { background: var(--accent-hover); }
+    button.danger { border-color: var(--err); color: #ffb3be; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .status {
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .status.ok { border-color: var(--ok); color: #9be8c2; }
+    .status.warn { border-color: var(--warn); color: #f6d58f; }
+    .status.err { border-color: var(--err); color: #ffb3be; }
+    .badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .badge.card { background: #1d3c2e; color: #86e6b5; }
+    .badge.inferred { background: #3d321c; color: #f4cd78; }
+    .badge.gm_confirmed { background: #1d2f4d; color: #9ec0ff; }
+    .item-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+    }
+    .muted { color: var(--muted); font-size: 12px; }
+    .hidden { display: none; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>SAGA A2 — 카드 · 로어북 → 시나리오 변환기</h1>
+        <p>기존 RisuAI 카드(.charx / .png / .json)를 SAGA 시나리오 초안과 PocketRisu 모듈로 변환합니다. API 키는 브라우저 메모리에만 유지됩니다.</p>
+      </div>
+      <div class="row">
+        <span id="cardSummaryBadge" class="badge gm_confirmed">카드 미선택</span>
+      </div>
+    </header>
+
+    <section class="panel">
+      <h2>1. 캐릭터 카드 불러오기 (.charx / .png / .json)</h2>
+      <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="카드 파일 선택 또는 드래그">
+        <strong>여기에 .charx / .png / .json 카드를 드래그하거나 클릭해서 선택하세요</strong>
+        <span>최대 16MB · 브라우저 로컬 파싱(업로드 없음) · CCv2 / CCv3 / PocketRisu JSON 지원</span>
+        <input id="fileInput" type="file" accept=".charx,.png,.json,application/json,image/png,application/zip" class="hidden">
+      </div>
+      <div id="parsedPreview" class="muted">아직 불러온 카드가 없습니다.</div>
+    </section>
+
+    <section class="panel">
+      <h2>2. 변환 방식 및 LLM 고급 설정</h2>
+      <div class="grid-3">
+        <label class="field">
+          변환 모드
+          <select id="convertMode">
+            <option value="offline">오프라인 규칙 변환 (무료 · 즉시)</option>
+            <option value="direct_llm">직접 OpenAI 호환 LLM 호출</option>
+            <option value="backend">SAGA 백엔드 (/v1/saga/convert)</option>
+          </select>
+        </label>
+        <label class="field">
+          SAGA 백엔드 URL (백엔드 모드용)
+          <input id="backendUrl" type="url" placeholder="http://127.0.0.1:4852">
+        </label>
+        <label class="field">
+          백엔드에서 LLM 사용 여부
+          <select id="backendUseLlm">
+            <option value="false">아니오 (규칙 기반)</option>
+            <option value="true">예 (아래 LLM 설정 또는 서버 설정 사용)</option>
+          </select>
+        </label>
+      </div>
+
+      <div id="llmSettings" class="item-card hidden">
+        <strong style="font-size:13px;">OpenAI 호환 LLM 설정 (API 키는 저장되지 않습니다)</strong>
+        <div class="grid-3">
+          <label class="field">
+            Base URL (예: https://openrouter.ai/api/v1)
+            <input id="llmBaseUrl" type="url" placeholder="https://openrouter.ai/api/v1">
+          </label>
+          <label class="field">
+            모델 ID
+            <input id="llmModel" type="text" placeholder="google/gemini-2.5-flash">
+          </label>
+          <label class="field">
+            API Key (메모리 전용)
+            <input id="llmApiKey" type="password" autocomplete="off" placeholder="sk-...">
+          </label>
+        </div>
+        <div class="grid-3">
+          <label class="field">
+            Reasoning Effort
+            <select id="llmReasoningEffort">
+              <option value="">(지정 안 함)</option>
+              <option value="none">none</option>
+              <option value="minimal">minimal</option>
+              <option value="low">low</option>
+              <option value="medium">medium</option>
+              <option value="high">high</option>
+              <option value="xhigh">xhigh</option>
+            </select>
+          </label>
+          <label class="field">
+            Custom Headers (JSON 객체)
+            <textarea id="llmCustomHeaders" rows="3" placeholder='{"HTTP-Referer":"https://example.com","X-Title":"SAGA"}'></textarea>
+          </label>
+          <label class="field">
+            Custom Body (JSON 객체 — model/messages/stream 제외)
+            <textarea id="llmCustomBody" rows="3" placeholder='{"temperature":0.2,"top_p":0.9}'></textarea>
+          </label>
+        </div>
+      </div>
+
+      <div class="row">
+        <button id="convertBtn" class="primary" disabled>시나리오 초안 생성</button>
+        <button id="resetBtn" type="button">초기화</button>
+      </div>
+      <div id="statusBox" class="status">카드를 불러온 뒤 "시나리오 초안 생성"을 눌러주세요.</div>
+    </section>
+
+    <section id="editorSection" class="panel hidden">
+      <h2>
+        <span>3. 시나리오 초안 검토 · 편집 (원문 / 추정 출처 표기)</span>
+        <div class="row">
+          <button id="downloadScenarioBtn" type="button">scenario.json 다운로드</button>
+          <button id="downloadModuleBtn" class="primary" type="button">PocketRisu 모듈 (.module.json) 다운로드</button>
+        </div>
+      </h2>
+      <div class="grid-2">
+        <label class="field">
+          시나리오 ID (영소문자/숫자/하이픈)
+          <input id="edId" type="text">
+        </label>
+        <label class="field">
+          제목
+          <input id="edTitle" type="text">
+        </label>
+      </div>
+      <label class="field">
+        요약
+        <input id="edSummary" type="text">
+      </label>
+
+      <div class="row" style="justify-content:space-between;">
+        <strong style="font-size:13px;">등장인물 (Actors)</strong>
+        <button id="addActorBtn" type="button">+ NPC 추가</button>
+      </div>
+      <div id="actorsList" class="grid-2"></div>
+
+      <div class="row" style="justify-content:space-between;">
+        <strong style="font-size:13px;">장소 지도 (Rooms)</strong>
+        <button id="addRoomBtn" type="button">+ 방 추가</button>
+      </div>
+      <div id="roomsList" class="grid-2"></div>
+
+      <label class="field">
+        시나리오 JSON (직접 편집 후 "JSON 반영" 가능)
+        <textarea id="rawJson" rows="12"></textarea>
+      </label>
+      <div class="row">
+        <button id="applyJsonBtn" type="button">JSON 변경사항 반영</button>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const MAX_UPLOAD_BYTES = 16 * 1024 * 1024;
+      const MAX_JSON_BYTES = 4 * 1024 * 1024;
+      const FORBIDDEN_HEADERS = new Set([
+        "host", "content-length", "transfer-encoding", "connection",
+        "cookie", "proxy-authorization", "te", "upgrade", "keep-alive"
+      ]);
+      const RESERVED_BODY_KEYS = new Set(["model", "messages", "stream"]);
+      const HEADER_NAME_RE = /^[A-Za-z0-9!#$%&'*+\-.^_`|~]{1,80}$/;
+      const SAGA_META_PREFIXES = ["saga:rulebook:", "saga:scenario:", "saga:scenario-narration:"];
+      const LOC_KW = ["location", "place", "room", "region", "city", "town", "village", "castle", "tower", "tavern", "inn", "forest", "dungeon", "장소", "지역", "마을", "도시", "성", "탑", "여관", "주점", "숲", "던전", "방", "홀", "광장"];
+      const NPC_KW = ["npc", "character", "companion", "enemy", "boss", "villain", "ally", "merchant", "guard", "인물", "캐릭터", "동료", "적", "보스", "상인", "경비", "기사", "마법사"];
+
+      const $ = id => document.getElementById(id);
+      const state = {
+        fileBytes: null,
+        filename: "",
+        parsedCard: null,
+        scenario: null,
+        provenance: {},
+      };
+
+      const defaultBackend = window.location.protocol.startsWith("http")
+        ? window.location.origin
+        : "http://127.0.0.1:4852";
+      $("backendUrl").value = defaultBackend;
+
+      function setStatus(text, kind) {
+        const box = $("statusBox");
+        box.textContent = text;
+        box.className = "status" + (kind ? " " + kind : "");
+      }
+
+      function el(tag, attrs, ...children) {
+        const node = document.createElement(tag);
+        if (attrs) {
+          for (const [k, v] of Object.entries(attrs)) {
+            if (k === "class") node.className = v;
+            else if (k.startsWith("on") && typeof v === "function") node.addEventListener(k.slice(2), v);
+            else if (v !== undefined && v !== null) node.setAttribute(k, String(v));
+          }
+        }
+        for (const child of children) {
+          if (child === null || child === undefined) continue;
+          node.appendChild(typeof child === "string" ? document.createTextNode(child) : child);
+        }
+        return node;
+      }
+
+      async function sha256Hex(text) {
+        const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+        return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+      }
+
+      function slugify(text, prefix, allowDot) {
+        const raw = String(text || "").trim().toLowerCase();
+        const re = allowDot ? /[^a-z0-9.-]+/g : /[^a-z0-9_]+/g;
+        const sep = allowDot ? "-" : "_";
+        let slug = raw.replace(re, sep).replace(/^[._-]+|[._-]+$/g, "");
+        if (!slug || !/^[a-z]/.test(slug)) {
+          let h = 2166136261;
+          for (let i = 0; i < raw.length; i++) { h ^= raw.charCodeAt(i); h = Math.imul(h, 16777619); }
+          slug = prefix + sep + (h >>> 0).toString(16).padStart(8, "0");
+        }
+        return slug.slice(0, 40).replace(/[._-]+$/g, "") || prefix;
+      }
+
+      async function inflateBytes(bytes, format) {
+        if (typeof DecompressionStream === "undefined") {
+          throw new Error("이 브라우저는 DecompressionStream을 지원하지 않습니다. 백엔드 모드를 사용해 주세요.");
+        }
+        const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream(format));
+        const reader = stream.getReader();
+        const chunks = [];
+        let total = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          total += value.byteLength;
+          if (total > MAX_JSON_BYTES) throw new Error("압축 해제된 카드 데이터가 최대 크기(4MB)를 초과했습니다.");
+          chunks.push(value);
+        }
+        const out = new Uint8Array(total);
+        let offset = 0;
+        for (const c of chunks) { out.set(c, offset); offset += c.byteLength; }
+        return out;
+      }
+
+      async function parsePngCard(bytes) {
+        const sig = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+        for (let i = 0; i < 8; i++) if (bytes[i] !== sig[i]) throw new Error("유효한 PNG 파일이 아닙니다.");
+        const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+        const latin1 = new TextDecoder("latin1");
+        const utf8 = new TextDecoder("utf-8");
+        let pos = 8;
+        const found = {};
+        while (pos + 8 <= bytes.length) {
+          const len = view.getUint32(pos, false);
+          const type = latin1.decode(bytes.subarray(pos + 4, pos + 8));
+          pos += 8;
+          if (pos + len + 4 > bytes.length) throw new Error("손상된 PNG 청크입니다.");
+          const chunk = bytes.subarray(pos, pos + len);
+          pos += len + 4;
+          const nul = chunk.indexOf(0);
+          if (type === "tEXt" && nul > 0) {
+            const kw = latin1.decode(chunk.subarray(0, nul)).toLowerCase();
+            if (kw === "ccv3" || kw === "chara") found[kw] = latin1.decode(chunk.subarray(nul + 1));
+          } else if (type === "zTXt" && nul > 0 && nul + 2 <= chunk.length) {
+            const kw = latin1.decode(chunk.subarray(0, nul)).toLowerCase();
+            if ((kw === "ccv3" || kw === "chara") && chunk[nul + 1] === 0) {
+              const inflated = await inflateBytes(chunk.subarray(nul + 2), "deflate");
+              found[kw] = latin1.decode(inflated);
+            }
+          } else if (type === "iTXt" && nul > 0 && nul + 3 <= chunk.length) {
+            const kw = latin1.decode(chunk.subarray(0, nul)).toLowerCase();
+            if (kw === "ccv3" || kw === "chara") {
+              const comp = chunk[nul + 1];
+              let rest = chunk.subarray(nul + 3);
+              const l = rest.indexOf(0);
+              if (l >= 0) {
+                rest = rest.subarray(l + 1);
+                const t = rest.indexOf(0);
+                if (t >= 0) {
+                  let textBytes = rest.subarray(t + 1);
+                  if (comp === 1) textBytes = await inflateBytes(textBytes, "deflate");
+                  found[kw] = utf8.decode(textBytes);
+                }
+              }
+            }
+          } else if (type === "IEND") break;
+        }
+        const b64 = found.ccv3 || found.chara;
+        if (!b64) throw new Error("PNG 안에 ccv3 또는 chara 카드 데이터가 없습니다.");
+        const bin = atob(b64.replace(/\s+/g, ""));
+        const decoded = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) decoded[i] = bin.charCodeAt(i);
+        return JSON.parse(utf8.decode(decoded));
+      }
+
+      async function parseCharxCard(bytes) {
+        const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+        const utf8 = new TextDecoder("utf-8");
+        // Find End of Central Directory (0x06054b50)
+        let eocd = -1;
+        for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) {
+          if (view.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+        }
+        if (eocd < 0) throw new Error("유효한 .charx ZIP 파일이 아닙니다.");
+        const cdSize = view.getUint32(eocd + 12, true);
+        const cdOffset = view.getUint32(eocd + 16, true);
+        let pos = cdOffset;
+        let cardEntry = null;
+        while (pos < cdOffset + cdSize && pos + 46 <= bytes.length) {
+          if (view.getUint32(pos, true) !== 0x02014b50) break;
+          const method = view.getUint16(pos + 10, true);
+          const compSize = view.getUint32(pos + 20, true);
+          const uncompSize = view.getUint32(pos + 24, true);
+          const nameLen = view.getUint16(pos + 28, true);
+          const extraLen = view.getUint16(pos + 30, true);
+          const commentLen = view.getUint16(pos + 32, true);
+          const localOffset = view.getUint32(pos + 42, true);
+          const name = utf8.decode(bytes.subarray(pos + 46, pos + 46 + nameLen));
+          if (name.startsWith("/") || name.includes("\\") || name.split("/").includes("..")) {
+            throw new Error("허용되지 않은 압축 경로가 포함되어 있습니다: " + name);
+          }
+          if (name === "card.json") {
+            cardEntry = { method, compSize, uncompSize, localOffset };
+          }
+          pos += 46 + nameLen + extraLen + commentLen;
+        }
+        if (!cardEntry) throw new Error(".charx 안에 card.json이 없습니다.");
+        if (cardEntry.uncompSize > MAX_JSON_BYTES) throw new Error("card.json이 4MB를 초과합니다.");
+        const lo = cardEntry.localOffset;
+        if (view.getUint32(lo, true) !== 0x04034b50) throw new Error("손상된 ZIP 로컬 헤더입니다.");
+        const lNameLen = view.getUint16(lo + 26, true);
+        const lExtraLen = view.getUint16(lo + 28, true);
+        const dataStart = lo + 30 + lNameLen + lExtraLen;
+        const rawSlice = bytes.subarray(dataStart, dataStart + cardEntry.compSize);
+        let jsonBytes;
+        if (cardEntry.method === 0) jsonBytes = rawSlice;
+        else if (cardEntry.method === 8) jsonBytes = await inflateBytes(rawSlice, "deflate-raw");
+        else throw new Error("지원하지 않는 ZIP 압축 방식입니다: " + cardEntry.method);
+        return JSON.parse(utf8.decode(jsonBytes));
+      }
+
+      function normalizeCard(raw, sourceFormat) {
+        const d = raw && typeof raw.data === "object" && raw.data ? raw.data : raw;
+        const loreRaw = [];
+        if (d.character_book && Array.isArray(d.character_book.entries)) loreRaw.push(...d.character_book.entries);
+        else if (Array.isArray(d.character_book)) loreRaw.push(...d.character_book);
+        if (Array.isArray(raw.globalLore)) loreRaw.push(...raw.globalLore);
+        if (Array.isArray(raw.lorebook)) loreRaw.push(...raw.lorebook);
+        const lorebook = [];
+        for (const item of loreRaw) {
+          if (!item || typeof item !== "object" || item.enabled === false) continue;
+          const comment = String(item.comment || item.name || "").trim();
+          if (SAGA_META_PREFIXES.some(p => comment.startsWith(p))) continue;
+          const content = String(item.content || "").trim();
+          if (!content) continue;
+          const keys = Array.isArray(item.keys)
+            ? item.keys.map(k => String(k).trim()).filter(Boolean)
+            : String(item.key || "").split(",").map(k => k.trim()).filter(k => k && k !== "(?!)");
+          lorebook.push({ name: comment || keys[0] || "", keys, content });
+        }
+        return {
+          name: String(d.name || raw.name || "Unnamed Scenario").trim().slice(0, 120),
+          description: String(d.description || raw.desc || "").trim(),
+          personality: String(d.personality || "").trim(),
+          scenario: String(d.scenario || "").trim(),
+          first_mes: String(d.first_mes || raw.firstMessage || "").trim(),
+          tags: Array.isArray(d.tags) ? d.tags.map(String) : [],
+          lorebook,
+          source_format: sourceFormat,
+        };
+      }
+
+      function deterministicConvert(card) {
+        const baseStats = { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10, armor_class: 12 };
+        const actors = {
+          player: { hp: 20, max_hp: 20, stats: { ...baseStats }, inventory: {}, conditions: [], display_name: "플레이어", aliases: [], provenance: { hp: "inferred", stats: "inferred" } },
+        };
+        const usedNames = new Set(["player", "플레이어"]);
+        const hpRe = /\b(?:hp|체력)\s*[:=]?\s*(\d{1,4})(?:\s*\/\s*(\d{1,4}))?/i;
+        function addNpc(name, text, keys) {
+          const clean = String(name || "").trim().slice(0, 80);
+          if (!clean || usedNames.has(clean.toLowerCase())) return null;
+          let id = slugify(clean, "npc", false);
+          let n = 2;
+          while (actors[id] || id === "player") id = slugify(clean, "npc", false) + "_" + (n++);
+          const m = hpRe.exec(text || "");
+          const hp = m ? Math.max(1, Math.min(999, Number(m[1]))) : 20;
+          const maxHp = m && m[2] ? Math.max(hp, Math.min(999, Number(m[2]))) : hp;
+          const hpSrc = m ? "card" : "inferred";
+          const aliases = [];
+          for (const k of keys || []) {
+            const a = String(k).trim().slice(0, 80);
+            if (a && a.toLowerCase() !== clean.toLowerCase() && !usedNames.has(a.toLowerCase())) {
+              aliases.push(a); usedNames.add(a.toLowerCase());
+            }
+          }
+          usedNames.add(clean.toLowerCase());
+          usedNames.add(id.toLowerCase());
+          actors[id] = { hp, max_hp: maxHp, stats: { ...baseStats }, inventory: {}, conditions: [], display_name: clean, aliases: aliases.slice(0, 8), provenance: { display_name: "card", hp: hpSrc, stats: "inferred" } };
+          return id;
+        }
+        const primaryId = addNpc(card.name, card.description + "\n" + card.personality, []);
+        const locEntries = [];
+        const otherLore = [];
+        for (const e of card.lorebook) {
+          const hay = (e.name + " " + e.keys.join(" ")).toLowerCase();
+          if (LOC_KW.some(kw => hay.includes(kw)) && locEntries.length < 6) locEntries.push(e);
+          else if (NPC_KW.some(kw => hay.includes(kw)) && Object.keys(actors).length < 9) addNpc(e.name || e.keys[0], e.content, e.keys);
+          else otherLore.push(e);
+        }
+        const startDesc = (card.scenario || card.first_mes || card.description || card.name).slice(0, 600);
+        const rooms = { start_area: { name: card.name.slice(0, 40) + " — 시작 지점", description: startDesc, exits: {} } };
+        const placements = { player: "start_area" };
+        if (primaryId) placements[primaryId] = "start_area";
+        if (locEntries.length) {
+          const dirs = ["north", "east", "south", "west", "up", "down"];
+          const opp = { north: "south", south: "north", east: "west", west: "east", up: "down", down: "up" };
+          locEntries.forEach((loc, i) => {
+            const rname = (loc.name || loc.keys[0] || "구역 " + (i + 1)).slice(0, 80);
+            let rid = slugify(rname, "room_" + (i + 1), false);
+            if (rooms[rid]) rid += "_" + (i + 1);
+            const ek = dirs[i] || ("path_" + (i + 1));
+            rooms[rid] = { name: rname, description: loc.content.slice(0, 600), exits: { [opp[ek] || "back"]: { to_room: "start_area", label: "시작 지점", kind: "open" } } };
+            rooms.start_area.exits[ek] = { to_room: rid, label: rname, kind: "open" };
+          });
+        } else {
+          rooms.nearby_area = { name: "인접 구역", description: "시작 지점과 이어진 주변 공간입니다.", exits: { back: { to_room: "start_area", label: "시작 지점", kind: "open" } } };
+          rooms.start_area.exits.ahead = { to_room: "nearby_area", label: "인접 구역", kind: "open" };
+        }
+        const summarySrc = (card.scenario || card.description || card.first_mes || card.name).trim();
+        const narrationParts = ["원본 카드: " + card.name];
+        if (card.description) narrationParts.push("[설명]\n" + card.description.slice(0, 2000));
+        if (card.personality) narrationParts.push("[성격]\n" + card.personality.slice(0, 1000));
+        if (card.scenario) narrationParts.push("[상황]\n" + card.scenario.slice(0, 1500));
+        if (otherLore.length) narrationParts.push("[주요 설정]\n" + otherLore.slice(0, 10).map(e => "- " + (e.name || e.keys.join(", ")) + ": " + e.content.slice(0, 300)).join("\n"));
+        return {
+          schema_version: 1,
+          id: slugify(card.name, "card", true).replace(/_/g, "-"),
+          version: "0.1.0",
+          title: card.name.slice(0, 120),
+          summary: (summarySrc.split(/\r?\n/)[0] || card.name).slice(0, 300),
+          simulated_time: 0,
+          actors,
+          flags: { _converted_from: { name: card.name, format: card.source_format } },
+          quest_state: {},
+          map: { start_room: "start_area", rooms, placements },
+          narration: narrationParts.join("\n\n").slice(0, 7800),
+        };
+      }
+
+      function parseJsonObjectInput(text, label) {
+        const trimmed = String(text || "").trim();
+        if (!trimmed) return null;
+        let obj;
+        try { obj = JSON.parse(trimmed); } catch { throw new Error(label + "이(가) 올바른 JSON 객체가 아닙니다."); }
+        if (!obj || typeof obj !== "object" || Array.isArray(obj)) throw new Error(label + "은(는) JSON 객체여야 합니다.");
+        return obj;
+      }
+
+      function validateCustomHeaders(rawObj) {
+        const out = {};
+        if (!rawObj) return out;
+        for (const [k, v] of Object.entries(rawObj)) {
+          if (typeof v !== "string") throw new Error("Custom Headers 값은 문자열이어야 합니다: " + k);
+          const name = k.trim();
+          if (!HEADER_NAME_RE.test(name) || FORBIDDEN_HEADERS.has(name.toLowerCase())) {
+            throw new Error("허용되지 않은 헤더 이름입니다: " + name);
+          }
+          if (/[\r\n\0]/.test(v) || v.length > 2048) throw new Error("유효하지 않은 헤더 값입니다: " + name);
+          out[name] = v;
+        }
+        return out;
+      }
+
+      function validateCustomBody(rawObj) {
+        const out = {};
+        if (!rawObj) return out;
+        for (const [k, v] of Object.entries(rawObj)) {
+          if (RESERVED_BODY_KEYS.has(k)) throw new Error("Custom Body에서 예약 키(" + k + ")는 덮어쓸 수 없습니다.");
+          out[k] = v;
+        }
+        return out;
+      }
+
+      function validateEndpointUrl(rawUrl) {
+        let parsed;
+        try { parsed = new URL(String(rawUrl || "").trim()); } catch { throw new Error("유효한 URL을 입력하세요."); }
+        const host = parsed.hostname.toLowerCase();
+        if (parsed.protocol === "https:") return parsed.toString().replace(/\/+$/, "");
+        if (parsed.protocol === "http:" && (host === "127.0.0.1" || host === "localhost" || host === "::1")) {
+          return parsed.toString().replace(/\/+$/, "");
+        }
+        throw new Error("URL은 https:// 또는 localhost http:// 만 허용됩니다.");
+      }
+
+      async function directLlmConvert(card) {
+        const baseUrl = validateEndpointUrl($("llmBaseUrl").value);
+        const model = $("llmModel").value.trim();
+        if (!model) throw new Error("모델 ID를 입력하세요.");
+        const apiKey = $("llmApiKey").value.trim();
+        const effort = $("llmReasoningEffort").value.trim();
+        const customHeaders = validateCustomHeaders(parseJsonObjectInput($("llmCustomHeaders").value, "Custom Headers"));
+        const customBody = validateCustomBody(parseJsonObjectInput($("llmCustomBody").value, "Custom Body"));
+        const headers = { "Content-Type": "application/json", ...customHeaders };
+        if (apiKey) headers["Authorization"] = "Bearer " + apiKey;
+        const sysPrompt = "Convert the untrusted TRPG character card JSON into a valid SAGA ScenarioSpec JSON (schema_version: 1, id, version: '0.1.0', title, summary, actors with 'player', map with start_room/rooms/placements, quest_state, narration). Mark each actor's provenance fields as 'card' only when explicitly stated in the card, else 'inferred'. Output JSON only.";
+        const body = {
+          model,
+          messages: [
+            { role: "system", content: sysPrompt },
+            { role: "user", content: JSON.stringify({ card: { ...card, description: card.description.slice(0, 10000), lorebook: card.lorebook.slice(0, 25) } }) },
+          ],
+          stream: false,
+          temperature: 0.2,
+          max_tokens: 3000,
+          ...customBody,
+        };
+        if (effort) body.reasoning_effort = effort;
+        const res = await fetch(baseUrl + "/chat/completions", { method: "POST", headers, body: JSON.stringify(body) });
+        if (!res.ok) throw new Error("LLM 호출 실패 (HTTP " + res.status + ")");
+        const json = await res.json();
+        let text = String(json?.choices?.[0]?.message?.content || "").trim();
+        if (text.startsWith("```")) text = text.replace(/^```[a-z]*\s*/i, "").replace(/```$/, "").trim();
+        const parsed = JSON.parse(text);
+        const fallback = deterministicConvert(card);
+        if (!parsed.actors || !parsed.actors.player) parsed.actors = { player: fallback.actors.player, ...(parsed.actors || {}) };
+        return {
+          schema_version: 1,
+          id: slugify(parsed.id || parsed.title || card.name, "card", true).replace(/_/g, "-"),
+          version: "0.1.0",
+          title: String(parsed.title || card.name).slice(0, 120),
+          summary: String(parsed.summary || fallback.summary).slice(0, 1800),
+          simulated_time: 0,
+          actors: parsed.actors,
+          flags: { _converted_from: { name: card.name, format: card.source_format, mode: "direct_llm" } },
+          quest_state: parsed.quest_state || {},
+          map: parsed.map && parsed.map.rooms ? parsed.map : fallback.map,
+          narration: String(parsed.narration || fallback.narration).slice(0, 7800),
+        };
+      }
+
+      async function backendConvert() {
+        const base = validateEndpointUrl($("backendUrl").value);
+        const useLlm = $("backendUseLlm").value === "true";
+        const payload = { card: state.parsedCard ? { data: state.parsedCard, lorebook: state.parsedCard.lorebook } : null, use_llm: useLlm };
+        if (state.fileBytes) {
+          let bin = "";
+          const chunkSize = 0x8000;
+          for (let i = 0; i < state.fileBytes.length; i += chunkSize) {
+            bin += String.fromCharCode(...state.fileBytes.subarray(i, i + chunkSize));
+          }
+          payload.file_base64 = btoa(bin);
+          payload.filename = state.filename;
+          delete payload.card;
+        }
+        if (useLlm && $("llmBaseUrl").value.trim()) {
+          payload.llm = {
+            base_url: validateEndpointUrl($("llmBaseUrl").value),
+            model: $("llmModel").value.trim(),
+            api_key: $("llmApiKey").value.trim() || null,
+            reasoning_effort: $("llmReasoningEffort").value.trim() || null,
+            custom_headers: validateCustomHeaders(parseJsonObjectInput($("llmCustomHeaders").value, "Custom Headers")),
+            custom_body: validateCustomBody(parseJsonObjectInput($("llmCustomBody").value, "Custom Body")),
+          };
+        }
+        const res = await fetch(base + "/v1/saga/convert", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || ("백엔드 변환 실패 (HTTP " + res.status + ")"));
+        return data;
+      }
+
+      function renderEditor() {
+        const sc = state.scenario;
+        if (!sc) { $("editorSection").classList.add("hidden"); return; }
+        $("editorSection").classList.remove("hidden");
+        $("edId").value = sc.id || "";
+        $("edTitle").value = sc.title || "";
+        $("edSummary").value = sc.summary || "";
+
+        const actorsList = $("actorsList");
+        actorsList.replaceChildren();
+        for (const [aid, actor] of Object.entries(sc.actors || {})) {
+          const provHp = actor.provenance?.hp || "inferred";
+          const provName = actor.provenance?.display_name || (aid === "player" ? "inferred" : "card");
+          const badge = el("span", { class: "badge " + provHp }, provHp === "card" ? "수치 원문" : (provHp === "gm_confirmed" ? "확정" : "수치 추정"));
+          const nameInput = el("input", { type: "text", value: actor.display_name || aid });
+          nameInput.addEventListener("input", () => { actor.display_name = nameInput.value; syncJson(); });
+          const hpInput = el("input", { type: "number", min: "1", max: "999", value: String(actor.hp ?? 20) });
+          hpInput.addEventListener("input", () => {
+            const v = Math.max(1, Number(hpInput.value) || 20);
+            actor.hp = v; actor.max_hp = Math.max(v, actor.max_hp || v);
+            actor.provenance = { ...(actor.provenance || {}), hp: "gm_confirmed" };
+            syncJson();
+          });
+          const aliasInput = el("input", { type: "text", value: (actor.aliases || []).join(", "), placeholder: "별칭 (쉼표 구분)" });
+          aliasInput.addEventListener("input", () => {
+            actor.aliases = aliasInput.value.split(",").map(s => s.trim()).filter(Boolean);
+            syncJson();
+          });
+          const header = el("div", { class: "row", style: "justify-content:space-between;" },
+            el("strong", { class: "mono" }, aid),
+            el("div", { class: "row" },
+              el("span", { class: "badge " + provName }, provName === "card" ? "이름 원문" : "기본"),
+              badge,
+              aid !== "player" ? el("button", { class: "danger", type: "button", onclick: () => { delete sc.actors[aid]; renderEditor(); } }, "삭제") : null
+            )
+          );
+          actorsList.appendChild(el("div", { class: "item-card" },
+            header,
+            el("label", { class: "field" }, "표시 이름", nameInput),
+            el("div", { class: "grid-2" },
+              el("label", { class: "field" }, "HP / Max HP", hpInput),
+              el("label", { class: "field" }, "별칭", aliasInput)
+            )
+          ));
+        }
+
+        const roomsList = $("roomsList");
+        roomsList.replaceChildren();
+        const rooms = sc.map?.rooms || {};
+        for (const [rid, room] of Object.entries(rooms)) {
+          const nameInput = el("input", { type: "text", value: room.name || rid });
+          nameInput.addEventListener("input", () => { room.name = nameInput.value; syncJson(); });
+          const descInput = el("textarea", { rows: "2" });
+          descInput.value = room.description || "";
+          descInput.addEventListener("input", () => { room.description = descInput.value; syncJson(); });
+          const exitSummary = Object.entries(room.exits || {}).map(([k, ex]) => k + " → " + ex.to_room + (ex.locked ? " (잠김)" : "")).join(", ") || "출구 없음";
+          roomsList.appendChild(el("div", { class: "item-card" },
+            el("div", { class: "row", style: "justify-content:space-between;" },
+              el("strong", { class: "mono" }, rid + (sc.map?.start_room === rid ? " (시작)" : "")),
+              el("span", { class: "muted" }, exitSummary)
+            ),
+            el("label", { class: "field" }, "방 이름", nameInput),
+            el("label", { class: "field" }, "설명", descInput)
+          ));
+        }
+        syncJson();
+      }
+
+      function syncJson() {
+        if (state.scenario) $("rawJson").value = JSON.stringify(state.scenario, null, 2);
+      }
+
+      async function buildModuleJson(scenario) {
+        const scenarioText = JSON.stringify(scenario, null, 2);
+        const digest = await sha256Hex(scenarioText);
+        const lorebook = [];
+        if ((scenario.narration || "").trim() || (scenario.summary || "").trim()) {
+          const parts = ["# Scenario: " + scenario.title + " (" + scenario.id + "@" + scenario.version + ")"];
+          if (scenario.summary) parts.push(scenario.summary);
+          if (scenario.narration) parts.push(scenario.narration);
+          lorebook.push({
+            key: "", secondkey: "", insertorder: 95,
+            comment: "saga:scenario-narration:" + scenario.id + "@" + scenario.version,
+            content: parts.join("\n\n"),
+            mode: "constant", alwaysActive: true, selective: false, useRegex: false, activationPercent: 100, bookVersion: 2,
+          });
+        }
+        lorebook.push({
+          key: "(?!)", secondkey: "", insertorder: 0,
+          comment: "saga:scenario:" + scenario.id + "@" + scenario.version + ":" + digest,
+          content: scenarioText,
+          mode: "normal", alwaysActive: false, selective: false, useRegex: true, activationPercent: 100, bookVersion: 2,
+        });
+        return {
+          type: "risuModule",
+          module: {
+            name: "SAGA Scenario — " + scenario.title,
+            description: "SAGA 시나리오 모듈 (" + scenario.id + "@" + scenario.version + ")",
+            id: "saga-scenario-" + scenario.id + "-" + scenario.version,
+            lorebook,
+            regex: [], trigger: [], lowLevelAccess: false,
+          },
+        };
+      }
+
+      function downloadFile(filename, content) {
+        const blob = new Blob([content], { type: "application/json;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = el("a", { href: url, download: filename });
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
+
+      async function handleFile(file) {
+        if (!file) return;
+        if (file.size > MAX_UPLOAD_BYTES) {
+          setStatus("파일 크기가 최대 한도(16MB)를 초과했습니다.", "err");
+          return;
+        }
+        try {
+          const buf = await file.arrayBuffer();
+          const bytes = new Uint8Array(buf);
+          const lower = file.name.toLowerCase();
+          let rawObj;
+          let fmt = "json";
+          if (lower.endsWith(".png") || (bytes[0] === 0x89 && bytes[1] === 0x50)) {
+            fmt = "png"; rawObj = await parsePngCard(bytes);
+          } else if (lower.endsWith(".charx") || (bytes[0] === 0x50 && bytes[1] === 0x4b)) {
+            fmt = "charx"; rawObj = await parseCharxCard(bytes);
+          } else {
+            fmt = "json"; rawObj = JSON.parse(new TextDecoder("utf-8").decode(bytes));
+          }
+          state.fileBytes = bytes;
+          state.filename = file.name;
+          state.parsedCard = normalizeCard(rawObj, fmt);
+          $("cardSummaryBadge").textContent = state.parsedCard.name + " (" + fmt.toUpperCase() + ")";
+          $("parsedPreview").textContent =
+            "불러옴: " + state.parsedCard.name + " · 로어북 " + state.parsedCard.lorebook.length + "개 · 설명 " + state.parsedCard.description.length + "자";
+          $("convertBtn").disabled = false;
+          setStatus("카드를 성공적으로 파싱했습니다. 이제 '시나리오 초안 생성'을 누르세요.", "ok");
+        } catch (err) {
+          setStatus("카드 파싱 실패: " + (err instanceof Error ? err.message : String(err)), "err");
+        }
+      }
+
+      function updateModeVisibility() {
+        const mode = $("convertMode").value;
+        const showLlm = mode === "direct_llm" || (mode === "backend" && $("backendUseLlm").value === "true");
+        $("llmSettings").classList.toggle("hidden", !showLlm);
+      }
+
+      $("convertMode").addEventListener("change", updateModeVisibility);
+      $("backendUseLlm").addEventListener("change", updateModeVisibility);
+      $("dropzone").addEventListener("click", () => $("fileInput").click());
+      $("dropzone").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") $("fileInput").click(); });
+      $("dropzone").addEventListener("dragover", e => { e.preventDefault(); $("dropzone").classList.add("dragover"); });
+      $("dropzone").addEventListener("dragleave", () => $("dropzone").classList.remove("dragover"));
+      $("dropzone").addEventListener("drop", e => {
+        e.preventDefault();
+        $("dropzone").classList.remove("dragover");
+        handleFile(e.dataTransfer?.files?.[0]);
+      });
+      $("fileInput").addEventListener("change", e => handleFile(e.target.files?.[0]));
+
+      $("convertBtn").addEventListener("click", async () => {
+        if (!state.parsedCard) return;
+        $("convertBtn").disabled = true;
+        setStatus("변환 중...", "");
+        try {
+          const mode = $("convertMode").value;
+          if (mode === "offline") {
+            state.scenario = deterministicConvert(state.parsedCard);
+            setStatus("오프라인 규칙 변환 완료! 원문/추정 출처를 확인하고 필요 시 수정하세요.", "ok");
+          } else if (mode === "direct_llm") {
+            state.scenario = await directLlmConvert(state.parsedCard);
+            setStatus("LLM 변환 완료! 초안을 검토하고 다운로드하세요.", "ok");
+          } else {
+            const res = await backendConvert();
+            state.scenario = res.scenario;
+            const warn = (res.warnings || []).join("\n");
+            setStatus("백엔드(" + res.mode + ") 변환 완료!" + (warn ? "\n" + warn : ""), warn ? "warn" : "ok");
+          }
+          renderEditor();
+        } catch (err) {
+          setStatus("변환 오류: " + (err instanceof Error ? err.message : String(err)), "err");
+        } finally {
+          $("convertBtn").disabled = false;
+        }
+      });
+
+      $("edId").addEventListener("input", () => { if (state.scenario) { state.scenario.id = $("edId").value.trim(); syncJson(); } });
+      $("edTitle").addEventListener("input", () => { if (state.scenario) { state.scenario.title = $("edTitle").value; syncJson(); } });
+      $("edSummary").addEventListener("input", () => { if (state.scenario) { state.scenario.summary = $("edSummary").value; syncJson(); } });
+
+      $("addActorBtn").addEventListener("click", () => {
+        if (!state.scenario) return;
+        let idx = Object.keys(state.scenario.actors).length + 1;
+        while (state.scenario.actors["npc_" + idx]) idx++;
+        const aid = "npc_" + idx;
+        state.scenario.actors[aid] = {
+          hp: 20, max_hp: 20, stats: { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10, armor_class: 12 },
+          inventory: {}, conditions: [], display_name: "새 NPC " + idx, aliases: [], provenance: { hp: "gm_confirmed", stats: "inferred" }
+        };
+        renderEditor();
+      });
+
+      $("addRoomBtn").addEventListener("click", () => {
+        if (!state.scenario || !state.scenario.map) return;
+        const rooms = state.scenario.map.rooms;
+        let idx = Object.keys(rooms).length + 1;
+        while (rooms["room_" + idx]) idx++;
+        const rid = "room_" + idx;
+        const startId = state.scenario.map.start_room;
+        rooms[rid] = { name: "새 구역 " + idx, description: "", exits: { back: { to_room: startId, label: "시작 지점", kind: "open" } } };
+        rooms[startId].exits["path_" + idx] = { to_room: rid, label: "새 구역 " + idx, kind: "open" };
+        renderEditor();
+      });
+
+      $("applyJsonBtn").addEventListener("click", () => {
+        try {
+          const parsed = JSON.parse($("rawJson").value);
+          if (!parsed || typeof parsed !== "object" || !parsed.actors?.player) {
+            throw new Error("actors.player가 포함된 유효한 ScenarioSpec JSON이어야 합니다.");
+          }
+          state.scenario = parsed;
+          renderEditor();
+          setStatus("JSON 변경사항을 반영했습니다.", "ok");
+        } catch (err) {
+          setStatus("JSON 오류: " + (err instanceof Error ? err.message : String(err)), "err");
+        }
+      });
+
+      $("downloadScenarioBtn").addEventListener("click", () => {
+        if (!state.scenario) return;
+        downloadFile((state.scenario.id || "scenario") + ".scenario.json", JSON.stringify(state.scenario, null, 2) + "\n");
+      });
+
+      $("downloadModuleBtn").addEventListener("click", async () => {
+        if (!state.scenario) return;
+        const mod = await buildModuleJson(state.scenario);
+        downloadFile((state.scenario.id || "scenario") + ".module.json", JSON.stringify(mod, null, 2) + "\n");
+        setStatus("PocketRisu 모듈(.module.json)을 저장했습니다. PocketRisu → 설정 → 모듈 → 가져오기에서 불러오세요.", "ok");
+      });
+
+      $("resetBtn").addEventListener("click", () => {
+        state.fileBytes = null; state.filename = ""; state.parsedCard = null; state.scenario = null;
+        $("fileInput").value = "";
+        $("llmApiKey").value = "";
+        $("cardSummaryBadge").textContent = "카드 미선택";
+        $("parsedPreview").textContent = "아직 불러온 카드가 없습니다.";
+        $("convertBtn").disabled = true;
+        $("editorSection").classList.add("hidden");
+        setStatus("초기화되었습니다.", "");
+      });
+
+      updateModeVisibility();
+    })();
+  </script>
+</body>
+</html>

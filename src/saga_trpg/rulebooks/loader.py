@@ -167,6 +167,9 @@ class ExampleActor(Closed):
     stats: dict[str, int | bool | str] = Field(default_factory=dict)
     inventory: dict[str, int] = Field(default_factory=dict)
     conditions: list[str] = Field(default_factory=list)
+    display_name: str | None = Field(default=None, min_length=1, max_length=80)
+    aliases: list[str] = Field(default_factory=list)
+    provenance: dict[str, str] = Field(default_factory=dict)
 
 
 class MapGenerate(Closed):

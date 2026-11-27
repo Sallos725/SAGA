@@ -195,6 +195,9 @@ def build_scenario_world(
             conditions=set(item.conditions),
             location=location,
             visited_rooms=visited,
+            display_name=item.display_name,
+            aliases=list(item.aliases),
+            provenance=dict(item.provenance),
         )
 
     flags = deepcopy(scenario.flags)

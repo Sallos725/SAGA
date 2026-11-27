@@ -5,14 +5,17 @@ from copy import deepcopy
 from dataclasses import dataclass
 
 from saga_trpg.domain.events import (
+    ADD_ROOM_KIND,
     ADJUDICATE_ACTION_KIND,
     GM_CORRECTION_KIND,
     INSPECT_ROOM_KIND,
     MOVE_NPC_KIND,
     NARRATIVE_TURN_KIND,
     QUEST_UPDATE_KIND,
+    REGISTER_ACTOR_KIND,
     TAKE_LOOT_KIND,
     UNLOCK_EXIT_KIND,
+    AddRoomPayload,
     AdjudicateActionPayload,
     CommittedEvent,
     GameEvent,
@@ -21,10 +24,19 @@ from saga_trpg.domain.events import (
     MoveNpcPayload,
     NarrativeTurnPayload,
     QuestUpdatePayload,
+    RegisterActorPayload,
     TakeLootPayload,
     UnlockExitPayload,
 )
-from saga_trpg.domain.models import RuleResolution, RuleResult, StatePatch, WorldState
+from saga_trpg.domain.models import (
+    ActorState,
+    Exit,
+    Room,
+    RuleResolution,
+    RuleResult,
+    StatePatch,
+    WorldState,
+)
 from saga_trpg.modules.base import RuleModule
 from saga_trpg.ports.dice import DicePort
 from saga_trpg.runtime.hashing import stable_model_hash
@@ -119,6 +131,10 @@ class RuntimeEngine:
             result = self._apply_quest_update(working, event)
         elif event.kind == GM_CORRECTION_KIND:
             result = self._apply_gm_correction(working, event)
+        elif event.kind == REGISTER_ACTOR_KIND:
+            result = self._apply_register_actor(working, event)
+        elif event.kind == ADD_ROOM_KIND:
+            result = self._apply_add_room(working, event)
         else:
             result = self.rules.apply(state=working, event=event, dice=self.dice)
         result.state.seq = next_seq
@@ -530,6 +546,165 @@ class RuntimeEngine:
                 f"runtime:{GM_CORRECTION_KIND} actor={event.actor_id} "
                 f"patches={len(patches)}"
                 + (f" target_event={payload.target_event_id}" if payload.target_event_id else "")
+            ],
+            resolution=None,
+        )
+
+    def _apply_register_actor(self, working: WorldState, event: GameEvent) -> RuleResult:
+        payload = RegisterActorPayload.model_validate(event.payload)
+        caller = working.actors.get(event.actor_id)
+        if caller is None:
+            raise ValueError(f"unknown actor: {event.actor_id}")
+        if payload.actor_id in working.actors:
+            raise ValueError(f"actor already registered: {payload.actor_id}")
+        clean_aliases: list[str] = []
+        seen_alias: set[str] = set()
+        for raw in payload.aliases:
+            trimmed = raw.strip()
+            if trimmed and trimmed.lower() not in seen_alias:
+                seen_alias.add(trimmed.lower())
+                clean_aliases.append(trimmed[:80])
+        if not payload.allow_distinct_instance:
+            candidate_names = {
+                payload.actor_id.lower(),
+                payload.display_name.strip().lower(),
+                *(a.lower() for a in clean_aliases),
+            }
+            for existing_id, existing in sorted(working.actors.items()):
+                existing_names = {existing_id.lower()}
+                if existing.display_name:
+                    existing_names.add(existing.display_name.strip().lower())
+                existing_names.update(a.strip().lower() for a in existing.aliases if a.strip())
+                overlap = candidate_names.intersection(existing_names)
+                if overlap:
+                    raise ValueError(
+                        f"alias/name conflict with existing actor {existing_id!r} "
+                        f"({sorted(overlap)[0]!r}); reuse it or set allow_distinct_instance=true"
+                    )
+        item_re = re.compile(r"^[a-z][a-z0-9_]{0,59}$")
+        inventory: dict[str, int] = {}
+        for item_key, count in sorted(payload.inventory.items()):
+            if not item_re.fullmatch(item_key):
+                raise ValueError(f"invalid item key: {item_key!r}")
+            if count < 0:
+                raise ValueError(f"negative inventory count for {item_key!r}")
+            if count > 0:
+                inventory[item_key] = count
+        conditions: set[str] = set()
+        for cond in payload.conditions:
+            if not item_re.fullmatch(cond):
+                raise ValueError(f"invalid condition key: {cond!r}")
+            conditions.add(cond)
+        location: str | None = None
+        if working.map is not None:
+            if payload.location is not None:
+                if payload.location not in working.map.rooms:
+                    raise ValueError(f"unknown room: {payload.location}")
+                location = payload.location
+            else:
+                location = caller.location or working.map.start_room
+        elif payload.location is not None:
+            raise ValueError("world has no map")
+        provenance = dict(payload.provenance) if payload.provenance else {"source": "gm_confirmed"}
+        new_actor = ActorState(
+            actor_id=payload.actor_id,
+            hp=payload.hp,
+            max_hp=payload.max_hp,
+            inventory=inventory,
+            conditions=conditions,
+            stats=dict(payload.stats),
+            location=location,
+            visited_rooms={location} if location is not None else set(),
+            display_name=payload.display_name.strip(),
+            aliases=clean_aliases,
+            provenance=provenance,
+        )
+        working.actors[payload.actor_id] = new_actor
+        patch = StatePatch(
+            path=f"actors.{payload.actor_id}",
+            before=None,
+            after=new_actor.model_dump(mode="json"),
+        )
+        loc_note = f" in {location}" if location else ""
+        return RuleResult(
+            state=working,
+            facts=[f"registered actor {payload.actor_id} ({new_actor.display_name}){loc_note}"],
+            rolls=[],
+            patches=[patch],
+            trace=[f"runtime:{REGISTER_ACTOR_KIND} actor={event.actor_id} new={payload.actor_id}"],
+            resolution=None,
+        )
+
+    def _apply_add_room(self, working: WorldState, event: GameEvent) -> RuleResult:
+        payload = AddRoomPayload.model_validate(event.payload)
+        caller = working.actors.get(event.actor_id)
+        if caller is None:
+            raise ValueError(f"unknown actor: {event.actor_id}")
+        if working.map is None:
+            raise ValueError("world has no map")
+        if len(working.map.rooms) >= 64:
+            raise ValueError("maximum room limit (64) reached")
+        if payload.room_id in working.map.rooms:
+            raise ValueError(f"room already exists: {payload.room_id}")
+        from_id = payload.connect_from_room or caller.location or working.map.start_room
+        from_room = working.map.rooms.get(from_id)
+        if from_room is None:
+            raise ValueError(f"unknown room: {from_id}")
+        if payload.exit_key in from_room.exits:
+            raise ValueError(f"exit {payload.exit_key!r} already exists in room {from_id!r}")
+        item_re = re.compile(r"^[a-z][a-z0-9_]{0,59}$")
+        loot: dict[str, int] = {}
+        for item_key, count in sorted(payload.loot.items()):
+            if not item_re.fullmatch(item_key):
+                raise ValueError(f"invalid loot item key: {item_key!r}")
+            if count < 1:
+                raise ValueError(f"loot count must be >= 1 for {item_key!r}")
+            loot[item_key] = count
+        new_exits: dict[str, Exit] = {}
+        if payload.return_exit_key:
+            new_exits[payload.return_exit_key] = Exit(
+                to_room=from_id,
+                label=payload.return_exit_label or from_room.name,
+                kind=payload.exit_kind,
+            )
+        new_room = Room(
+            name=payload.name.strip(),
+            description=payload.description.strip(),
+            exits=new_exits,
+            loot=loot,
+            clues=dict(payload.clues),
+        )
+        new_exit = Exit(
+            to_room=payload.room_id,
+            label=payload.exit_label.strip(),
+            kind=payload.exit_kind,
+            locked=payload.locked,
+            key_item=payload.key_item,
+        )
+        working.map.rooms[payload.room_id] = new_room
+        from_room.exits[payload.exit_key] = new_exit
+        patches = [
+            StatePatch(
+                path=f"map.rooms.{payload.room_id}",
+                before=None,
+                after=new_room.model_dump(mode="json"),
+            ),
+            StatePatch(
+                path=f"map.rooms.{from_id}.exits.{payload.exit_key}",
+                before=None,
+                after=new_exit.model_dump(mode="json"),
+            ),
+        ]
+        return RuleResult(
+            state=working,
+            facts=[
+                f"added room {payload.room_id} ({new_room.name}) via {from_id}.{payload.exit_key}"
+            ],
+            rolls=[],
+            patches=patches,
+            trace=[
+                f"runtime:{ADD_ROOM_KIND} actor={event.actor_id} "
+                f"room={payload.room_id} from={from_id}"
             ],
             resolution=None,
         )

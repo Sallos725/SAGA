@@ -6,6 +6,13 @@
           "title": "Actor Id",
           "type": "string"
         },
+        "aliases": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
         "conditions": {
           "items": {
             "type": "string"
@@ -13,6 +20,20 @@
           "title": "Conditions",
           "type": "array",
           "uniqueItems": true
+        },
+        "display_name": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Display Name"
         },
         "hp": {
           "default": 10,
@@ -43,6 +64,13 @@
           "default": 10,
           "title": "Max Hp",
           "type": "integer"
+        },
+        "provenance": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Provenance",
+          "type": "object"
         },
         "stats": {
           "additionalProperties": {
