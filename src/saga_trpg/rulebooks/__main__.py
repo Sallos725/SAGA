@@ -10,11 +10,20 @@ python -m saga_trpg.rulebooks charx     card.json [--rulebook book.json --rpack-
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 
+from saga_trpg.adapters.narrator.openai_compat import OpenAICompatConfig
 from saga_trpg.rulebooks.charx import build_card_v3, write_charx
+from saga_trpg.rulebooks.converter import (
+    ConversionError,
+    card_to_scenario_draft,
+    enrich_card_with_llm,
+    extract_card_from_bytes,
+)
 from saga_trpg.rulebooks.loader import RulebookError, load_rulebook
 from saga_trpg.rulebooks.risu_module import build_module
 from saga_trpg.rulebooks.risum import RPackError, RPackMap, extract_rpack_map, write_risum
@@ -57,7 +66,35 @@ def main(argv: list[str] | None = None) -> int:
     )
     sc_mod.add_argument("path")
     sc_mod.add_argument("--out", help="output file (default: <scenario>.module.json)")
+    imp = commands.add_parser(
+        "import-card",
+        help="convert a RisuAI .charx / .json / .png card into a SAGA scenario draft",
+    )
+    imp.add_argument("card", help="path to .charx, .json (CCv2/CCv3), or .png card")
+    imp.add_argument("--rulebook", required=False, help="rulebook JSON to align stats/items")
+    imp.add_argument("--out", help="scenario JSON output (default: <card>.scenario.json)")
+    imp.add_argument("--module-out", help="optional RisuAI scenario module JSON output")
+    imp.add_argument("--llm-url", help="optional OpenAI-compatible base URL for LLM enrichment")
+    imp.add_argument("--llm-model", help="model name for LLM enrichment")
+    imp.add_argument(
+        "--llm-api-key-env",
+        default="SAGA_LLM_API_KEY",
+        help="environment variable holding the LLM API key (default: SAGA_LLM_API_KEY)",
+    )
+    imp.add_argument(
+        "--reasoning-effort",
+        help="optional reasoning_effort (none|minimal|low|medium|high|xhigh)",
+    )
+    imp.add_argument(
+        "--custom-header",
+        action="append",
+        default=[],
+        help="repeatable 'Name: Value' custom HTTP header for LLM requests",
+    )
+    imp.add_argument("--custom-body", help="optional JSON object merged into LLM request body")
     args = parser.parse_args(argv)
+    if args.command == "import-card":
+        return _import_card(args)
     if args.command == "check-scenario":
         try:
             scenario = load_scenario(args.path)
@@ -146,6 +183,55 @@ def _rpack(path: str | None) -> RPackMap | None:
     except (OSError, RPackError) as exc:
         print(f"rpack table: {exc}", file=sys.stderr)
         return None
+
+
+def _import_card(args: argparse.Namespace) -> int:
+    card_path = Path(args.card)
+    try:
+        raw_bytes = card_path.read_bytes()
+        parsed_card = extract_card_from_bytes(raw_bytes, filename=card_path.name)
+        rulebook = load_rulebook(args.rulebook) if args.rulebook else None
+        if args.llm_url:
+            if not args.llm_model:
+                raise ConversionError("--llm-model is required when --llm-url is set")
+            custom_headers: dict[str, str] = {}
+            for item in args.custom_header or []:
+                if ":" not in item:
+                    raise ConversionError(
+                        f"invalid --custom-header (expected 'Name: Value'): {item}"
+                    )
+                k, v = item.split(":", 1)
+                custom_headers[k.strip()] = v.strip()
+            config = OpenAICompatConfig.from_values(
+                base_url=args.llm_url,
+                narrator_model=args.llm_model,
+                intent_model=args.llm_model,
+                api_key=os.getenv(args.llm_api_key_env) or None,
+                reasoning_effort=args.reasoning_effort,
+                custom_headers=custom_headers or None,
+                custom_body=args.custom_body,
+            )
+            result = asyncio.run(enrich_card_with_llm(parsed_card, config, rulebook=rulebook))
+        else:
+            result = card_to_scenario_draft(parsed_card, rulebook=rulebook)
+    except (OSError, ConversionError, RulebookError, ValueError) as exc:
+        print(f"import-card error: {exc}", file=sys.stderr)
+        return 1
+    out = Path(args.out) if args.out else card_path.with_suffix(".scenario.json")
+    out.write_text(result.scenario.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    print(f"{result.scenario.id}@{result.scenario.version} ({result.mode}) -> {out}")
+    print(f"  actors: {', '.join(result.scenario.actors)}")
+    if result.scenario.map and result.scenario.map.rooms:
+        print(f"  rooms: {', '.join(result.scenario.map.rooms)}")
+    for warning in result.warnings:
+        print(f"  note: {warning}")
+    if args.module_out:
+        mod_out = Path(args.module_out)
+        mod_out.write_text(
+            json.dumps(result.module, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        print(f"  module -> {mod_out}")
+    return 0
 
 
 def _charx(args: argparse.Namespace) -> int:

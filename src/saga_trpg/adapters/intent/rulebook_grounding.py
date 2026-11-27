@@ -14,14 +14,17 @@ from typing import Any
 from pydantic import JsonValue
 
 from saga_trpg.domain.events import (
+    ADD_ROOM_KIND,
     ADJUDICATE_ACTION_KIND,
     GM_CORRECTION_KIND,
     INSPECT_ROOM_KIND,
     MOVE_NPC_KIND,
     NARRATIVE_TURN_KIND,
     QUEST_UPDATE_KIND,
+    REGISTER_ACTOR_KIND,
     TAKE_LOOT_KIND,
     UNLOCK_EXIT_KIND,
+    AddRoomPayload,
     AdjudicateActionPayload,
     GameEvent,
     GmCorrectionPayload,
@@ -29,6 +32,7 @@ from saga_trpg.domain.events import (
     MoveNpcPayload,
     NarrativeTurnPayload,
     QuestUpdatePayload,
+    RegisterActorPayload,
     TakeLootPayload,
     UnlockExitPayload,
 )
@@ -57,6 +61,8 @@ def allowed_v4_models(spec: RulebookSpec, *, allow_adjudicate: bool = True) -> d
         MOVE_NPC_KIND: MoveNpcPayload,
         QUEST_UPDATE_KIND: QuestUpdatePayload,
         GM_CORRECTION_KIND: GmCorrectionPayload,
+        REGISTER_ACTOR_KIND: RegisterActorPayload,
+        ADD_ROOM_KIND: AddRoomPayload,
     }
     if allow_adjudicate:
         models[ADJUDICATE_ACTION_KIND] = AdjudicateActionPayload
@@ -97,11 +103,19 @@ def intent_context_for(
         actions[kind] = model.model_json_schema()
     if allow_adjudicate:
         actions[ADJUDICATE_ACTION_KIND] = AdjudicateActionPayload.model_json_schema()
+    actor_aliases = {
+        aid: [a.display_name, *a.aliases]
+        for aid, a in sorted(state.actors.items())
+        if a.display_name or a.aliases
+    }
     return {
         "text": text,
         "actor_id": actor_id,
         "ruleset": f"{spec.id}@{spec.version}",
         "actors": sorted(state.actors),
+        "actor_aliases": {
+            aid: [name for name in names if name] for aid, names in actor_aliases.items()
+        },
         "current_room": view.room_name if view is not None else None,
         "room_loot": view.loot if view is not None else {},
         "exits": exits,

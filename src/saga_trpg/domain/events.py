@@ -12,6 +12,8 @@ INSPECT_ROOM_KIND = "inspect_room"
 MOVE_NPC_KIND = "move_npc"
 QUEST_UPDATE_KIND = "quest_update"
 GM_CORRECTION_KIND = "gm_correction"
+REGISTER_ACTOR_KIND = "register_actor"
+ADD_ROOM_KIND = "add_room"
 
 _IDENTIFIER = r"^[a-z0-9][a-z0-9_-]{0,59}$"
 
@@ -128,6 +130,52 @@ class GmCorrectionPayload(BaseModel):
         ):
             raise ValueError("gm_correction requires at least one state change")
         return self
+
+
+class RegisterActorPayload(BaseModel):
+    """A2: register a new NPC/actor in play with provenance and alias deduplication."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    actor_id: str = Field(min_length=1, max_length=60, pattern=r"^[a-z][a-z0-9_]{0,59}$")
+    display_name: str = Field(min_length=1, max_length=80)
+    aliases: list[str] = Field(default_factory=list, max_length=16)
+    hp: int = Field(default=10, ge=0, le=9999)
+    max_hp: int = Field(default=10, ge=1, le=9999)
+    stats: dict[str, int | float | str | bool] = Field(default_factory=dict)
+    inventory: dict[str, int] = Field(default_factory=dict)
+    conditions: list[str] = Field(default_factory=list)
+    location: str | None = Field(default=None, min_length=1, max_length=60)
+    provenance: dict[str, Literal["card", "inferred", "gm_confirmed"]] = Field(default_factory=dict)
+    allow_distinct_instance: bool = False
+
+    @model_validator(mode="after")
+    def check_hp_bounds(self) -> RegisterActorPayload:
+        if self.hp > self.max_hp:
+            raise ValueError("hp cannot exceed max_hp")
+        return self
+
+
+class AddRoomPayload(BaseModel):
+    """A2: register a new room connected to an existing map room in play."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    room_id: str = Field(min_length=1, max_length=60, pattern=r"^[a-z][a-z0-9_]{0,59}$")
+    name: str = Field(min_length=1, max_length=80)
+    description: str = Field(default="", max_length=2000)
+    connect_from_room: str | None = Field(default=None, min_length=1, max_length=60)
+    exit_key: str = Field(min_length=1, max_length=40, pattern=r"^[a-z][a-z0-9_]{0,39}$")
+    exit_label: str = Field(min_length=1, max_length=80)
+    exit_kind: Literal["open", "door"] = "open"
+    locked: bool = False
+    key_item: str | None = Field(default=None, min_length=1, max_length=60)
+    return_exit_key: str | None = Field(
+        default=None, min_length=1, max_length=40, pattern=r"^[a-z][a-z0-9_]{0,39}$"
+    )
+    return_exit_label: str | None = Field(default=None, min_length=1, max_length=80)
+    loot: dict[str, int] = Field(default_factory=dict)
+    clues: dict[str, str] = Field(default_factory=dict)
 
 
 class GameEvent(BaseModel):

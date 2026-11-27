@@ -31,6 +31,9 @@ class ActorState(BaseModel):
     stats: dict[str, int | float | str | bool] = Field(default_factory=dict)
     location: str | None = Field(default=None, min_length=1, exclude_if=_absent)
     visited_rooms: set[str] = Field(default_factory=set, exclude_if=_empty)
+    display_name: str | None = Field(default=None, min_length=1, max_length=80, exclude_if=_absent)
+    aliases: list[str] = Field(default_factory=list, exclude_if=_empty)
+    provenance: dict[str, str] = Field(default_factory=dict, exclude_if=_empty)
 
     @field_serializer("conditions", "visited_rooms")
     def _sorted_sets(self, values: set[str]) -> list[str]:

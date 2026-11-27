@@ -85,16 +85,18 @@ class OpenAICompatIntentTool:
         self._transport = transport
 
     async def _call(self, arguments: dict[str, JsonValue]) -> str:
-        body = {
-            "model": self.config.intent_model,
-            "messages": [
-                {"role": "system", "content": INTENT_INSTRUCTION},
-                {"role": "user", "content": json.dumps(arguments, ensure_ascii=False)},
-            ],
-            "stream": False,
-            "temperature": 0,
-            "max_tokens": 512,
-        }
+        body = self.config.build_body(
+            {
+                "model": self.config.intent_model,
+                "messages": [
+                    {"role": "system", "content": INTENT_INSTRUCTION},
+                    {"role": "user", "content": json.dumps(arguments, ensure_ascii=False)},
+                ],
+                "stream": False,
+                "temperature": 0,
+                "max_tokens": 512,
+            }
+        )
         async with asyncio.timeout(min(self.config.timeout_seconds, 25.0)):
             async with httpx.AsyncClient(
                 timeout=min(self.config.timeout_seconds, 25.0), transport=self._transport

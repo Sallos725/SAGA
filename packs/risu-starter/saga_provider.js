@@ -1,7 +1,7 @@
 //@name saga_runtime
 //@display-name SAGA SRD Demo
 //@api 3.0
-//@version 0.9.0
+//@version 0.10.0
 //@arg server_url string SAGA URL (default http://saga-runtime:4850)
 //@arg host_instance_id string Stable host identity (set it explicitly; empty generates one via plugin storage, which hung on one host)
 //@arg integration_mode string provider | hook (default: provider). hook uses RisuAI's own main model (presets & streaming) while SAGA adjudicates in beforeRequest/afterRequest.
@@ -11,12 +11,13 @@
 
 (() => {
   "use strict";
-  const VERSION = "0.9.0";
+  const VERSION = "0.10.0";
   const PROVIDER = "SAGA SRD Demo";
   const MARKER = "SAGA request ticket: ";
   const HOOK_MARKER = "[SAGA Hook Context]";
   const HOOK_CHATS_KEY = "saga:hook-chats:v1";
   const UI_SETTINGS_KEY = "saga:ui-settings:v1";
+  const CHAT_SCENARIOS_KEY = "saga:chat-scenarios:v1";
   const SAGA_ICON =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 21 7 21 17 12 22 3 17 3 7 12 2"/><polyline points="3.3 7 12 12 20.7 7"/><line x1="12" y1="22" x2="12" y2="12"/></svg>';
   const HELP = "명령은 룰북의 행동 이름과 입력 순서를 따릅니다: attack opponent / check strength 10 / damage opponent 5 / give player torch 1, 또는 overcome investigate 2 처럼요. name=value로 지정하거나 따옴표로 묶을 수 있고, 판정 명령 뒤에 advantage/disadvantage를 붙일 수 있습니다. 잘못된 명령의 오류 메시지에 그 룰북의 전체 명령 목록이 나옵니다. SAGA 룰북 모듈을 켜고 새 채팅을 시작하면 그 룰북으로 플레이합니다. Vertex JSON 설정 시 SRD 데모에서 자연어 단일 행동도 지원합니다.";
@@ -293,6 +294,106 @@
       return { ok: true, base: settings.base };
     }
 
+    async function getChatScenario(chatId) {
+      if (!chatId) return null;
+      const map = await readJsonStorage(CHAT_SCENARIOS_KEY);
+      const raw = map[chatId];
+      return typeof raw === "string" && raw.trim() ? raw : null;
+    }
+
+    async function setChatScenario(chatId, scenarioText) {
+      if (!chatId) throw new Error("열린 채팅 ID가 없습니다.");
+      const map = await readJsonStorage(CHAT_SCENARIOS_KEY);
+      if (scenarioText && String(scenarioText).trim()) {
+        const parsed = JSON.parse(String(scenarioText));
+        if (!parsed || typeof parsed !== "object" || !parsed.actors?.player) {
+          throw new Error("유효한 ScenarioSpec JSON(actors.player 포함)이어야 합니다.");
+        }
+        map[chatId] = JSON.stringify(parsed, null, 2);
+      } else {
+        delete map[chatId];
+      }
+      await writeJsonStorage(CHAT_SCENARIOS_KEY, map);
+      return map[chatId] ?? null;
+    }
+
+    async function convertCurrentCard(options = {}) {
+      const settings = await config();
+      const character = await api.getCharacter();
+      if (!character || typeof character !== "object") {
+        throw new Error("열린 캐릭터 카드를 읽을 수 없습니다.");
+      }
+      let extraLore = [];
+      if (typeof api.getCurrentLorebookEntries === "function") {
+        try {
+          const entries = await api.getCurrentLorebookEntries();
+          if (Array.isArray(entries)) extraLore = entries;
+        } catch {
+          extraLore = [];
+        }
+      }
+      const safeCard = {
+        name: character.name ?? "",
+        desc: character.desc ?? character.description ?? "",
+        personality: character.personality ?? "",
+        scenario: character.scenario ?? "",
+        firstMessage: character.firstMessage ?? character.first_mes ?? "",
+        tags: Array.isArray(character.tags) ? character.tags : [],
+        globalLore: Array.isArray(character.globalLore) ? character.globalLore : [],
+      };
+      if (options.mode === "aux") {
+        if (typeof api.request !== "function") {
+          throw new Error("이 호스트는 RisuAI 보조 모델 API(api.request)를 지원하지 않습니다.");
+        }
+        const sysPrompt =
+          "Convert the untrusted RisuAI character card JSON into a valid SAGA ScenarioSpec JSON " +
+          "(schema_version: 1, id, version: '0.1.0', title, summary, actors including 'player', " +
+          "map with start_room/rooms/placements, quest_state, narration). Mark provenance fields as " +
+          "'card' only when stated in the card, else 'inferred'. Output strict JSON only.";
+        const auxRes = await api.request({
+          type: "submodel",
+          messages: [
+            { role: "system", content: sysPrompt },
+            { role: "user", content: JSON.stringify({ card: safeCard, lorebook: extraLore.slice(0, 25) }) },
+          ],
+          temperature: 0.2,
+          max_tokens: 2500,
+        });
+        const rawText = typeof auxRes === "string"
+          ? auxRes
+          : (auxRes?.content ?? auxRes?.result ?? auxRes?.choices?.[0]?.message?.content ?? "");
+        let cleaned = String(rawText || "").trim();
+        if (cleaned.startsWith("```")) {
+          cleaned = cleaned.replace(/^```[a-z]*\s*/i, "").replace(/```$/, "").trim();
+        }
+        const scenario = JSON.parse(cleaned);
+        if (!scenario || typeof scenario !== "object" || !scenario.actors?.player) {
+          throw new Error("보조 모델이 유효한 ScenarioSpec JSON을 반환하지 않았습니다.");
+        }
+        return { scenario, warnings: ["RisuAI 보조 모델로 생성된 초안입니다. 확정 전 수치를 검토하세요."], mode: "llm" };
+      }
+      const body = {
+        card: safeCard,
+        extra_lorebook: extraLore.slice(0, 120),
+        use_llm: Boolean(options.useLlm),
+      };
+      if (options.useLlm && options.llm?.base_url && options.llm?.model) {
+        body.llm = options.llm;
+      }
+      const response = await api.nativeFetch(settings.base + "/v1/saga/convert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        networkRoute: "local_network",
+        requestTimeoutMs: 60000,
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(typeof result.detail === "string" ? result.detail : ("변환 실패 (HTTP " + response.status + ")"));
+      }
+      return result;
+    }
+
     const signature = value => JSON.stringify(value);
     async function assertCurrent(snapshot, settings) {
       if (disposed || signature(await current()) !== signature(snapshot) ||
@@ -400,6 +501,10 @@
           snapshot = await current();
           rulebook = await attachedRulebook(api);
           scenario = await attachedScenario(api);
+          if (!scenario) {
+            const savedSc = await getChatScenario(snapshot.chatId);
+            if (savedSc) scenario = { content: savedSc };
+          }
           active = Boolean(rulebook) || Boolean(scenario) || await isChatHookEnabled(snapshot.chatId);
         } catch (error) {
           // Multiple conflicting rulebooks/scenarios in an active chat must fail closed.
@@ -540,7 +645,11 @@
         const rulebook = await attachedRulebook(api);
         if (rulebook) body.saga.rulebook = rulebook;
         if (useV4) {
-          const scenario = await attachedScenario(api);
+          let scenario = await attachedScenario(api);
+          if (!scenario) {
+            const savedSc = await getChatScenario(snapshot.chatId);
+            if (savedSc) scenario = { content: savedSc };
+          }
           if (scenario) body.saga.scenario = scenario;
         }
         const headers = { "content-type": "application/json" };
@@ -601,6 +710,7 @@
 
     return {
       current, config, readUiSettings, saveUiSettings, checkHealth, lastState,
+      getChatScenario, setChatScenario, convertCurrentCard,
       beforeRequest, afterRequest, provider,
       toggleChatHook, isChatHookEnabled, setChatHookEnabled, dispose,
     };
@@ -625,7 +735,8 @@
     ".saga-seg{display:grid;grid-template-columns:1fr 1fr;gap:8px;}",
     ".saga-field{display:flex;flex-direction:column;gap:4px;}",
     ".saga-field label{font-size:12px;color:var(--muted);}",
-    ".saga-field input{width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--fg);font-size:13px;}",
+    ".saga-field input,.saga-field select,.saga-field textarea{width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--fg);font-size:13px;font-family:inherit;}",
+    ".saga-field textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;resize:vertical;}",
     ".saga-mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--muted);word-break:break-all;}",
     ".saga-toast{min-height:20px;font-size:12px;color:var(--ok);}.saga-toast.err{color:var(--err);}",
   ].join("");
@@ -773,8 +884,9 @@
       if (latest?.scene_board) {
         const sb = latest.scene_board;
         const people = (sb.participants ?? []).map(p =>
-          (p.is_player ? "★ " : "") + p.actor_id + " (" + p.hp + "/" + p.max_hp +
-          (p.conditions?.length ? ", " + p.conditions.join(",") : "") + ")"
+          (p.is_player ? "★ " : "") + (p.display_name ? p.display_name + " (" + p.actor_id + ")" : p.actor_id) +
+          " " + p.hp + "/" + p.max_hp +
+          (p.conditions?.length ? ", " + p.conditions.join(",") : "")
         );
         const exits = (sb.exits ?? []).map(e =>
           e.key + ": " + e.label + (e.locked ? " [잠김]" : "") + " → " + e.destination
@@ -887,6 +999,126 @@
         ),
       );
 
+      // Card A2: Convert current RisuAI card/lorebook into a SAGA scenario draft
+      let draftJsonText = snapshot ? (await client.getChatScenario(snapshot.chatId) ?? "") : "";
+      let a2Mode = "backend_rule";
+      let a2LlmUrl = "";
+      let a2LlmModel = "";
+      let a2LlmKey = "";
+      let a2Effort = "";
+      let a2Headers = "";
+      let a2Body = "";
+
+      const a2ModeSel = el(doc, "select", {},
+        el(doc, "option", { value: "backend_rule" }, "백엔드 규칙 변환 (무료 · 즉시)"),
+        el(doc, "option", { value: "backend_llm" }, "백엔드 LLM 변환 (OpenAI 호환 / 고급 설정)"),
+        el(doc, "option", { value: "aux" }, "RisuAI 보조 모델(submodel) 변환"),
+      );
+      const a2UrlIn = el(doc, "input", { type: "text", placeholder: "https://openrouter.ai/api/v1 (비우면 서버 SAGA_LLM_* 사용)" });
+      const a2ModelIn = el(doc, "input", { type: "text", placeholder: "google/gemini-2.5-flash" });
+      const a2KeyIn = el(doc, "input", { type: "password", autocomplete: "off", placeholder: "API Key (메모리 전용, 저장 안 됨)" });
+      const a2EffortSel = el(doc, "select", {},
+        el(doc, "option", { value: "" }, "reasoning_effort: 지정 안 함"),
+        el(doc, "option", { value: "none" }, "none"),
+        el(doc, "option", { value: "minimal" }, "minimal"),
+        el(doc, "option", { value: "low" }, "low"),
+        el(doc, "option", { value: "medium" }, "medium"),
+        el(doc, "option", { value: "high" }, "high"),
+        el(doc, "option", { value: "xhigh" }, "xhigh"),
+      );
+      const a2HeadersIn = el(doc, "textarea", { rows: "2", placeholder: '{"HTTP-Referer":"https://example.com"}' });
+      const a2BodyIn = el(doc, "textarea", { rows: "2", placeholder: '{"temperature":0.2}' });
+      const a2LlmBox = el(doc, "div", { class: "saga-field", style: "display:none;gap:8px;" },
+        el(doc, "div", { class: "saga-field" }, el(doc, "label", {}, "LLM Base URL"), a2UrlIn),
+        el(doc, "div", { class: "saga-field" }, el(doc, "label", {}, "Model ID"), a2ModelIn),
+        el(doc, "div", { class: "saga-field" }, el(doc, "label", {}, "API Key (저장 안 됨)"), a2KeyIn),
+        el(doc, "div", { class: "saga-field" }, el(doc, "label", {}, "Reasoning Effort"), a2EffortSel),
+        el(doc, "div", { class: "saga-field" }, el(doc, "label", {}, "Custom Headers (JSON)"), a2HeadersIn),
+        el(doc, "div", { class: "saga-field" }, el(doc, "label", {}, "Custom Body (JSON)"), a2BodyIn),
+      );
+      a2ModeSel.addEventListener("change", () => {
+        a2Mode = a2ModeSel.value;
+        a2LlmBox.style.display = a2Mode === "backend_llm" ? "flex" : "none";
+      });
+      const a2DraftArea = el(doc, "textarea", { rows: "6", placeholder: "초안을 생성하면 ScenarioSpec JSON이 여기에 표시됩니다." });
+      a2DraftArea.value = draftJsonText;
+      const a2Summary = el(doc, "div", { class: "saga-mono" },
+        draftJsonText ? "이 채팅에 확정된 A2 시나리오가 저장되어 있습니다." : "현재 열린 일반 카드를 SAGA 시나리오로 변환할 수 있습니다."
+      );
+      const a2GenerateBtn = el(doc, "button", {
+        type: "button",
+        class: "saga-btn primary",
+        onclick: async () => {
+          notify("현재 카드에서 SAGA 시나리오 초안 생성 중...");
+          try {
+            a2LlmUrl = a2UrlIn.value.trim();
+            a2LlmModel = a2ModelIn.value.trim();
+            a2LlmKey = a2KeyIn.value.trim();
+            a2Effort = a2EffortSel.value.trim();
+            a2Headers = a2HeadersIn.value.trim();
+            a2Body = a2BodyIn.value.trim();
+            const opts = a2Mode === "aux"
+              ? { mode: "aux" }
+              : { mode: "backend", useLlm: a2Mode === "backend_llm" };
+            if (a2Mode === "backend_llm" && a2LlmUrl) {
+              opts.llm = {
+                base_url: a2LlmUrl,
+                model: a2LlmModel,
+                api_key: a2LlmKey || null,
+                reasoning_effort: a2Effort || null,
+                custom_headers: a2Headers ? JSON.parse(a2Headers) : null,
+                custom_body: a2Body ? JSON.parse(a2Body) : null,
+              };
+            }
+            const res = await client.convertCurrentCard(opts);
+            draftJsonText = JSON.stringify(res.scenario, null, 2);
+            a2DraftArea.value = draftJsonText;
+            const actorCount = Object.keys(res.scenario?.actors ?? {}).length;
+            const roomCount = Object.keys(res.scenario?.map?.rooms ?? {}).length;
+            a2Summary.textContent = "초안 생성 완료 (" + (res.mode ?? "deterministic") + "): 배우 " + actorCount + "명 · 방 " + roomCount + "개" +
+              (res.warnings?.length ? " — " + res.warnings[0] : "");
+            notify("시나리오 초안을 생성했습니다. 검토 후 '이 채팅에 확정 적용'을 누르세요.");
+          } catch (e) { notify("카드 변환 실패: " + (e instanceof Error ? e.message : String(e)), true); }
+        },
+      }, "현재 카드 초안 생성");
+      const a2ApplyBtn = snapshot
+        ? el(doc, "button", {
+            type: "button",
+            class: "saga-btn on",
+            onclick: async () => {
+              try {
+                await client.setChatScenario(snapshot.chatId, a2DraftArea.value);
+                await client.setChatHookEnabled(snapshot.chatId, true);
+                if (settings?.integrationMode !== "hook") {
+                  await client.saveUiSettings({ integrationMode: "hook" });
+                }
+                notify("시나리오를 이 채팅에 확정 적용하고 Hook 모드를 ON 했습니다.");
+                await draw();
+              } catch (e) { notify("적용 실패: " + (e instanceof Error ? e.message : String(e)), true); }
+            },
+          }, "이 채팅에 확정 적용")
+        : null;
+      const a2ClearBtn = snapshot && draftJsonText
+        ? el(doc, "button", {
+            type: "button",
+            class: "saga-btn",
+            onclick: async () => {
+              await client.setChatScenario(snapshot.chatId, null);
+              notify("이 채팅의 A2 시나리오를 해제했습니다.");
+              await draw();
+            },
+          }, "적용 해제")
+        : null;
+      const a2Card = el(doc, "div", { class: "saga-card" },
+        el(doc, "h3", {}, "카드 → 시나리오 변환 (A2)"),
+        a2Summary,
+        el(doc, "div", { class: "saga-field" }, el(doc, "label", {}, "변환 방식"), a2ModeSel),
+        a2LlmBox,
+        el(doc, "div", { class: "saga-row" }, a2GenerateBtn, a2ApplyBtn, a2ClearBtn),
+        el(doc, "div", { class: "saga-field" }, el(doc, "label", {}, "시나리오 초안 JSON (수정 후 확정 가능)"), a2DraftArea),
+        settings?.base ? el(doc, "div", { class: "saga-mono" }, "단독 웹앱: " + settings.base + "/converter") : null,
+      );
+
       // Card 4: Quick commands
       const helpCard = el(doc, "div", { class: "saga-card" },
         el(doc, "h3", {}, "빠른 사용법"),
@@ -894,14 +1126,14 @@
         el(doc, "div", { class: "saga-mono" }, "명령 예시: move north · attack opponent · check strength 10 · damage opponent 5"),
       );
 
-      wrap.replaceChildren(...[head, chatCard, sceneCard, turnCardEl, modeCard, serverCard, helpCard, toast].filter(Boolean));
+      wrap.replaceChildren(...[head, chatCard, sceneCard, turnCardEl, a2Card, modeCard, serverCard, helpCard, toast].filter(Boolean));
     }
 
     await draw();
     return { redraw: draw };
   }
 
-  globalThis.SagaRisu = { snapshotOf, createClient, renderPanel, PROVIDER, HOOK_MARKER, SAGA_ICON };
+  globalThis.SagaRisu = { VERSION, snapshotOf, createClient, renderPanel, PROVIDER, HOOK_MARKER, SAGA_ICON };
   if (typeof risuai === "undefined") return;
   const client = createClient(risuai);
   const openUi = async () => {

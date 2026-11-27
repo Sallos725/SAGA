@@ -343,6 +343,8 @@ class CommittedTurn:
             participants.append(
                 {
                     "actor_id": aid,
+                    "display_name": actor.display_name,
+                    "aliases": list(actor.aliases),
                     "is_player": aid == viewer,
                     "hp": actor.hp,
                     "max_hp": actor.max_hp,
