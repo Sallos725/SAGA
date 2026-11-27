@@ -29,7 +29,7 @@ and can lag newer progress reports in `docs/progress/`.
 - [x] closed deterministic command interpretation
 - [x] state-neutral `narrative_turn` (no-op) event and protocol v4 (`POST /v1/saga/turn`)
 - [x] OpenAI-compatible narrator & grounded rulebook intent adapter (`risu_prompt`, SSE streaming, flexible reasoning/header/body params)
-- [x] RisuAI Hook mode (`beforeRequest` / `afterRequest`) + Provider mode dual-mode plugin (`v0.10.0`) with fullscreen settings/status panel
+- [x] RisuAI Hook mode (`beforeRequest` / `afterRequest`) + Provider mode dual-mode plugin (`v0.11.2`) with fullscreen settings/status panel and UI-configurable Intent LLM (`runLLMModel` submodel + OpenAI-compatible override)
 - [x] scenario cards (`ScenarioSpec` v1) + multi-format Card-to-Scenario converter (`.charx`/`.png`/`.json`, CLI, API, standalone HTML webapp `tools/saga-converter.html`, in-plugin panel)
 - [x] opt-in Vertex natural-language intent & narration after commit, with fallback
 - [ ] live browser/host E2E verification of M1–M3 + A2 (Hook mode, streaming, card converter, scenario play)

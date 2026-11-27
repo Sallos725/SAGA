@@ -546,23 +546,132 @@ test("hook mode fails closed when the SAGA backend returns an error or is unreac
   await assert.rejects(() => f.prepare(), /ECONNREFUSED/);
 });
 
-test("hook mode optionally queries RisuAI submodel and forwards client_proposal to SAGA", async () => {
+test("hook mode optionally queries RisuAI submodel via runLLMModel (with intent-context) and forwards client_proposal to SAGA", async () => {
   const f = hookFixture();
   f.args.use_risu_aux_intent = "true";
   await f.client.setChatHookEnabled("chat-1", true);
+  f.character.chats[0].message[0].data = "상대를 검으로 벤다";
+  f.prompt = [{ role: "user", content: "상대를 검으로 벤다", memo: "u1" }];
+  const baseReply = f.reply;
+  f.reply = async () => {
+    const url = f.calls.at(-1)?.url || "";
+    if (url.endsWith("/v1/saga/intent-context")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          already_committed: false,
+          is_command: false,
+          system_instruction: "GROUNDED_SYS",
+          context: { text: "상대를 검으로 벤다", actors: ["opponent", "player"], exits: [] },
+        }),
+      };
+    }
+    return baseReply();
+  };
   const auxCalls = [];
-  f.api.request = async opts => {
+  f.api.runLLMModel = async opts => {
     auxCalls.push(opts);
-    return { content: '{"kind": "attack", "payload": {"target_id": "opponent", "advantage": false, "disadvantage": false}}' };
+    return {
+      type: "streaming",
+      result: new ReadableStream({
+        start(controller) {
+          controller.enqueue({ 0: '{"kind": "attack",' });
+          controller.enqueue({ 0: '{"kind": "attack", "payload": {"target_id": "opponent", "advantage": false, "disadvantage": false}}' });
+          controller.close();
+        },
+      }),
+    };
   };
   await f.prepare();
   assert.equal(auxCalls.length, 1);
   assert.equal(auxCalls[0].mode, "submodel");
-  assert.equal(auxCalls[0].allowPlugins, false);
-  assert.deepEqual(f.calls[0].body.client_proposal, {
+  assert.equal(auxCalls[0].allowPlugins, true);
+  assert.equal(auxCalls[0].messages[0].content, "GROUNDED_SYS");
+  assert.equal(f.calls.length, 2);
+  assert.ok(f.calls[0].url.endsWith("/v1/saga/intent-context"));
+  assert.ok(f.calls[1].url.endsWith("/v1/saga/turn"));
+  assert.deepEqual(f.calls[1].body.client_proposal, {
     kind: "attack",
     payload: { target_id: "opponent", advantage: false, disadvantage: false },
   });
+});
+
+test("hook mode skips RisuAI submodel on reroll (already_committed) and explicit commands", async () => {
+  const f = hookFixture();
+  await f.client.setChatHookEnabled("chat-1", true);
+  await f.client.saveUiSettings({ integrationMode: "hook", intentMode: "risu_aux" });
+  let auxCount = 0;
+  f.api.runLLMModel = async () => {
+    auxCount++;
+    return { type: "success", result: '{"kind":"narrative_turn","payload":{}}' };
+  };
+  const baseReply = f.reply;
+  f.reply = async () => {
+    const url = f.calls.at(-1)?.url || "";
+    if (url.endsWith("/v1/saga/intent-context")) {
+      return { ok: true, status: 200, json: async () => ({ already_committed: true, is_command: false }) };
+    }
+    return baseReply();
+  };
+  await f.prepare();
+  assert.equal(auxCount, 0);
+  assert.equal("client_proposal" in f.calls[1].body, false);
+});
+
+test("hook mode custom_llm forwards intent_llm override and x-saga-llm-api-key header, and compacts long event_id in footer", async () => {
+  const f = hookFixture();
+  await f.client.setChatHookEnabled("chat-1", true);
+  await f.client.saveUiSettings({
+    integrationMode: "hook",
+    intentMode: "custom_llm",
+    intentLlm: {
+      base_url: "https://openrouter.ai/api/v1",
+      model: "google/gemini-2.5-flash",
+      api_key: "sk-test-header-only",
+      reasoning_effort: "low",
+      custom_headers: '{"X-Title":"SAGA"}',
+      custom_body: '{"temperature":0}',
+    },
+  });
+  const longId = "risu-" + "a".repeat(64);
+  const baseReply = f.reply;
+  f.reply = async () => {
+    const res = await baseReply();
+    const data = await res.json();
+    data.saga.event_id = longId;
+    return { ok: true, status: 200, json: async () => data };
+  };
+  await f.prepare();
+  assert.equal(f.calls.length, 1);
+  assert.ok(f.calls[0].url.endsWith("/v1/saga/turn"));
+  assert.equal(f.calls[0].headers["x-saga-llm-api-key"], "sk-test-header-only");
+  assert.equal("api_key" in f.calls[0].body.intent_llm, false);
+  assert.deepEqual(f.calls[0].body.intent_llm, {
+    base_url: "https://openrouter.ai/api/v1",
+    model: "google/gemini-2.5-flash",
+    reasoning_effort: "low",
+    custom_headers: { "X-Title": "SAGA" },
+    custom_body: { temperature: 0 },
+  });
+  const rendered = await f.client.afterRequest("검을 휘둘렀다.", "model");
+  assert.match(rendered, new RegExp('title="' + longId + '"'));
+  assert.match(rendered, /word-break:break-all/);
+  assert.match(rendered, />risu-aaaaaaaaaaa…<\/code>/);
+
+  // Next turn's outgoing prompt strips the previous SAGA footer so the main LLM does not mimic it.
+  f.character.chats[0].message.push(
+    { chatId: "a1", role: "char", data: rendered },
+    { chatId: "u2", role: "user", data: "북쪽으로 이동한다" },
+  );
+  f.prompt = [
+    { role: "user", content: "attack opponent", memo: "u1" },
+    { role: "assistant", content: rendered },
+    { role: "user", content: "북쪽으로 이동한다", memo: "u2" },
+  ];
+  const nextOut = await f.prepare();
+  const prevAssistant = nextOut.find(m => m.role === "assistant");
+  assert.equal(prevAssistant.content, "검을 휘둘렀다.");
 });
 
 test("provider mode v4 streams SSE chunks with risu_prompt and appends authoritative footer", async () => {

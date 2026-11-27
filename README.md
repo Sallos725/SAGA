@@ -26,10 +26,12 @@ Card-to-Scenario converter (`tools/saga-converter.html` / `GET /converter`), and
 RisuAI/PocketRisu plugin (**Hook mode** using your own RisuAI main model + presets, or **Provider
 mode** with OpenAI-compatible SSE streaming, optional Vertex JSON, or zero-API-key fallback).
 
-> **Status:** Early prototype. Core runtime, rulebooks, scenarios, Hook/Provider plugin (`v0.10.0`),
-> exploration/quests/GM corrections, and card converter pass 647 Python tests and 37 Node plugin
-> tests. Recent M1–M3 and A2 features are verified offline and awaiting broader live host
-> playtesting; production NMOS, MCP dice, and live RuleCheeseBench runs remain deferred.
+> **Status:** Early prototype. Core runtime, rulebooks, scenarios, Hook/Provider plugin (`v0.11.2`),
+> exploration/quests/GM corrections, and card converter pass 649 Python tests and 39 Node plugin
+> tests. Hook mode natural-language intent (`runLLMModel` submodel), deterministic attack dice,
+> and reroll reuse were verified live on PocketRisu 1.18.0; broader scenario/converter live
+> playtesting remains ongoing, and production NMOS, MCP dice, and live RuleCheeseBench runs remain
+> deferred.
 
 ## Architecture at a glance
 
@@ -40,7 +42,7 @@ Green is implemented, amber is partial/offline-verified, dashed grey is planned.
 ```mermaid
 flowchart TD
     subgraph FE["Frontends & Authoring"]
-        risu["RisuAI / PocketRisu<br/>Hook & Provider plugin v0.10.0"]:::partial
+        risu["RisuAI / PocketRisu<br/>Hook & Provider plugin v0.11.2"]:::partial
         conv["Card-to-Scenario Converter<br/>CLI · /converter single-HTML app"]:::done
         http["Debug HTTP API"]:::done
         bench["RuleCheeseBench runner<br/>scripted & model drivers · validators"]:::partial
@@ -172,7 +174,7 @@ and storage migrations.
 
 1. Run SAGA locally (above) or start the isolated Docker stack via
    [deploy/README.md](deploy/README.md).
-2. Import [`packs/risu-starter/saga_provider.js`](packs/risu-starter/saga_provider.js) (`v0.10.0`)
+2. Import [`packs/risu-starter/saga_provider.js`](packs/risu-starter/saga_provider.js) (`v0.11.2`)
    under **Settings → Plugins** in RisuAI / PocketRisu, and set `useSayNothing=false`.
 3. Configure `server_url` and a stable `host_instance_id` (in plugin settings or the in-chat SAGA
    panel), then pick an operating mode:
@@ -224,7 +226,7 @@ src/saga_trpg/
   api/           Thin FastAPI HTTP host (debug API, /v1/saga/*, /converter)
 
 packs/
-  risu-starter/  RisuAI/PocketRisu plugin (v0.10.0) & starter card
+  risu-starter/  RisuAI/PocketRisu plugin (v0.11.2) & starter card
   rulesets/      Bundled SRD 5.2.1 & Fate Condensed modules
   scenarios/     Example scenario packs (e.g., black-tower-outpost)
 
@@ -257,8 +259,10 @@ Implemented:
 - **RisuAI play foundation (M1, protocol v4)**: state-neutral `narrative_turn` for pure RP,
   `POST /v1/saga/turn` Hook-mode adjudication endpoint, OpenAI-compatible narrator & intent
   adapters (`risu_prompt`, SSE streaming, flexible `reasoning_effort`/`custom_headers`/`custom_body`),
-  optional Vertex narration/intent, and dual-mode plugin `v0.10.0` with fullscreen settings/status
-  panel ([ADR 0010](docs/adr/0010-narrative-turn-and-hook-mode.md))
+  optional Vertex narration/intent, and dual-mode plugin `v0.11.2` with fullscreen settings/status
+  panel, in-panel Intent LLM selector (RisuAI `runLLMModel` submodel / direct OpenAI-compatible UI
+  override / server `.env`), and read-only `/v1/saga/intent-context` reroll guard
+  ([ADR 0010](docs/adr/0010-narrative-turn-and-hook-mode.md))
 - **Scenarios & free-action adjudication (M2)**: `ScenarioSpec` v1 separating initial worlds from
   rulebook mechanics, grounded natural-language intent across rulebook actions & exits, and
   deterministic free-action GM adjudication (`adjudicate_action`) over the durable tape

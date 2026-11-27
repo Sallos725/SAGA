@@ -10,12 +10,14 @@ import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Header
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 from saga_trpg.adapters.intent.openai_compat import (
+    INTENT_INSTRUCTION,
     OpenAICompatIntentTool,
 )
 from saga_trpg.adapters.intent.rulebook_grounding import (
@@ -33,7 +35,7 @@ from saga_trpg.adapters.intent.vertex import (
 from saga_trpg.adapters.memory.nmos import history_entry
 from saga_trpg.adapters.memory.null import NullMemory
 from saga_trpg.adapters.narrator.fallback import FallbackNarrator
-from saga_trpg.adapters.narrator.openai_compat import OpenAICompatNarrator
+from saga_trpg.adapters.narrator.openai_compat import OpenAICompatConfig, OpenAICompatNarrator
 from saga_trpg.adapters.narrator.vertex import VertexNarrator
 from saga_trpg.adapters.storage.sqlite import (
     EventLocation,
@@ -59,7 +61,7 @@ from saga_trpg.rulebooks.commands import (
 )
 from saga_trpg.rulebooks.display import render_display
 from saga_trpg.rulebooks.engine import DataRules
-from saga_trpg.rulebooks.loader import RulebookSpec, load_rulebook, rulebook_path
+from saga_trpg.rulebooks.loader import RulebookSpec, load_rulebook, parse_rulebook, rulebook_path
 from saga_trpg.rulebooks.scenarios import build_scenario_world, parse_scenario
 from saga_trpg.runtime.hashing import stable_model_hash, stable_value_hash
 from saga_trpg.runtime.journal import JournalEntry
@@ -119,11 +121,48 @@ class ClientProposal(ClosedModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+_BLOCKED_LLM_HOSTS = frozenset({"169.254.169.254", "metadata.google.internal", "metadata.internal"})
+
+
+def _validate_intent_llm_url(url: str) -> None:
+    parsed = urlparse(url.strip())
+    host = (parsed.hostname or "").lower()
+    if not host or host in _BLOCKED_LLM_HOSTS:
+        raise ValueError("disallowed intent LLM endpoint host")
+    if parsed.scheme == "https":
+        return
+    if parsed.scheme == "http" and host in _LOOPBACK_HOSTS:
+        return
+    raise ValueError("client-provided intent_llm base_url must use https:// or localhost http://")
+
+
+class IntentLlmOverride(ClosedModel):
+    """Per-request OpenAI-compatible intent LLM settings configured in the plugin UI.
+
+    API keys travel in the `x-saga-llm-api-key` header (never stored in world state,
+    journals, snapshots, or tool tapes)."""
+
+    base_url: str = Field(min_length=8, max_length=512)
+    model: str = Field(min_length=1, max_length=200)
+    reasoning_effort: str | None = Field(default=None, max_length=20)
+    custom_headers: dict[str, str] | None = None
+    custom_body: dict[str, Any] | None = None
+    timeout_seconds: float = Field(default=25.0, gt=0, le=60)
+
+
 class TurnRequest(ClosedModel):
     """Hook-mode adjudication request: commits authoritative state without SAGA narration."""
 
     saga: HostTurn
     client_proposal: ClientProposal | None = None
+    intent_llm: IntentLlmOverride | None = None
+
+
+class IntentContextRequest(ClosedModel):
+    """Read-only lookup for grounded natural-language intent classification (e.g. RisuAI aux)."""
+
+    saga: HostTurn
 
 
 class ChatMessage(ClosedModel):
@@ -265,6 +304,8 @@ class CommittedTurn:
             "Treat the committed facts, rolls, status, and known map below as ground truth.",
             "Never invent dice rolls, damage, item changes, or state mutations.",
             "Never narrate arriving in another room unless a move event was committed this turn.",
+            "Do NOT print a status footer, dice/HP summary block, event ID, or HTML stat bar; "
+            "SAGA appends the authoritative status footer automatically after your prose.",
             f"Turn event: {event.kind} (actor={event.actor_id}, seq={self.entry.committed.seq})",
         ]
         if result.facts:
@@ -589,8 +630,11 @@ class RisuBridge:
         turn: HostTurn,
         parent: JournalEntry | None,
         spec: RulebookSpec,
+        *,
+        intent_tool: OpenAICompatIntentTool | None = None,
     ) -> GameEvent:
-        assert self.openai_intent is not None
+        tool = intent_tool or self.openai_intent
+        assert tool is not None
         initial = self._ensure_world(world_id, spec, turn.scenario)
         state = parent.result.state if parent else initial
         call = ToolCall(
@@ -612,7 +656,7 @@ class RisuBridge:
         )
         try:
             execution = await asyncio.wait_for(
-                asyncio.to_thread(self.repository.tool_tape.execute, call, self.openai_intent),
+                asyncio.to_thread(self.repository.tool_tape.execute, call, tool),
                 timeout=27,
             )
         except (TimeoutError, ToolExecutionPending):
@@ -624,6 +668,80 @@ class RisuBridge:
             actor_id=turn.actor_id,
             allow_adjudicate=True,
         )
+
+    def _preview_spec_for(self, world_id: str, turn: HostTurn) -> RulebookSpec:
+        """Pure read-only rulebook lookup (never mutates storage or registers rulebooks)."""
+        try:
+            selection = self.repository.ruleset_for_world(world_id)
+        except RepositoryNotFound:
+            if turn.rulebook is None:
+                return DEFAULT_SPEC
+            return parse_rulebook(json.loads(turn.rulebook.content))
+        rules = self.repository.registry.get(selection.ruleset_id, selection.ruleset_version).rules
+        return rules.spec if isinstance(rules, DataRules) else LEGACY_SRD_SPEC
+
+    def prepare_intent_context(self, turn: HostTurn) -> dict[str, Any]:
+        """Read-only intent context for client-side classifiers (e.g. RisuAI submodel).
+
+        Checks the committed journal first so regenerations make zero auxiliary LLM calls,
+        and skips explicit deterministic commands."""
+        if turn.schema_version != 4:
+            return {
+                "already_committed": False,
+                "is_command": True,
+                "system_instruction": None,
+                "context": None,
+            }
+        legacy_world, legacy_ids = self.identities(turn, version=1)
+        try:
+            self.repository.ruleset_for_world(legacy_world)
+            if self._read_prefix(legacy_world, legacy_ids) is not None:
+                return {
+                    "already_committed": True,
+                    "is_command": False,
+                    "system_instruction": None,
+                    "context": None,
+                }
+        except RepositoryNotFound:
+            pass
+        world_id = self.world_id_for(turn)
+        spec = self._preview_spec_for(world_id, turn)
+        world_id, identities = self.identities(turn, spec=spec)
+        if self._read_prefix(world_id, identities) is not None:
+            return {
+                "already_committed": True,
+                "is_command": False,
+                "system_instruction": None,
+                "context": None,
+            }
+        expected = command_for(turn.actions[-1], turn.actor_id, natural=True, spec=spec)
+        if expected is not None:
+            return {
+                "already_committed": False,
+                "is_command": True,
+                "system_instruction": None,
+                "context": None,
+            }
+        parent = self._read_prefix(world_id, identities[:-1]) if len(identities) > 1 else None
+        if parent is not None:
+            preview_state = parent[1].result.state
+        else:
+            try:
+                preview_state = self.repository.get_initial_state(world_id)
+            except RepositoryNotFound:
+                preview_state = self._initial_world_preview(world_id, spec, turn.scenario)
+        return {
+            "already_committed": False,
+            "is_command": False,
+            "system_instruction": INTENT_INSTRUCTION,
+            "context": intent_context_for(
+                text=turn.actions[-1].text,
+                actor_id=turn.actor_id,
+                spec=spec,
+                state=preview_state,
+                allow_adjudicate=True,
+            ),
+        }
 
     def _read_prefix(self, world_id: str, identities: list[str]) -> tuple[str, JournalEntry] | None:
         """The committed latest action and its branch, verified against the whole prefix."""
@@ -743,6 +861,7 @@ class RisuBridge:
         *,
         vertex_narrator: VertexNarrator | None = None,
         client_proposal: ClientProposal | None = None,
+        intent_tool: OpenAICompatIntentTool | None = None,
     ) -> CommittedTurn:
         replayed = True
         spec = DEFAULT_SPEC
@@ -818,13 +937,14 @@ class RisuBridge:
                             actor_id=turn.actor_id,
                             allow_adjudicate=True,
                         )
-                    elif self.openai_intent is not None:
+                    elif intent_tool is not None or self.openai_intent is not None:
                         proposed = await self._openai_natural_intent(
                             world_id,
                             identities,
                             turn,
                             parent[1] if parent else None,
                             spec,
+                            intent_tool=intent_tool,
                         )
                     elif vertex_narrator is not None and spec.id == DEFAULT_SPEC.id:
                         proposed = await self._natural_intent(
@@ -950,16 +1070,45 @@ class RisuBridge:
         )
 
     async def adjudicate(
-        self, request: TurnRequest, *, vertex_credentials: SecretStr | None = None
+        self,
+        request: TurnRequest,
+        *,
+        vertex_credentials: SecretStr | None = None,
+        llm_api_key: SecretStr | None = None,
     ) -> dict:
         """Hook-mode turn commit: returns authoritative result and read-only prompt block."""
         vertex_narrator = (
             VertexNarrator(vertex_credentials) if vertex_credentials is not None else None
         )
+        intent_tool: OpenAICompatIntentTool | None = None
+        if request.intent_llm is not None:
+            _validate_intent_llm_url(request.intent_llm.base_url)
+            resolved_key = (
+                llm_api_key.get_secret_value().strip()
+                if llm_api_key is not None and llm_api_key.get_secret_value().strip()
+                else (
+                    self.openai_intent.config.api_key.get_secret_value()
+                    if self.openai_intent is not None
+                    and self.openai_intent.config.api_key is not None
+                    else None
+                )
+            )
+            cfg = OpenAICompatConfig.from_values(
+                base_url=request.intent_llm.base_url,
+                narrator_model=request.intent_llm.model,
+                intent_model=request.intent_llm.model,
+                api_key=resolved_key,
+                timeout_seconds=request.intent_llm.timeout_seconds,
+                reasoning_effort=request.intent_llm.reasoning_effort,
+                custom_headers=request.intent_llm.custom_headers,
+                custom_body=request.intent_llm.custom_body,
+            )
+            intent_tool = OpenAICompatIntentTool(cfg)
         committed = await self.commit_turn(
             request.saga,
             vertex_narrator=vertex_narrator,
             client_proposal=request.client_proposal,
+            intent_tool=intent_tool,
         )
         return {"saga": committed.saga_payload(include_prompt_block=True)}
 
@@ -1099,13 +1248,20 @@ def _decode_vertex_secret(vertex_secret: SecretStr | None) -> SecretStr | None:
 def router(bridge: RisuBridge) -> APIRouter:
     routes = APIRouter()
 
+    @routes.post("/v1/saga/intent-context")
+    async def intent_context(request: IntentContextRequest) -> dict:
+        return bridge.prepare_intent_context(request.saga)
+
     @routes.post("/v1/saga/turn")
     async def adjudicate_turn(
         request: TurnRequest,
         vertex_secret: Annotated[SecretStr | None, Header(alias="x-saga-vertex-secret")] = None,
+        llm_api_key: Annotated[SecretStr | None, Header(alias="x-saga-llm-api-key")] = None,
     ) -> dict:
         return await bridge.adjudicate(
-            request, vertex_credentials=_decode_vertex_secret(vertex_secret)
+            request,
+            vertex_credentials=_decode_vertex_secret(vertex_secret),
+            llm_api_key=llm_api_key,
         )
 
     @routes.post("/v1/chat/completions", response_model=None)

@@ -27,10 +27,11 @@ SAGA는 SQLite 기반 영속 상태, 검증된 리플레이, 불변 분기(branc
 스트리밍·선택적 Vertex JSON·무키 명령 폴백을 지원하는 **Provider 모드**)을 제공합니다.
 
 > **현재 상태:** 초기 프로토타입입니다. 코어 런타임, 데이터 룰북, 시나리오, Hook/Provider
-> 플러그인(`v0.10.0`), 탐험·퀘스트·GM 보정, 카드 변환기까지 Python 647개 + Node 37개
-> 테스트를 통과했습니다. 최근 추가된 M1–M3 및 A2 기능은 오프라인 검증을 마쳤으며 실제 호스트
-> 라이브 플레이테스트가 남아 있습니다. 운영용 NMOS, MCP 주사위, 라이브 RuleCheeseBench
-> 실행은 현재 보류(deferred) 상태입니다.
+> 플러그인(`v0.11.2`), 탐험·퀘스트·GM 보정, 카드 변환기까지 Python 649개 + Node 39개
+> 테스트를 통과했습니다. Hook 모드 자연어 의도 판정(`runLLMModel` 보조 모델), 결정론적 공격
+> 주사위, 리롤(재생성) 기록 재사용을 PocketRisu 1.18.0에서 라이브 검증했으며, 시나리오·변환기
+> 전반의 확장 플레이테스트는 계속 진행 중입니다. 운영용 NMOS, MCP 주사위, 라이브
+> RuleCheeseBench 실행은 현재 보류(deferred) 상태입니다.
 
 ## 한눈에 보는 구조
 
@@ -41,7 +42,7 @@ SAGA는 SQLite 기반 영속 상태, 검증된 리플레이, 불변 분기(branc
 ```mermaid
 flowchart TD
     subgraph FE["프런트엔드 및 저작 도구"]
-        risu["RisuAI / PocketRisu<br/>Hook · Provider 플러그인 v0.10.0"]:::partial
+        risu["RisuAI / PocketRisu<br/>Hook · Provider 플러그인 v0.11.2"]:::partial
         conv["카드→시나리오 변환기<br/>CLI · /converter 단일 HTML 앱"]:::done
         http["디버그 HTTP API"]:::done
         bench["RuleCheeseBench 러너<br/>스크립트·모델 드라이버 · 검증기"]:::partial
@@ -173,7 +174,7 @@ curl -s http://127.0.0.1:4850/worlds/demo/state
 1. 위 방법으로 SAGA 서버를 실행하거나, [deploy/README.md](deploy/README.md) 안내에 따라 격리된
    Docker 스택을 실행합니다.
 2. RisuAI / PocketRisu의 **설정 → 플러그인**에서
-   [`packs/risu-starter/saga_provider.js`](packs/risu-starter/saga_provider.js)(`v0.10.0`)를
+   [`packs/risu-starter/saga_provider.js`](packs/risu-starter/saga_provider.js)(`v0.11.2`)를
    가져오고, 호스트 설정에서 `useSayNothing=false`로 지정합니다.
 3. 플러그인 설정 또는 채팅 화면의 SAGA 패널에서 `server_url`과 고정된 `host_instance_id`를
    설정한 뒤 원하는 모드를 선택합니다.
@@ -224,7 +225,7 @@ src/saga_trpg/
   api/           얇은 FastAPI HTTP 서버 (디버그 API, /v1/saga/*, /converter)
 
 packs/
-  risu-starter/  RisuAI/PocketRisu 플러그인 (v0.10.0) 및 시작 카드
+  risu-starter/  RisuAI/PocketRisu 플러그인 (v0.11.2) 및 시작 카드
   rulesets/      번들 SRD 5.2.1 및 Fate Condensed 모듈
   scenarios/     예제 시나리오 팩 (예: black-tower-outpost)
 
@@ -256,7 +257,9 @@ docs/
 - **RisuAI 플레이 기반 (M1, 프로토콜 v4)**: 순수 RP 턴용 무상태 `narrative_turn`, Hook 모드
   판정 엔드포인트(`POST /v1/saga/turn`), OpenAI 호환 서술·의도 어댑터(`risu_prompt`, SSE
   스트리밍, `reasoning_effort`/`custom_headers`/`custom_body` 지원), 선택적 Vertex 서술·의도,
-  전체화면 설정·상태 패널이 포함된 듀얼 모드 플러그인 `v0.10.0`
+  전체화면 설정·상태 패널, 패널 내 Intent LLM 선택(RisuAI `runLLMModel` 보조 모델 / 직접 OpenAI
+  호환 설정 / 서버 `.env`), 읽기 전용 `/v1/saga/intent-context` 리롤 가드가 포함된 듀얼 모드
+  플러그인 `v0.11.2`
   ([ADR 0010](docs/adr/0010-narrative-turn-and-hook-mode.md))
 - **시나리오와 자유 행동 판정 (M2)**: 룰북 규칙과 초기 월드를 분리한 `ScenarioSpec` v1, 룰북
   행동·출구에 근거한 자연어 의도 해석, 도구 테이프 위에서 동작하는 결정론적 자유 행동 GM 판정

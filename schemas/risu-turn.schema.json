@@ -131,6 +131,78 @@
       "title": "HostTurn",
       "type": "object"
     },
+    "IntentLlmOverride": {
+      "additionalProperties": false,
+      "description": "Per-request OpenAI-compatible intent LLM settings configured in the plugin UI.\n\nAPI keys travel in the `x-saga-llm-api-key` header (never stored in world state,\njournals, snapshots, or tool tapes).",
+      "properties": {
+        "base_url": {
+          "maxLength": 512,
+          "minLength": 8,
+          "title": "Base Url",
+          "type": "string"
+        },
+        "custom_body": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Custom Body"
+        },
+        "custom_headers": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Custom Headers"
+        },
+        "model": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Model",
+          "type": "string"
+        },
+        "reasoning_effort": {
+          "anyOf": [
+            {
+              "maxLength": 20,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reasoning Effort"
+        },
+        "timeout_seconds": {
+          "default": 25.0,
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "title": "Timeout Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "base_url",
+        "model"
+      ],
+      "title": "IntentLlmOverride",
+      "type": "object"
+    },
     "RulebookAttachment": {
       "additionalProperties": false,
       "description": "A rulebook carried by an enabled RisuAI module; pins a world when it is created.",
@@ -174,6 +246,17 @@
       "anyOf": [
         {
           "$ref": "#/$defs/ClientProposal"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "intent_llm": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/IntentLlmOverride"
         },
         {
           "type": "null"

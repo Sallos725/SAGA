@@ -1,17 +1,17 @@
 //@name saga_runtime
 //@display-name SAGA SRD Demo
 //@api 3.0
-//@version 0.10.0
+//@version 0.11.2
 //@arg server_url string SAGA URL (default http://saga-runtime:4850)
 //@arg host_instance_id string Stable host identity (set it explicitly; empty generates one via plugin storage, which hung on one host)
 //@arg integration_mode string provider | hook (default: provider). hook uses RisuAI's own main model (presets & streaming) while SAGA adjudicates in beforeRequest/afterRequest.
 //@arg provider_stream string false | true (default: false). In provider mode, stream SSE prose and forward risu_prompt using protocol v4.
-//@arg use_risu_aux_intent string false | true (default: false). In hook mode, ask RisuAI's submodel to propose an action/narrative_turn for SAGA validation.
+//@arg use_risu_aux_intent string false | true (default: false). In hook mode, ask RisuAI's submodel (runLLMModel) to propose a grounded action/narrative_turn for SAGA validation.
 //@arg vertex_service_account_json string {{name::Vertex 서비스 계정 JSON}}{{textarea}} JSON 전체를 붙여넣으세요. Gemini 3.8 Flash로 자연어 행동·서술; 비우면 명령·기본 서술.
 
 (() => {
   "use strict";
-  const VERSION = "0.10.0";
+  const VERSION = "0.11.2";
   const PROVIDER = "SAGA SRD Demo";
   const MARKER = "SAGA request ticket: ";
   const HOOK_MARKER = "[SAGA Hook Context]";
@@ -22,12 +22,17 @@
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 21 7 21 17 12 22 3 17 3 7 12 2"/><polyline points="3.3 7 12 12 20.7 7"/><line x1="12" y1="22" x2="12" y2="12"/></svg>';
   const HELP = "명령은 룰북의 행동 이름과 입력 순서를 따릅니다: attack opponent / check strength 10 / damage opponent 5 / give player torch 1, 또는 overcome investigate 2 처럼요. name=value로 지정하거나 따옴표로 묶을 수 있고, 판정 명령 뒤에 advantage/disadvantage를 붙일 수 있습니다. 잘못된 명령의 오류 메시지에 그 룰북의 전체 명령 목록이 나옵니다. SAGA 룰북 모듈을 켜고 새 채팅을 시작하면 그 룰북으로 플레이합니다. Vertex JSON 설정 시 SRD 데모에서 자연어 단일 행동도 지원합니다.";
 
+  const SAGA_FOOTER_RE = /\n*<div[^>]*style="margin-top:0\.75em;padding-top:0\.4em;border-top:1px solid rgba\(128,128,128,0\.35\);[^"]*"[^>]*>[\s\S]*?<\/div>(?:\n\n기존 v1 기록은 읽기 전용입니다\. 새 행동은 새 채팅에서 시작하세요\.)?\s*$/g;
+  function stripSagaFooter(text) {
+    return typeof text === "string" ? text.replace(SAGA_FOOTER_RE, "") : text;
+  }
+
   function narrationContext(prompt) {
     const text = prompt.filter(message => ["system", "user", "assistant"].includes(message?.role) &&
       typeof message.content === "string" && message.content.trim() && !message.content.includes(MARKER) && !message.content.includes(HOOK_MARKER));
     return [...text.filter(message => message.role === "system").slice(0, 8),
       ...text.filter(message => message.role !== "system").slice(-24)]
-      .map(message => (message.role + ": " + message.content).slice(0, 4000));
+      .map(message => (message.role + ": " + (message.role === "assistant" ? stripSagaFooter(message.content) : message.content)).slice(0, 4000));
   }
 
   function risuPromptMessages(prompt) {
@@ -36,7 +41,10 @@
       .filter(message => ["system", "user", "assistant", "developer"].includes(message?.role) &&
         typeof message.content === "string" && !message.content.includes(MARKER) && !message.content.includes(HOOK_MARKER))
       .slice(-256)
-      .map(message => ({ role: message.role, content: message.content.slice(0, 32000) }));
+      .map(message => ({
+        role: message.role,
+        content: (message.role === "assistant" ? stripSagaFooter(message.content) : message.content).slice(0, 32000),
+      }));
   }
 
   function snapshotOf(character, selection) {
@@ -97,6 +105,10 @@
     const time = formatTime(state.state.simulated_time);
     return actors.concat(time === null ? [] : ["⏱ " + time], ["🎒 " + (items.length ? items.join(", ") : "—")]);
   }
+  function compactEventId(eventId) {
+    const raw = String(eventId ?? "");
+    return raw.length > 24 ? raw.slice(0, 16) + "…" : raw;
+  }
   function statusFooter(state) {
     const rolls = state.rolls.map(roll => escapeHtml(roll.expression) + " → [" + roll.raw.map(escapeHtml).join(", ") + "] = " + escapeHtml(roll.total));
     const line1 = displayLines(state).join(" · ");
@@ -109,10 +121,13 @@
     if (Array.isArray(card?.changes) && card.changes.length) {
       cardParts.push("Δ " + card.changes.slice(0, 4).map(escapeHtml).join(" · "));
     }
+    const shortId = compactEventId(state.event_id);
+    const codeTag = '<code title="' + escapeHtml(state.event_id) + '" style="display:inline;white-space:normal;word-break:break-all;overflow-wrap:anywhere">' +
+      escapeHtml(shortId) + "</code>";
     const line2 = ["🎲 " + (rolls.length ? rolls.join(" · ") : "주사위 없음"), "턴 " + escapeHtml(state.seq) + (state.replayed ? " · 기록 재사용" : ""),
-      "<code>" + escapeHtml(state.event_id) + "</code>"].join(" · ");
+      codeTag].join(" · ");
     const lines = [line1].concat(cardParts.length ? [cardParts.join(" · ")] : [], [line2]);
-    return '<div style="margin-top:0.75em;padding-top:0.4em;border-top:1px solid rgba(128,128,128,0.35);font-size:0.78em;line-height:1.6;opacity:0.85;max-width:100%;overflow-wrap:anywhere;word-break:break-word">' +
+    return '<div style="margin-top:0.75em;padding-top:0.4em;border-top:1px solid rgba(128,128,128,0.35);font-size:0.78em;line-height:1.6;opacity:0.85;width:100%;max-width:100%;min-width:0;overflow:hidden;overflow-wrap:anywhere;word-break:break-word;box-sizing:border-box">' +
       lines.join("<br>") + "</div>";
   }
 
@@ -163,7 +178,7 @@
     return info ? { content: info.content } : null;
   }
 
-  function extractJsonProposal(text) {
+  function extractJsonObject(text) {
     if (typeof text !== "string") return null;
     let cleaned = text.trim();
     if (cleaned.startsWith("```")) {
@@ -174,14 +189,77 @@
     }
     try {
       const parsed = JSON.parse(cleaned);
-      if (parsed && typeof parsed === "object" && typeof parsed.kind === "string" && parsed.kind) {
-        const payload = parsed.payload && typeof parsed.payload === "object" && !Array.isArray(parsed.payload) ? parsed.payload : {};
-        return { kind: parsed.kind, payload };
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+    } catch { /* try locating an embedded JSON object below */ }
+    const start = cleaned.indexOf("{");
+    const end = cleaned.lastIndexOf("}");
+    if (start !== -1 && end > start) {
+      try {
+        const parsed = JSON.parse(cleaned.slice(start, end + 1));
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+      } catch {
+        return null;
       }
-    } catch {
-      return null;
     }
     return null;
+  }
+
+  function extractJsonProposal(text) {
+    const parsed = extractJsonObject(text);
+    if (parsed && typeof parsed.kind === "string" && parsed.kind) {
+      const payload = parsed.payload && typeof parsed.payload === "object" && !Array.isArray(parsed.payload) ? parsed.payload : {};
+      return { kind: parsed.kind, payload };
+    }
+    return null;
+  }
+
+  async function readAuxOutput(res) {
+    if (typeof res === "string") return res;
+    if (!res || typeof res !== "object") return "";
+    if (res.type === "fail") {
+      throw new Error(typeof res.result === "string" && res.result ? res.result : "RisuAI 보조 모델 호출에 실패했습니다.");
+    }
+    if (res.result && typeof res.result.getReader === "function") {
+      const reader = res.result.getReader();
+      let accumulated = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (value !== undefined && value !== null) {
+          if (typeof value === "string") {
+            accumulated += value;
+          } else if (typeof value === "object") {
+            const firstKey = Object.keys(value)[0];
+            if (firstKey !== undefined && typeof value[firstKey] === "string") {
+              accumulated = value[firstKey];
+            }
+          }
+        }
+        if (done) break;
+      }
+      return accumulated;
+    }
+    const raw = res.content ?? res.result ?? res.message ?? res.choices?.[0]?.message?.content ?? "";
+    return typeof raw === "string" ? raw : "";
+  }
+
+  async function callRisuAux(api, messages) {
+    // allowPlugins: true lets users whose PocketRisu submodel is a plugin provider use it;
+    // SAGA's own provider still rejects recursive calls via busy + single-use ticket guards.
+    const opts = { mode: "submodel", allowPlugins: true, messages };
+    if (typeof api.runLLMModel === "function") {
+      try {
+        return await readAuxOutput(await api.runLLMModel(opts));
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        if (!msg.includes("not found") || typeof api.request !== "function") {
+          throw error;
+        }
+      }
+    }
+    if (typeof api.request === "function") {
+      return await readAuxOutput(await api.request(opts));
+    }
+    throw new Error("이 호스트는 RisuAI 보조 모델 API(runLLMModel)를 지원하지 않습니다.");
   }
 
   function createClient(api, uuid = randomId) {
@@ -261,8 +339,23 @@
       const rawMode = String(ui.integrationMode || await argument("integration_mode") || "provider").trim().toLowerCase();
       const integrationMode = rawMode === "hook" ? "hook" : "provider";
       const providerStream = typeof ui.providerStream === "boolean" ? ui.providerStream : isTruthy(await argument("provider_stream"));
-      const useAuxIntent = typeof ui.useAuxIntent === "boolean" ? ui.useAuxIntent : isTruthy(await argument("use_risu_aux_intent"));
-      return { base: url.origin, instance, credentials, integrationMode, providerStream, useAuxIntent };
+      const rawIntentMode = String(ui.intentMode || "").trim().toLowerCase();
+      const explicitAux = typeof ui.useAuxIntent === "boolean" ? ui.useAuxIntent : isTruthy(await argument("use_risu_aux_intent"));
+      const intentMode = ["risu_aux", "custom_llm", "server"].includes(rawIntentMode)
+        ? rawIntentMode
+        : (explicitAux ? "risu_aux" : "server");
+      const useAuxIntent = intentMode === "risu_aux";
+      const intentLlm = ui.intentLlm && typeof ui.intentLlm === "object" && !Array.isArray(ui.intentLlm)
+        ? {
+            base_url: String(ui.intentLlm.base_url ?? "").trim(),
+            model: String(ui.intentLlm.model ?? "").trim(),
+            api_key: String(ui.intentLlm.api_key ?? "").trim(),
+            reasoning_effort: String(ui.intentLlm.reasoning_effort ?? "").trim(),
+            custom_headers: String(ui.intentLlm.custom_headers ?? "").trim(),
+            custom_body: String(ui.intentLlm.custom_body ?? "").trim(),
+          }
+        : { base_url: "", model: "", api_key: "", reasoning_effort: "", custom_headers: "", custom_body: "" };
+      return { base: url.origin, instance, credentials, integrationMode, providerStream, useAuxIntent, intentMode, intentLlm };
     }
 
     async function isChatHookEnabled(chatId) {
@@ -292,6 +385,26 @@
       });
       if (!response.ok) throw new Error("HTTP " + response.status);
       return { ok: true, base: settings.base };
+    }
+
+    async function checkStatus() {
+      const settings = await config();
+      try {
+        const response = await api.nativeFetch(settings.base + "/v1/saga/status", {
+          method: "GET", headers: {}, networkRoute: "local_network", requestTimeoutMs: 5000,
+        });
+        if (response.ok) {
+          const data = await response.json().catch(() => ({}));
+          return {
+            ok: true,
+            base: settings.base,
+            intent_configured: Boolean(data?.intent_configured),
+            narrator_configured: Boolean(data?.narrator_configured),
+          };
+        }
+      } catch { /* fall through to /health */ }
+      const health = await checkHealth();
+      return { ...health, intent_configured: null, narrator_configured: null };
     }
 
     async function getChatScenario(chatId) {
@@ -342,31 +455,16 @@
         globalLore: Array.isArray(character.globalLore) ? character.globalLore : [],
       };
       if (options.mode === "aux") {
-        if (typeof api.request !== "function") {
-          throw new Error("이 호스트는 RisuAI 보조 모델 API(api.request)를 지원하지 않습니다.");
-        }
         const sysPrompt =
           "Convert the untrusted RisuAI character card JSON into a valid SAGA ScenarioSpec JSON " +
           "(schema_version: 1, id, version: '0.1.0', title, summary, actors including 'player', " +
           "map with start_room/rooms/placements, quest_state, narration). Mark provenance fields as " +
           "'card' only when stated in the card, else 'inferred'. Output strict JSON only.";
-        const auxRes = await api.request({
-          type: "submodel",
-          messages: [
-            { role: "system", content: sysPrompt },
-            { role: "user", content: JSON.stringify({ card: safeCard, lorebook: extraLore.slice(0, 25) }) },
-          ],
-          temperature: 0.2,
-          max_tokens: 2500,
-        });
-        const rawText = typeof auxRes === "string"
-          ? auxRes
-          : (auxRes?.content ?? auxRes?.result ?? auxRes?.choices?.[0]?.message?.content ?? "");
-        let cleaned = String(rawText || "").trim();
-        if (cleaned.startsWith("```")) {
-          cleaned = cleaned.replace(/^```[a-z]*\s*/i, "").replace(/```$/, "").trim();
-        }
-        const scenario = JSON.parse(cleaned);
+        const rawText = await callRisuAux(api, [
+          { role: "system", content: sysPrompt },
+          { role: "user", content: JSON.stringify({ card: safeCard, lorebook: extraLore.slice(0, 25) }) },
+        ]);
+        const scenario = extractJsonObject(rawText);
         if (!scenario || typeof scenario !== "object" || !scenario.actors?.player) {
           throw new Error("보조 모델이 유효한 ScenarioSpec JSON을 반환하지 않았습니다.");
         }
@@ -402,25 +500,38 @@
       }
     }
 
-    async function proposeWithRisuAux(text) {
-      if (typeof api.request !== "function") return null;
+    async function fetchIntentContext(settings, sagaBody) {
       try {
-        const res = await api.request({
-          mode: "submodel",
-          allowPlugins: false,
-          messages: [
-            {
-              role: "system",
-              content: 'Classify the player message into strict JSON {"kind": "<action_kind>", "payload": {...}}. If it is ordinary roleplay/dialogue without a rule action, return {"kind": "narrative_turn", "payload": {}}. Output JSON only.',
-            },
-            { role: "user", content: text },
-          ],
+        const res = await api.nativeFetch(settings.base + "/v1/saga/intent-context", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ saga: sagaBody }),
+          networkRoute: "local_network",
+          requestTimeoutMs: 10000,
         });
-        const content = typeof res === "string" ? res : (res?.content ?? res?.result ?? res?.message);
-        return extractJsonProposal(content);
+        if (!res.ok) return null;
+        const data = await res.json().catch(() => null);
+        if (data && typeof data === "object" && ("already_committed" in data || "is_command" in data)) {
+          return data;
+        }
+        return null;
       } catch {
         return null;
       }
+    }
+
+    async function proposeWithRisuAux(text, intentContext = null) {
+      const sys = typeof intentContext?.system_instruction === "string" && intentContext.system_instruction
+        ? intentContext.system_instruction
+        : 'Classify the player message into strict JSON {"kind": "<action_kind>", "payload": {...}}. If it is ordinary roleplay/dialogue without a rule action, return {"kind": "narrative_turn", "payload": {}}. Output JSON only.';
+      const userContent = intentContext?.context && typeof intentContext.context === "object"
+        ? JSON.stringify(intentContext.context)
+        : text;
+      const rawText = await callRisuAux(api, [
+        { role: "system", content: sys },
+        { role: "user", content: userContent },
+      ]);
+      return extractJsonProposal(rawText);
     }
 
     async function adjudicateHookTurn(snapshot, settings, rulebook, scenario) {
@@ -440,15 +551,43 @@
       };
       if (rulebook) body.saga.rulebook = rulebook;
       if (scenario) body.saga.scenario = scenario;
-      if (settings.useAuxIntent) {
-        const proposal = await proposeWithRisuAux(actions.at(-1).text);
-        if (proposal) body.client_proposal = proposal;
-      }
       const headers = { "content-type": "application/json" };
+      if (settings.intentMode === "risu_aux") {
+        const ctx = await fetchIntentContext(settings, body.saga);
+        if (!ctx?.already_committed && !ctx?.is_command) {
+          let proposal;
+          try {
+            proposal = await proposeWithRisuAux(actions.at(-1).text, ctx);
+          } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            throw new Error("RisuAI 보조 모델 자연어 판정 실패: " + detail);
+          }
+          if (proposal) body.client_proposal = proposal;
+        }
+      } else if (settings.intentMode === "custom_llm") {
+        const llm = settings.intentLlm || {};
+        if (!llm.base_url || !llm.model) {
+          throw new Error("SAGA 자연어 판정(직접 LLM)의 Base URL과 Model ID를 SAGA 패널에서 설정하세요.");
+        }
+        const override = { base_url: llm.base_url, model: llm.model };
+        if (llm.reasoning_effort) override.reasoning_effort = llm.reasoning_effort;
+        if (llm.custom_headers) {
+          try { override.custom_headers = JSON.parse(llm.custom_headers); }
+          catch { throw new Error("Intent LLM Custom Headers가 유효한 JSON이 아닙니다."); }
+        }
+        if (llm.custom_body) {
+          try { override.custom_body = JSON.parse(llm.custom_body); }
+          catch { throw new Error("Intent LLM Custom Body가 유효한 JSON이 아닙니다."); }
+        }
+        body.intent_llm = override;
+        if (llm.api_key) {
+          headers["x-saga-llm-api-key"] = llm.api_key;
+        }
+      }
       if (settings.credentials) {
         headers["x-saga-vertex-secret"] = btoa(String.fromCharCode(...new TextEncoder().encode(settings.credentials)));
       }
-      const timeout = settings.credentials ? 65000 : 20000;
+      const timeout = (settings.credentials || settings.intentMode === "custom_llm") ? 65000 : 25000;
       let timer;
       let response;
       try {
@@ -526,7 +665,12 @@
           const committed = await adjudicateHookTurn(snapshot, settings, rulebook, scenario);
           lastCommitted.set(snapshot.chatId, committed);
           pendingFooters.set(snapshot.chatId, { messageId: latest.id, state: committed });
-          return [...clean, { role: "system", content: HOOK_MARKER + "\n" + committed.prompt_block }];
+          const stripped = clean.map(message =>
+            message?.role === "assistant" && typeof message.content === "string"
+              ? { ...message, content: stripSagaFooter(message.content) }
+              : message
+          );
+          return [...stripped, { role: "system", content: HOOK_MARKER + "\n" + committed.prompt_block }];
         } finally {
           busy = false;
         }
@@ -709,7 +853,7 @@
     }
 
     return {
-      current, config, readUiSettings, saveUiSettings, checkHealth, lastState,
+      current, config, readUiSettings, saveUiSettings, checkHealth, checkStatus, lastState,
       getChatScenario, setChatScenario, convertCurrentCard,
       beforeRequest, afterRequest, provider,
       toggleChatHook, isChatHookEnabled, setChatHookEnabled, dispose,
@@ -719,7 +863,7 @@
   // Host-theme-aware control panel UI built strictly with safe DOM APIs (no innerHTML).
   const PANEL_CSS = [
     ":root{--bg:#14161a;--card:#1d2026;--border:#2e333d;--fg:#eef1f6;--muted:#98a2b3;--accent:#3b82f6;--ok:#10b981;--err:#ef4444;}",
-    "*{box-sizing:border-box;}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;}",
+    "*{box-sizing:border-box;}html,body{height:100%;margin:0;overflow-y:auto;overscroll-behavior:contain;background:var(--bg);color:var(--fg);font:14px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;}",
     ".saga-wrap{max-width:620px;margin:0 auto;padding:18px 16px 28px;display:flex;flex-direction:column;gap:14px;}",
     ".saga-head{display:flex;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid var(--border);padding-bottom:10px;}",
     ".saga-title{font-size:17px;font-weight:700;display:flex;align-items:center;gap:8px;}",
@@ -733,6 +877,7 @@
     ".saga-btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;}",
     ".saga-btn.on{background:rgba(16,185,129,0.18);border-color:var(--ok);color:var(--ok);}",
     ".saga-seg{display:grid;grid-template-columns:1fr 1fr;gap:8px;}",
+    ".saga-seg3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}",
     ".saga-field{display:flex;flex-direction:column;gap:4px;}",
     ".saga-field label{font-size:12px;color:var(--muted);}",
     ".saga-field input,.saga-field select,.saga-field textarea{width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--fg);font-size:13px;font-family:inherit;}",
@@ -921,8 +1066,14 @@
         );
       }
 
+      let serverStatus = null;
+      if (settings && !configError) {
+        try { serverStatus = await client.checkStatus(); } catch { serverStatus = null; }
+      }
+
       // Card 2: Mode & options
       const curMode = settings?.integrationMode ?? "provider";
+      const curIntentMode = settings?.intentMode ?? "server";
       const modeCard = el(doc, "div", { class: "saga-card" },
         el(doc, "h3", {}, "동작 모드"),
         el(doc, "div", { class: "saga-seg" },
@@ -946,19 +1097,6 @@
           }, (curMode === "provider" ? "✓ " : "") + "Provider 모드 (SAGA 프로바이더)"),
         ),
         el(doc, "div", { class: "saga-row" },
-          el(doc, "span", {}, "RisuAI 보조 모델 자연어 분류 (Hook 모드)"),
-          el(doc, "button", {
-            type: "button",
-            class: settings?.useAuxIntent ? "saga-btn on" : "saga-btn",
-            onclick: async () => {
-              const next = !settings?.useAuxIntent;
-              await client.saveUiSettings({ useAuxIntent: next });
-              notify("보조 모델 분류: " + (next ? "ON" : "OFF"));
-              await draw();
-            },
-          }, settings?.useAuxIntent ? "ON" : "OFF"),
-        ),
-        el(doc, "div", { class: "saga-row" },
           el(doc, "span", {}, "Provider v4 SSE 스트리밍 + risu_prompt"),
           el(doc, "button", {
             type: "button",
@@ -971,6 +1109,117 @@
             },
           }, settings?.providerStream ? "ON" : "OFF"),
         ),
+      );
+
+      // Card 2b: Natural-language intent & dice classifier (Hook mode)
+      const savedIntentLlm = settings?.intentLlm ?? {};
+      const intentUrlIn = el(doc, "input", { type: "text", value: savedIntentLlm.base_url ?? "", placeholder: "https://openrouter.ai/api/v1 또는 http://127.0.0.1:11434/v1" });
+      const intentModelIn = el(doc, "input", { type: "text", value: savedIntentLlm.model ?? "", placeholder: "google/gemini-2.5-flash" });
+      const intentKeyIn = el(doc, "input", { type: "password", autocomplete: "off", value: savedIntentLlm.api_key ?? "", placeholder: "API Key (비우면 서버 SAGA_LLM_API_KEY 사용)" });
+      const intentEffortSel = el(doc, "select", {},
+        el(doc, "option", { value: "" }, "reasoning_effort: 지정 안 함"),
+        el(doc, "option", { value: "none" }, "none"),
+        el(doc, "option", { value: "minimal" }, "minimal"),
+        el(doc, "option", { value: "low" }, "low"),
+        el(doc, "option", { value: "medium" }, "medium"),
+        el(doc, "option", { value: "high" }, "high"),
+        el(doc, "option", { value: "xhigh" }, "xhigh"),
+      );
+      intentEffortSel.value = savedIntentLlm.reasoning_effort ?? "";
+      const intentHeadersIn = el(doc, "textarea", { rows: "2", placeholder: '{"HTTP-Referer":"https://example.com"}' });
+      intentHeadersIn.value = savedIntentLlm.custom_headers ?? "";
+      const intentBodyIn = el(doc, "textarea", { rows: "2", placeholder: '{"temperature":0}' });
+      intentBodyIn.value = savedIntentLlm.custom_body ?? "";
+
+      const intentStatusText = curIntentMode === "risu_aux"
+        ? "현재: RisuAI 보조 모델 (submodel · runLLMModel)로 자연어 행동을 판정하고 주사위를 굴립니다."
+        : (curIntentMode === "custom_llm"
+          ? (savedIntentLlm.base_url && savedIntentLlm.model
+            ? "현재: 직접 설정한 LLM (" + savedIntentLlm.model + ")로 자연어 행동을 판정합니다."
+            : "주의: Base URL과 Model ID를 입력하고 저장해야 자연어 판정이 작동합니다.")
+          : (serverStatus?.intent_configured === true
+            ? "현재: 백엔드 서버(.env) Intent LLM이 활성화되어 있습니다."
+            : (serverStatus?.intent_configured === false
+              ? "주의: 백엔드 서버에 Intent LLM이 미설정입니다. 자연어는 주사위 없이 narrative_turn으로만 기록됩니다. 위에서 RisuAI 보조 모델 또는 직접 LLM을 선택하세요."
+              : "현재: 백엔드 서버 설정(.env / Vertex JSON)을 사용합니다.")));
+
+      const intentCustomBox = curIntentMode === "custom_llm"
+        ? el(doc, "div", { class: "saga-field", style: "gap:8px;" },
+            el(doc, "div", { class: "saga-field" }, el(doc, "label", {}, "LLM Base URL (https:// 또는 localhost http://)"), intentUrlIn),
+            el(doc, "div", { class: "saga-field" }, el(doc, "label", {}, "Model ID"), intentModelIn),
+            el(doc, "div", { class: "saga-field" }, el(doc, "label", {}, "API Key (x-saga-llm-api-key 헤더로만 전송)"), intentKeyIn),
+            el(doc, "div", { class: "saga-field" }, el(doc, "label", {}, "Reasoning Effort"), intentEffortSel),
+            el(doc, "div", { class: "saga-field" }, el(doc, "label", {}, "Custom Headers (JSON)"), intentHeadersIn),
+            el(doc, "div", { class: "saga-field" }, el(doc, "label", {}, "Custom Body (JSON)"), intentBodyIn),
+            el(doc, "div", { class: "saga-row" },
+              el(doc, "button", {
+                type: "button",
+                class: "saga-btn primary",
+                onclick: async () => {
+                  try {
+                    const base_url = intentUrlIn.value.trim();
+                    const model = intentModelIn.value.trim();
+                    if (!base_url || !model) throw new Error("Base URL과 Model ID를 모두 입력하세요.");
+                    const parsed = new URL(base_url);
+                    if (!["http:", "https:"].includes(parsed.protocol)) throw new Error("http:// 또는 https:// URL만 허용됩니다.");
+                    const hdrTxt = intentHeadersIn.value.trim();
+                    if (hdrTxt) JSON.parse(hdrTxt);
+                    const bodyTxt = intentBodyIn.value.trim();
+                    if (bodyTxt) JSON.parse(bodyTxt);
+                    await client.saveUiSettings({
+                      intentMode: "custom_llm",
+                      useAuxIntent: false,
+                      intentLlm: {
+                        base_url,
+                        model,
+                        api_key: intentKeyIn.value.trim(),
+                        reasoning_effort: intentEffortSel.value.trim(),
+                        custom_headers: hdrTxt,
+                        custom_body: bodyTxt,
+                      },
+                    });
+                    notify("자연어 판정 LLM 설정을 저장했습니다.");
+                    await draw();
+                  } catch (e) { notify("저장 실패: " + (e instanceof Error ? e.message : String(e)), true); }
+                },
+              }, "판정 LLM 저장"),
+            ),
+          )
+        : null;
+
+      const intentCard = el(doc, "div", { class: "saga-card" },
+        el(doc, "h3", {}, "자연어 판정 / 주사위 해석 (Hook 모드)"),
+        el(doc, "div", { class: "saga-seg3" },
+          el(doc, "button", {
+            type: "button",
+            class: curIntentMode === "risu_aux" ? "saga-btn on" : "saga-btn",
+            onclick: async () => {
+              await client.saveUiSettings({ intentMode: "risu_aux", useAuxIntent: true });
+              notify("자연어 판정: RisuAI 보조 모델 (submodel)로 전환했습니다.");
+              await draw();
+            },
+          }, (curIntentMode === "risu_aux" ? "✓ " : "") + "RisuAI 보조 모델"),
+          el(doc, "button", {
+            type: "button",
+            class: curIntentMode === "custom_llm" ? "saga-btn on" : "saga-btn",
+            onclick: async () => {
+              await client.saveUiSettings({ intentMode: "custom_llm", useAuxIntent: false });
+              notify("자연어 판정: 직접 LLM 설정 모드로 전환했습니다.");
+              await draw();
+            },
+          }, (curIntentMode === "custom_llm" ? "✓ " : "") + "직접 LLM 설정"),
+          el(doc, "button", {
+            type: "button",
+            class: curIntentMode === "server" ? "saga-btn on" : "saga-btn",
+            onclick: async () => {
+              await client.saveUiSettings({ intentMode: "server", useAuxIntent: false });
+              notify("자연어 판정: 백엔드 서버 설정(.env) 사용으로 전환했습니다.");
+              await draw();
+            },
+          }, (curIntentMode === "server" ? "✓ " : "") + "서버 설정"),
+        ),
+        el(doc, "div", { class: "saga-mono" }, intentStatusText),
+        intentCustomBox,
       );
 
       // Card 3: Server connection
@@ -1126,7 +1375,7 @@
         el(doc, "div", { class: "saga-mono" }, "명령 예시: move north · attack opponent · check strength 10 · damage opponent 5"),
       );
 
-      wrap.replaceChildren(...[head, chatCard, sceneCard, turnCardEl, a2Card, modeCard, serverCard, helpCard, toast].filter(Boolean));
+      wrap.replaceChildren(...[head, chatCard, sceneCard, turnCardEl, intentCard, a2Card, modeCard, serverCard, helpCard, toast].filter(Boolean));
     }
 
     await draw();

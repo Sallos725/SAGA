@@ -1,6 +1,6 @@
 # SAGA PocketRisu / RisuAI starter
 
-The SAGA plugin (`saga_provider.js`, **v0.10.0**, Plugin API **3.0**, protocol **v4**) connects
+The SAGA plugin (`saga_provider.js`, **v0.11.2**, Plugin API **3.0**, protocol **v4**) connects
 RisuAI / PocketRisu chats to a SAGA runtime for deterministic dice, authoritative state tracking,
 replayable branching, and reroll-safe regeneration.
 
@@ -28,10 +28,10 @@ operating modes:
      server-side **OpenAI-compatible LLMs** (OpenRouter, Ollama, vLLM via `.env`), optional
      **Vertex service-account JSON** narration/intent, or zero-API-key deterministic fallback.
 
-> **Verification status:** Core command/provider flows (v0.4.0–v0.7.0) were verified live on
-> PocketRisu 1.13.0. Hook mode, protocol v4 SSE streaming, B1/B2 UI cards, and the in-panel A2
-> card converter (v0.8.0–v0.10.0) are verified in offline unit/integration tests (647 Python + 37
-> Node tests) and are awaiting full live host playtesting.
+> **Verification status:** Core command/provider flows and Hook-mode natural-language intent
+> (`runLLMModel` submodel) + deterministic dice + reroll reuse (`v0.11.2`) have been verified live
+> on PocketRisu 1.18.0. The full plugin/runtime suite passes 649 Python + 39 Node tests; broader
+> scenario and card-converter live playtesting remains ongoing.
 
 ## Install
 
@@ -60,12 +60,17 @@ Disable the plugin when using another main provider in Provider mode if you do n
 main-request hook active. In Hook mode, ordinary chats without a SAGA module or manual toggle are
 left untouched.
 
-## In-panel UI, Scene Board & Card Converter (v0.9.0–v0.10.0)
+## In-panel UI, Intent LLM, Scene Board & Card Converter (v0.9.0–v0.11.2)
 
 Clicking the SAGA icon in the chat toolbar opens the fullscreen SAGA panel:
 
 - **Settings & Health**: configure `server_url`, `host_instance_id`, `integration_mode`,
-  `provider_stream`, `use_risu_aux_intent`, per-chat Hook toggle, and check `/health`.
+  `provider_stream`, per-chat Hook toggle, and check `/health` / `/v1/saga/status`.
+- **Natural-language Intent / Dice Classifier (Hook mode)**: pick between **RisuAI submodel**
+  (`risuai.runLLMModel`, backed by read-only `POST /v1/saga/intent-context` so rerolls and commands
+  make zero auxiliary calls), **Direct OpenAI-compatible LLM** (Base URL, Model ID, API key sent
+  only via `x-saga-llm-api-key` header, `reasoning_effort`, custom headers/body), or **Server
+  `.env` / Vertex JSON**.
 - **B1 Turn Card & B2 Scene Board**: inspect the latest committed turn's outcome, rolls, state
   deltas, active room participants (using `display_name`), known exits, and clues.
 - **A2 Card-to-Scenario Converter**: convert the currently open RisuAI character card and lorebook
