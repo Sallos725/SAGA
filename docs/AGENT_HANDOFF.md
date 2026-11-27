@@ -2,7 +2,19 @@
 
 Copy the prompt below into Codex or Claude Code from the repository root.
 
-Current checkpoint (2026-10-06, later): rulebooks are data. Read
+Current direction checkpoint (2026-11-27): read [DIRECTION.md](DIRECTION.md) first before
+picking new work. Active priority is **M1 — RisuAI play foundation** (play-first TRPG
+runtime using SAGA scenario cards + rulebook modules, `narrative_turn` no-op events for
+pure RP turns, RisuAI Hook mode using RisuAI main/auxiliary models alongside extended
+OpenAI-compatible/streaming Provider mode). NMOS live/visibility/ablation, MCP external
+dice, live RuleCheeseBench runs, and Presentation/TTS are explicitly deferred until the
+core play loop is solid. Keep existing 6011/6131 worlds and offline tests green.
+
+Earlier checkpoint (2026-10-12): locations and map movement v1
+([ADR 0009](adr/0009-locations-and-map-movement.md), [report](progress/locations-map-v1.md))
+is merged and deployed on 6131 and 6011 (`srd-5.2.1@0.6.0`, `fate-condensed@0.5.0`).
+
+Earlier checkpoint (2026-10-06, later): rulebooks are data. Read
 [ADR 0007](adr/0007-rulebooks-as-data.md), [the creator guide](RULEBOOKS.md) and
 [the rulebooks report](progress/rulebooks-v1.md) before touching rules: new system
 behaviour goes into a rulebook JSON interpreted by `saga_trpg.rulebooks.engine`, not into
