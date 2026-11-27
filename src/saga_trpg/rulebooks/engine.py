@@ -648,6 +648,9 @@ class DataRules:
         if exit_ is None:
             known = ", ".join(sorted(room.exits)) or "none"
             raise ValueError(f"{room.name} has no exit {data['exit']!r}; exits: {known}")
+        if exit_.locked:
+            need = f" (requires {exit_.key_item})" if exit_.key_item else ""
+            raise ValueError(f"{exit_.label} ({data['exit']}) is locked{need}")
         moved = next_state.actors[actor.actor_id]
         moved.location = exit_.to_room
         moved.visited_rooms.add(exit_.to_room)

@@ -667,3 +667,62 @@ test("plugin install registers chat button and settings entry with inline SVG ht
   assert.match(registered.buttons[0].icon, /^<svg .*currentColor/);
   assert.deepEqual(registered.replacers, ["beforeRequest", "afterRequest"]);
 });
+
+test("hook mode auto-activates for a SAGA scenario module, forwards saga.scenario, and renders B1 turn_card", async () => {
+  const f = hookFixture();
+  const scenario = '{"schema_version": 1, "id": "outpost"}';
+  const digest = require("node:crypto").createHash("sha256").update(scenario, "utf8").digest("hex");
+  f.api.getCurrentLorebookEntries = () => [
+    { comment: "saga:scenario:outpost@0.1.0:" + digest, content: scenario },
+  ];
+  f.reply = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      saga: {
+        schema_version: 4,
+        identity_version: 3,
+        legacy_read_only: false,
+        event_id: "event-m3-1",
+        seq: 1,
+        replayed: false,
+        rolls: [{ expression: "1d20", raw: [17], total: 17 }],
+        state: {
+          actors: {
+            player: { actor_id: "player", hp: 20, max_hp: 20 },
+            raider: { actor_id: "raider", hp: 8, max_hp: 14 },
+          },
+        },
+        display: { actors: [{ id: "player", items: ["20/20"] }], records: [], world: ["📍 안뜰"] },
+        prompt_block: "[SAGA Authoritative State — Read-Only]\nTurn event: attack",
+        turn_card: {
+          event_id: "event-m3-1",
+          seq: 1,
+          kind: "attack",
+          actor_id: "player",
+          rolls: [{ expression: "1d20", raw: [17], total: 17 }],
+          resolution: { outcome: "hit", total: 21, target: 13, damage: 6, pending_adjudication: false },
+          changes: ["actors.raider.hp: 14 → 8"],
+          facts: ["hit"],
+        },
+        scene_board: {
+          current_room: "전초기지 안뜰",
+          exits: [{ key: "down", label: "지하 철문", locked: true, destination: "???" }],
+          room_loot: { healing_herb: 1 },
+          discovered_clues: {},
+          participants: [{ actor_id: "player", is_player: true, hp: 20, max_hp: 20, conditions: [] }],
+          quests: [{ quest_id: "black_tower", stage: 1, status: "active" }],
+        },
+      },
+    }),
+  });
+
+  await f.prepare();
+  assert.equal(f.calls.length, 1);
+  assert.deepEqual(f.calls[0].body.saga.scenario, { content: scenario });
+  assert.equal(f.client.lastState("chat-1").scene_board.current_room, "전초기지 안뜰");
+
+  const finalText = await f.client.afterRequest("Prose.", "model");
+  assert.match(finalText, /⚖ hit \(21 vs 13, 피해 6\)/);
+  assert.match(finalText, /Δ actors\.raider\.hp: 14 → 8/);
+});

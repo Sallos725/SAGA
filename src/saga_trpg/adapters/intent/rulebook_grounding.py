@@ -15,10 +15,22 @@ from pydantic import JsonValue
 
 from saga_trpg.domain.events import (
     ADJUDICATE_ACTION_KIND,
+    GM_CORRECTION_KIND,
+    INSPECT_ROOM_KIND,
+    MOVE_NPC_KIND,
     NARRATIVE_TURN_KIND,
+    QUEST_UPDATE_KIND,
+    TAKE_LOOT_KIND,
+    UNLOCK_EXIT_KIND,
     AdjudicateActionPayload,
     GameEvent,
+    GmCorrectionPayload,
+    InspectRoomPayload,
+    MoveNpcPayload,
     NarrativeTurnPayload,
+    QuestUpdatePayload,
+    TakeLootPayload,
+    UnlockExitPayload,
 )
 from saga_trpg.domain.maps import known_map
 from saga_trpg.domain.models import WorldState
@@ -39,6 +51,12 @@ def allowed_v4_models(spec: RulebookSpec, *, allow_adjudicate: bool = True) -> d
     models: dict[str, type] = {
         **rules_for(spec).payload_models,
         NARRATIVE_TURN_KIND: NarrativeTurnPayload,
+        UNLOCK_EXIT_KIND: UnlockExitPayload,
+        TAKE_LOOT_KIND: TakeLootPayload,
+        INSPECT_ROOM_KIND: InspectRoomPayload,
+        MOVE_NPC_KIND: MoveNpcPayload,
+        QUEST_UPDATE_KIND: QuestUpdatePayload,
+        GM_CORRECTION_KIND: GmCorrectionPayload,
     }
     if allow_adjudicate:
         models[ADJUDICATE_ACTION_KIND] = AdjudicateActionPayload
@@ -53,7 +71,7 @@ def intent_context_for(
     state: WorldState,
     allow_adjudicate: bool = True,
 ) -> dict[str, JsonValue]:
-    """Safe intent-classifier input: current room exits only, never unseen rooms."""
+    """Safe intent-classifier input: current room exits/loot only, never unseen rooms."""
     view = known_map(state, actor_id)
     exits: list[dict[str, Any]] = []
     if view is not None:
@@ -62,13 +80,21 @@ def intent_context_for(
                 {
                     "key": exit_.key,
                     "label": exit_.label,
+                    "locked": exit_.locked,
                     "hints": DIRECTION_HINTS.get(exit_.key, [exit_.key]),
                 }
             )
     actions: dict[str, Any] = {
         kind: model.model_json_schema() for kind, model in rules_for(spec).payload_models.items()
     }
-    actions[NARRATIVE_TURN_KIND] = NarrativeTurnPayload.model_json_schema()
+    for kind, model in (
+        (NARRATIVE_TURN_KIND, NarrativeTurnPayload),
+        (UNLOCK_EXIT_KIND, UnlockExitPayload),
+        (TAKE_LOOT_KIND, TakeLootPayload),
+        (INSPECT_ROOM_KIND, InspectRoomPayload),
+        (QUEST_UPDATE_KIND, QuestUpdatePayload),
+    ):
+        actions[kind] = model.model_json_schema()
     if allow_adjudicate:
         actions[ADJUDICATE_ACTION_KIND] = AdjudicateActionPayload.model_json_schema()
     return {
@@ -77,7 +103,9 @@ def intent_context_for(
         "ruleset": f"{spec.id}@{spec.version}",
         "actors": sorted(state.actors),
         "current_room": view.room_name if view is not None else None,
+        "room_loot": view.loot if view is not None else {},
         "exits": exits,
+        "quests": sorted(state.quest_state),
         "actions": actions,
     }
 
