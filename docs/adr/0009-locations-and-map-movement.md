@@ -1,6 +1,6 @@
 # ADR 0009: Locations as a room graph in authoritative state
 
-Status: accepted (2026-10-12). Tracks [SAGA-44](https://app.plane.so/sallos/projects/bce65fff-ee0a-4677-b068-b255ed9eebfe/issues/cc780fc2-1b0b-419d-90e1-c2c69416c523/)
+Status: accepted (2026-10-12). Tracks `SAGA-44`
 (A5 in [the TRPG feature review](../TRPG_FEATURE_REVIEW.md)); this ADR covers its first slice only.
 
 ## Problem

@@ -23,8 +23,8 @@
   path, so tests always run this tree's code:
 
   ```bash
-  export PY=/home/grantkim725/data/docker/risuaiNode/risu-trpg/.venv/bin/python
-  export RUFF=/home/grantkim725/data/docker/risuaiNode/risu-trpg/.venv/bin/ruff
+  export PY=.venv/bin/python
+  export RUFF=.venv/bin/ruff
   ```
 - Baseline before Task 1: `$PY -m pytest -q` → `548 passed`.
 - Every code block below was run in a prototype of this exact change: the full suite ended at

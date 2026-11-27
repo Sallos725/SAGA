@@ -25,9 +25,8 @@ services:
     container_name: saga-pocketrisu
     restart: unless-stopped
     ports:
-      - "127.0.0.1:6011:6001"
-      - "100.96.204.101:6011:6001"
-      - "192.168.219.103:6011:6001"
+      # Override POCKETRISU_BIND_HOST (e.g., your LAN or Tailscale IP) if accessing from another device.
+      - "${POCKETRISU_BIND_HOST:-127.0.0.1}:6011:6001"
     volumes:
       - saga-pocketrisu-save:/app/save
       - saga-pocketrisu-backups:/app/backups

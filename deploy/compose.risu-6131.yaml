@@ -1,7 +1,7 @@
 name: saga-playtest-6131
-# Backend only, for an existing host-network PocketRisu on port 6131 (`nmos-p32-risu`).
+# Backend only, for an existing host-network PocketRisu on port 6131.
 # That host reaches this runtime at http://127.0.0.1:4852 through its own server-side route.
-# Data is a separate volume; the 6011 playtest runtime and its worlds are untouched.
+# Data is a separate volume; the standalone playtest runtime and its worlds are untouched.
 services:
   saga-runtime-6131:
     build:

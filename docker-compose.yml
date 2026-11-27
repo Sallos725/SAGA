@@ -10,5 +10,5 @@ services:
       - ./data:/app/data
 
   # Intentionally not bundling NMOS here.
-  # Connect an existing NMOS deployment using NMOS_BASE_URL.
+  # Connect an existing NMOS deployment using SAGA_NMOS_URL.
   # Do not fork or vendor NMOS internals into this stack.
