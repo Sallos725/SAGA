@@ -146,12 +146,12 @@ A5는 A2의 자동 생성 없이 수작업 장소부터 시작할 수 있다.
 친숙도의 표현, 부분 실패의 표시, 원문에서 정정까지의 사용자 흐름 중 실제 부족한
 부분을 먼저 비교한다. 이 체크아웃만으로 진행 중인 다른 브랜치의 기능을 판단하지 않는다.
 
-2026-10-09 Linear에서 확인한 기존 작업:
+2026-10-09 기존 내부 트래커에서 확인한 작업:
 
-- [AGE-39 Inspector 기억 타임라인](https://linear.app/sallos725/issue/AGE-39)은
+- `AGE-39` (Inspector 기억 타임라인)은
   인물 개요·포커스·현재 장면 필터를 다룬다. 인물 관계 격자 UI는 해당 작업에서 이미
   폐기했으므로 새 검토가 그 결정을 되돌리지 않는다.
-- [AGE-2 상태와 관계 전이 및 충돌 큐](https://linear.app/sallos725/issue/AGE-2)는
+- `AGE-2` (상태와 관계 전이 및 충돌 큐)는
   1.0 이후 보류 범위다. B4의 참고 검토가 이 작업의 재개나 출시 일정 변경을 뜻하지 않는다.
 
 ## 출처 기록 범위
@@ -175,27 +175,21 @@ A5는 A2의 자동 생성 없이 수작업 장소부터 시작할 수 있다.
 저널·도구 기록, 메모리 경계와 어떤 관계를 갖는지도 그때 명시한다. 기존 기능의
 수정을 처음부터 배제하지 않되, 이번 문서화가 기존 계약을 암묵적으로 바꾸지는 않는다.
 
-## Plane tracking and historical Linear sources
+## Historical tracker references
 
-As of 2026-10-11, SAGA proposal status is tracked in Plane. The
-historical Linear review document and original issues are retained without modification. The source observations,
-candidate analysis and approval boundaries above remain unchanged.
-See [the completed import audit](ISSUE_TRACKING.md) for verified membership and dependencies.
+Public issue tracking uses GitHub Issues (see [ISSUE_TRACKING.md](ISSUE_TRACKING.md)).
+The table below maps historical pre-public tracker IDs (`SAGA-39` through `SAGA-46` and
+`AGE-45` through `AGE-52`) to the classification labels used in ADRs and progress reports.
 
-The parent proposal is [SAGA-39](https://app.plane.so/sallos/projects/bce65fff-ee0a-4677-b068-b255ed9eebfe/issues/ceeb5967-23f1-41a8-b913-0b06b9add268/).
-Its seven child proposals remain review-only Backlog; assignees, deadlines and cycles
-have not been assigned. Accepted design decisions belong in repository ADRs.
-
-| Historical source | Current SAGA issue | Classification |
+| Historical ID | Proposal summary | Classification |
 | --- | --- | --- |
-| [AGE-45](https://linear.app/sallos725/issue/AGE-45) | [SAGA-40 [검토] 자유행동을 처리하는 GM 판정 단계](https://app.plane.so/sallos/projects/bce65fff-ee0a-4677-b068-b255ed9eebfe/issues/26e369a5-5840-4c12-b9fb-d6057d8a1b6d/) | A1 |
-| [AGE-46](https://linear.app/sallos725/issue/AGE-46) | [SAGA-41 [검토] 로어 기반 플레이 자료 생성과 수치 출처 표시](https://app.plane.so/sallos/projects/bce65fff-ee0a-4677-b068-b255ed9eebfe/issues/c7331312-d3e0-49de-9fee-32e7a3525062/) | A2 · B5 |
-| [AGE-47](https://linear.app/sallos725/issue/AGE-47) | [SAGA-42 [검토] GM 정정·장면 정산과 대안 분기](https://app.plane.so/sallos/projects/bce65fff-ee0a-4677-b068-b255ed9eebfe/issues/5b74b21a-02f9-48cf-83e4-8cf40f05a1cb/) | A3 |
-| [AGE-48](https://linear.app/sallos725/issue/AGE-48) | [SAGA-43 [검토] 플레이어 선택을 보존하는 자동 진행](https://app.plane.so/sallos/projects/bce65fff-ee0a-4677-b068-b255ed9eebfe/issues/4a74d4e7-3937-42ca-acad-6da95024e5ca/) | A4 |
-| [AGE-49](https://linear.app/sallos725/issue/AGE-49) | [SAGA-44 [검토] 재방문에도 유지되는 장소와 탐험 상태](https://app.plane.so/sallos/projects/bce65fff-ee0a-4677-b068-b255ed9eebfe/issues/cc780fc2-1b0b-419d-90e1-c2c69416c523/) | A5 |
-| [AGE-50](https://linear.app/sallos725/issue/AGE-50) | [SAGA-45 [후보] 판정 카드와 현재 장면 인물 보드](https://app.plane.so/sallos/projects/bce65fff-ee0a-4677-b068-b255ed9eebfe/issues/678a4b50-7303-4a2b-be55-44170a7e803b/) | B1 · B2 |
-| [AGE-51](https://linear.app/sallos725/issue/AGE-51) | [SAGA-46 [후보] 서술과 저장된 판정의 불일치 검사](https://app.plane.so/sallos/projects/bce65fff-ee0a-4677-b068-b255ed9eebfe/issues/9a788dde-ada5-4647-981f-195eb27ab4a1/) | B6 |
+| `AGE-45` / `SAGA-40` | 자유행동을 처리하는 GM 판정 단계 | A1 |
+| `AGE-46` / `SAGA-41` | 로어 기반 플레이 자료 생성과 수치 출처 표시 | A2 · B5 |
+| `AGE-47` / `SAGA-42` | GM 정정·장면 정산과 대안 분기 | A3 |
+| `AGE-48` / `SAGA-43` | 플레이어 선택을 보존하는 자동 진행 | A4 |
+| `AGE-49` / `SAGA-44` | 재방문에도 유지되는 장소와 탐험 상태 | A5 |
+| `AGE-50` / `SAGA-45` | 판정 카드와 현재 장면 인물 보드 | B1 · B2 |
+| `AGE-51` / `SAGA-46` | 서술과 저장된 판정의 불일치 검사 | B6 |
 
-[AGE-52](https://linear.app/sallos725/issue/AGE-52)
-(B3 · B4) remains in the NMOS tracker as related context; it was not imported into SAGA.
+`AGE-52` (B3 · B4) relates to external NMOS memory inspection and remains outside SAGA core.
 
