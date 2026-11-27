@@ -13,6 +13,7 @@ class CreateWorldRequest(BaseModel):
 
     ruleset_id: str = Field(min_length=1)
     ruleset_version: str = Field(min_length=1)
+    scenario: str | None = Field(default=None, min_length=2, max_length=2_000_000)
 
 
 class RulesetManifest(BaseModel):

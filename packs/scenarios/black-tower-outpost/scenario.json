@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "id": "black-tower-outpost",
+  "version": "0.1.0",
+  "title": "Black Tower Outpost",
+  "summary": "A rain-slicked frontier watchpost guarding the road toward the Black Tower.",
+  "ruleset_id": "srd-5.2.1",
+  "simulated_time": 0,
+  "actors": {
+    "player": {
+      "hp": 20,
+      "max_hp": 20,
+      "stats": {
+        "strength": 14,
+        "dexterity": 14,
+        "constitution": 12,
+        "intelligence": 12,
+        "wisdom": 12,
+        "charisma": 10,
+        "proficiency_bonus": 2,
+        "ac": 14,
+        "weapon_damage": "1d8",
+        "weapon_ability": "strength",
+        "proficient:athletics": true,
+        "proficient:perception": true
+      },
+      "inventory": {
+        "torch": 2,
+        "rope": 1
+      },
+      "conditions": []
+    },
+    "captain_sera": {
+      "hp": 24,
+      "max_hp": 24,
+      "stats": {
+        "strength": 14,
+        "dexterity": 12,
+        "constitution": 14,
+        "intelligence": 12,
+        "wisdom": 14,
+        "charisma": 14,
+        "proficiency_bonus": 2,
+        "ac": 16,
+        "weapon_damage": "1d8",
+        "weapon_ability": "strength"
+      },
+      "inventory": {
+        "silver_key": 1
+      },
+      "conditions": []
+    },
+    "raider": {
+      "hp": 14,
+      "max_hp": 14,
+      "stats": {
+        "strength": 12,
+        "dexterity": 14,
+        "constitution": 12,
+        "intelligence": 8,
+        "wisdom": 10,
+        "charisma": 8,
+        "proficiency_bonus": 2,
+        "ac": 13,
+        "weapon_damage": "1d6",
+        "weapon_ability": "dexterity"
+      },
+      "inventory": {},
+      "conditions": []
+    }
+  },
+  "flags": {
+    "weather": "rain"
+  },
+  "quest_state": {
+    "black_tower": {
+      "stage": 1,
+      "objective": "Speak with Captain Sera and inspect the cellar"
+    }
+  },
+  "map": {
+    "start_room": "courtyard",
+    "rooms": {
+      "courtyard": {
+        "name": "전초기지 안뜰",
+        "description": "비에 젖은 자갈 마당. 횃불이 문 양옆에서 흔들린다.",
+        "exits": {
+          "north": {
+            "to_room": "watchtower",
+            "label": "망루로 오르는 돌계단",
+            "kind": "open"
+          },
+          "down": {
+            "to_room": "cellar",
+            "label": "지하 창고 철문",
+            "kind": "door"
+          }
+        }
+      },
+      "watchtower": {
+        "name": "북쪽 망루",
+        "description": "안개 너머로 검은 탑의 윤곽이 희미하게 보이는 감시 초소.",
+        "exits": {
+          "south": {
+            "to_room": "courtyard",
+            "label": "안뜰로 내려가는 계단",
+            "kind": "open"
+          }
+        }
+      },
+      "cellar": {
+        "name": "지하 보급 창고",
+        "description": "습기 찬 보급 상자들이 쌓여 있고, 구석에서 인기척이 느껴진다.",
+        "exits": {
+          "up": {
+            "to_room": "courtyard",
+            "label": "안뜰로 올라가는 철문",
+            "kind": "door"
+          }
+        }
+      }
+    },
+    "placements": {
+      "player": "courtyard",
+      "captain_sera": "watchtower",
+      "raider": "cellar"
+    }
+  },
+  "narration": "Keep the tone tense and atmospheric. Captain Sera waits in the watchtower; the raider lurks unseen in the cellar until the player opens the door and enters."
+}

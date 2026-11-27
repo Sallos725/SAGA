@@ -17,7 +17,12 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 from saga_trpg.adapters.intent.openai_compat import (
     OpenAICompatIntentTool,
-    validate_rulebook_proposal,
+)
+from saga_trpg.adapters.intent.rulebook_grounding import (
+    allowed_v4_models,
+    ground_proposal,
+    ground_proposal_or_narrative,
+    intent_context_for,
 )
 from saga_trpg.adapters.intent.vertex import (
     PENDING,
@@ -36,8 +41,8 @@ from saga_trpg.adapters.storage.sqlite import (
     RepositoryNotFound,
     SQLiteWorldRepository,
 )
-from saga_trpg.domain.events import NARRATIVE_TURN_KIND, GameEvent, NarrativeTurnPayload
-from saga_trpg.domain.maps import known_map, scene_text
+from saga_trpg.domain.events import NARRATIVE_TURN_KIND, GameEvent
+from saga_trpg.domain.maps import scene_text
 from saga_trpg.domain.models import WorldState
 from saga_trpg.domain.tools import ToolCall
 from saga_trpg.modules.srd_5_2_1.rules import ROLL_ACTIONS
@@ -55,6 +60,7 @@ from saga_trpg.rulebooks.commands import (
 from saga_trpg.rulebooks.display import render_display
 from saga_trpg.rulebooks.engine import DataRules
 from saga_trpg.rulebooks.loader import RulebookSpec, load_rulebook, rulebook_path
+from saga_trpg.rulebooks.scenarios import build_scenario_world, parse_scenario
 from saga_trpg.runtime.hashing import stable_model_hash, stable_value_hash
 from saga_trpg.runtime.journal import JournalEntry
 
@@ -78,6 +84,12 @@ class RulebookAttachment(ClosedModel):
     content: str = Field(min_length=2, max_length=2_000_000)
 
 
+class ScenarioAttachment(ClosedModel):
+    """A scenario carried by a RisuAI scenario card/module; seeds a world on creation (M2)."""
+
+    content: str = Field(min_length=2, max_length=2_000_000)
+
+
 class HostTurn(ClosedModel):
     schema_version: Literal[1, 2, 3, 4]
     host_instance_id: Identity
@@ -86,9 +98,12 @@ class HostTurn(ClosedModel):
     purpose: Literal["action"]
     actions: list[HostAction] = Field(min_length=1, max_length=256)
     rulebook: RulebookAttachment | None = None
+    scenario: ScenarioAttachment | None = None
 
     @model_validator(mode="after")
     def distinct_messages(self) -> HostTurn:
+        if self.scenario is not None and self.schema_version < 4:
+            raise ValueError("scenario attachments require protocol v4")
         ids = [action.message_id for action in self.actions]
         if len(ids) != len(set(ids)):
             raise ValueError("duplicate host user-message identity")
@@ -401,17 +416,28 @@ class RisuBridge:
         rules = self.repository.registry.get(selection.ruleset_id, selection.ruleset_version).rules
         return rules.spec if isinstance(rules, DataRules) else LEGACY_SRD_SPEC
 
-    def _ensure_world(self, world_id: str, spec: RulebookSpec) -> WorldState:
-        # New worlds pin the given rulebook; existing worlds keep the version they were
-        # created with, so their action set and semantics never change under them.
+    def _initial_world_preview(
+        self, world_id: str, spec: RulebookSpec, scenario: ScenarioAttachment | None = None
+    ) -> WorldState:
+        """Pure in-memory initial state for a world (used for validation or creation)."""
+        if scenario is not None:
+            return build_scenario_world(parse_scenario(scenario.content), world_id, rulebook=spec)
+        definition = self.repository.registry.get(spec.id, spec.version)
+        return definition.example_world(world_id)
+
+    def _ensure_world(
+        self, world_id: str, spec: RulebookSpec, scenario: ScenarioAttachment | None = None
+    ) -> WorldState:
+        # New worlds pin the given rulebook (and optional scenario); existing worlds keep the
+        # version and initial world they were created with, so semantics never shift under them.
         try:
             self.repository.ruleset_for_world(world_id)
             return self.repository.get_initial_state(world_id)
         except RepositoryNotFound:
             pass
-        definition = self.repository.registry.get(spec.id, spec.version)
+        initial = self._initial_world_preview(world_id, spec, scenario)
         self.repository.create_world(
-            definition.example_world(world_id),
+            initial,
             if_missing=True,
             ruleset_id=spec.id,
             ruleset_version=spec.version,
@@ -483,34 +509,23 @@ class RisuBridge:
         spec: RulebookSpec,
     ) -> GameEvent:
         assert self.openai_intent is not None
-        initial = self._ensure_world(world_id, spec)
+        initial = self._ensure_world(world_id, spec, turn.scenario)
         state = parent.result.state if parent else initial
-        view = known_map(state, turn.actor_id)
-        exits = (
-            [{"key": exit_.key, "label": exit_.label} for exit_ in view.exits]
-            if view is not None
-            else []
-        )
-        actions = {
-            kind: model.model_json_schema()
-            for kind, model in rules_for(spec).payload_models.items()
-        }
         call = ToolCall(
             world_id=world_id,
             branch_id="main",
             event_id=identities[-1],
-            tool_call_key="risu-openai-intent-v1",
+            tool_call_key="risu-openai-intent-v2",
             tool_name="openai-compat-intent",
-            tool_version="1",
-            protocol_version="saga-risu-openai-intent-v1",
-            arguments={
-                "text": turn.actions[-1].text,
-                "actor_id": turn.actor_id,
-                "ruleset": f"{spec.id}@{spec.version}",
-                "actors": sorted(state.actors),
-                "exits": exits,
-                "actions": actions,
-            },
+            tool_version="2",
+            protocol_version="saga-risu-openai-intent-v2",
+            arguments=intent_context_for(
+                text=turn.actions[-1].text,
+                actor_id=turn.actor_id,
+                spec=spec,
+                state=state,
+                allow_adjudicate=True,
+            ),
             context_hash=stable_model_hash(state),
         )
         try:
@@ -520,7 +535,13 @@ class RisuBridge:
             )
         except (TimeoutError, ToolExecutionPending):
             raise ToolExecutionPending(PENDING) from None
-        return validate_rulebook_proposal(execution.result, spec=spec, actor_id=turn.actor_id)
+        return ground_proposal_or_narrative(
+            execution.result,
+            spec=spec,
+            state=state,
+            actor_id=turn.actor_id,
+            allow_adjudicate=True,
+        )
 
     def _read_prefix(self, world_id: str, identities: list[str]) -> tuple[str, JournalEntry] | None:
         """The committed latest action and its branch, verified against the whole prefix."""
@@ -699,10 +720,21 @@ class RisuBridge:
             if expected is None:
                 if turn.schema_version == 4:
                     if client_proposal is not None:
-                        proposed = GameEvent(
-                            kind=client_proposal.kind,
+                        if parent is not None:
+                            preview_state = parent[1].result.state
+                        else:
+                            try:
+                                preview_state = self.repository.get_initial_state(world_id)
+                            except RepositoryNotFound:
+                                preview_state = self._initial_world_preview(
+                                    world_id, spec, turn.scenario
+                                )
+                        proposed = ground_proposal(
+                            client_proposal.model_dump(),
+                            spec=spec,
+                            state=preview_state,
                             actor_id=turn.actor_id,
-                            payload=client_proposal.payload,
+                            allow_adjudicate=True,
                         )
                     elif self.openai_intent is not None:
                         proposed = await self._openai_natural_intent(
@@ -754,15 +786,12 @@ class RisuBridge:
                 proposed = await self.interpreter.interpret(**arguments)
                 proposed = GameEvent.model_validate(proposed.model_dump())
             # Natural-language proposals stay limited to SRD roll actions under v3; v4 allows
-            # validated rulebook actions or a state-neutral narrative_turn; commands cover the
-            # whole rulebook.
+            # validated rulebook actions, adjudicate_action (A1), or a state-neutral
+            # narrative_turn; commands cover the whole rulebook.
             if expected is not None:
                 allowed = rules_for(spec).payload_models
             elif turn.schema_version == 4:
-                allowed = {
-                    **rules_for(spec).payload_models,
-                    NARRATIVE_TURN_KIND: NarrativeTurnPayload,
-                }
+                allowed = allowed_v4_models(spec, allow_adjudicate=True)
             else:
                 allowed = ROLL_ACTIONS
             payload_model = allowed.get(proposed.kind)
@@ -781,7 +810,7 @@ class RisuBridge:
                 kind=proposed.kind,
                 payload=payload.model_dump(),
             )
-            self._ensure_world(world_id, spec)
+            self._ensure_world(world_id, spec, turn.scenario)
             # Racing requests may move a head, create the fork or commit this action first.
             # Every commit is guarded in its own transaction, so reselect instead of guessing.
             for attempt in range(3):
