@@ -609,3 +609,61 @@ test("provider mode v4 streams SSE chunks with risu_prompt and appends authorita
   assert.match(full, /1d20 → \[15\] = 15/);
   assert.match(full, /event-s1/);
 });
+
+test("UI settings saved in pluginStorage override plugin args and checkHealth queries /health", async () => {
+  const f = hookFixture();
+  delete f.args.integration_mode;
+  assert.equal((await f.client.config()).integrationMode, "provider");
+  await f.client.saveUiSettings({
+    integrationMode: "hook",
+    serverUrl: "http://127.0.0.1:4852",
+    useAuxIntent: true,
+    providerStream: true,
+  });
+  const cfg = await f.client.config();
+  assert.equal(cfg.integrationMode, "hook");
+  assert.equal(cfg.base, "http://127.0.0.1:4852");
+  assert.equal(cfg.useAuxIntent, true);
+  assert.equal(cfg.providerStream, true);
+
+  let healthCall = null;
+  f.api.nativeFetch = async (url, options) => {
+    healthCall = { url, options };
+    return { ok: true, status: 200 };
+  };
+  const health = await f.client.checkHealth();
+  assert.deepEqual(clone(health), { ok: true, base: "http://127.0.0.1:4852" });
+  assert.equal(healthCall.url, "http://127.0.0.1:4852/health");
+  assert.equal(healthCall.options.method, "GET");
+});
+
+test("plugin install registers chat button and settings entry with inline SVG html icon", async () => {
+  const registered = { settings: [], buttons: [], replacers: [], providers: [] };
+  const fakeRisu = {
+    onUnload: async () => {},
+    addRisuReplacer: async (type, fn) => registered.replacers.push(type),
+    removeRisuReplacer: async () => {},
+    addProvider: async (name, fn) => registered.providers.push(name),
+    registerSetting: async (name, fn, icon, iconType) => registered.settings.push({ name, icon, iconType }),
+    registerButton: async (opts, fn) => registered.buttons.push(opts),
+  };
+  const fresh = {
+    console: { warn() {}, error() {} },
+    URL, TextEncoder, TextDecoder, ReadableStream,
+    crypto: require("node:crypto").webcrypto,
+    btoa: value => Buffer.from(value, "binary").toString("base64"),
+    setTimeout, clearTimeout,
+    risuai: fakeRisu,
+  };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../packs/risu-starter/saga_provider.js"), "utf8"), fresh);
+  for (let i = 0; i < 20 && registered.buttons.length === 0; i++) await new Promise(r => setImmediate(r));
+  assert.equal(registered.settings.length, 1);
+  assert.equal(registered.settings[0].name, "SAGA");
+  assert.equal(registered.settings[0].iconType, "html");
+  assert.match(registered.settings[0].icon, /^<svg .*currentColor/);
+  assert.equal(registered.buttons.length, 1);
+  assert.equal(registered.buttons[0].location, "chat");
+  assert.equal(registered.buttons[0].iconType, "html");
+  assert.match(registered.buttons[0].icon, /^<svg .*currentColor/);
+  assert.deepEqual(registered.replacers, ["beforeRequest", "afterRequest"]);
+});
