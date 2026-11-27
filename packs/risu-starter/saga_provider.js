@@ -1,7 +1,7 @@
 //@name saga_runtime
 //@display-name SAGA SRD Demo
 //@api 3.0
-//@version 0.8.1
+//@version 0.8.2
 //@arg server_url string SAGA URL (default http://saga-runtime:4850)
 //@arg host_instance_id string Stable host identity (set it explicitly; empty generates one via plugin storage, which hung on one host)
 //@arg integration_mode string provider | hook (default: provider). hook uses RisuAI's own main model (presets & streaming) while SAGA adjudicates in beforeRequest/afterRequest.
@@ -11,7 +11,7 @@
 
 (() => {
   "use strict";
-  const VERSION = "0.8.1";
+  const VERSION = "0.8.2";
   const PROVIDER = "SAGA SRD Demo";
   const MARKER = "SAGA request ticket: ";
   const HOOK_MARKER = "[SAGA Hook Context]";
@@ -101,7 +101,7 @@
     const line1 = displayLines(state).join(" · ");
     const line2 = ["🎲 " + (rolls.length ? rolls.join(" · ") : "주사위 없음"), "턴 " + escapeHtml(state.seq) + (state.replayed ? " · 기록 재사용" : ""),
       "<code>" + escapeHtml(state.event_id) + "</code>"].join(" · ");
-    return '<div style="margin-top:0.75em;padding-top:0.4em;border-top:1px solid rgba(128,128,128,0.35);font-size:0.78em;line-height:1.6;opacity:0.85">' +
+    return '<div style="margin-top:0.75em;padding-top:0.4em;border-top:1px solid rgba(128,128,128,0.35);font-size:0.78em;line-height:1.6;opacity:0.85;max-width:100%;overflow-wrap:anywhere;word-break:break-word">' +
       line1 + "<br>" + line2 + "</div>";
   }
 
@@ -643,6 +643,7 @@
 
     const close = () => {
       doc.removeEventListener("keydown", onKey);
+      if (typeof doc.activeElement?.blur === "function") doc.activeElement.blur();
       if (typeof api.hideContainer === "function") void api.hideContainer();
     };
     const onKey = e => { if (e.key === "Escape") close(); };
