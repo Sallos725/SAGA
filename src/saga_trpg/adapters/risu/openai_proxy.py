@@ -5,13 +5,20 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import json
 import logging
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Header
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
+from saga_trpg.adapters.intent.openai_compat import (
+    OpenAICompatIntentTool,
+    validate_rulebook_proposal,
+)
 from saga_trpg.adapters.intent.vertex import (
     PENDING,
     TARGET_ALIASES,
@@ -21,6 +28,7 @@ from saga_trpg.adapters.intent.vertex import (
 from saga_trpg.adapters.memory.nmos import history_entry
 from saga_trpg.adapters.memory.null import NullMemory
 from saga_trpg.adapters.narrator.fallback import FallbackNarrator
+from saga_trpg.adapters.narrator.openai_compat import OpenAICompatNarrator
 from saga_trpg.adapters.narrator.vertex import VertexNarrator
 from saga_trpg.adapters.storage.sqlite import (
     EventLocation,
@@ -29,7 +37,7 @@ from saga_trpg.adapters.storage.sqlite import (
     SQLiteWorldRepository,
 )
 from saga_trpg.domain.events import NARRATIVE_TURN_KIND, GameEvent, NarrativeTurnPayload
-from saga_trpg.domain.maps import scene_text
+from saga_trpg.domain.maps import known_map, scene_text
 from saga_trpg.domain.models import WorldState
 from saga_trpg.domain.tools import ToolCall
 from saga_trpg.modules.srd_5_2_1.rules import ROLL_ACTIONS
@@ -119,12 +127,17 @@ class VertexNarrationOptions(ClosedModel):
 class CompletionRequest(ClosedModel):
     model: Literal["saga-srd-demo"]
     messages: list[ChatMessage] = Field(min_length=1, max_length=512)
-    stream: Literal[False] = False
+    stream: bool = False
     saga: HostTurn
     narration: VertexNarrationOptions | None = None
+    risu_prompt: list[ChatMessage] = Field(default_factory=list, max_length=256)
 
     @model_validator(mode="after")
     def matching_action(self) -> CompletionRequest:
+        if self.stream and self.saga.schema_version < 4:
+            raise ValueError("streaming requires protocol v4")
+        if self.risu_prompt and self.saga.schema_version < 4:
+            raise ValueError("risu_prompt requires protocol v4")
         latest = self.messages[-1]
         if latest.role != "user" or latest.content != self.saga.actions[-1].text:
             raise ValueError("last prompt message must match the identified user action exactly")
@@ -310,12 +323,14 @@ class RisuBridge:
         interpreter: IntentPort | None = None,
         narrator: NarratorPort | None = None,
         memory: MemoryPort | None = None,
+        openai_intent: OpenAICompatIntentTool | None = None,
     ) -> None:
         self.repository = repository
         self.interpreter = interpreter or CommandInterpreter()
         self.narrator = narrator or FallbackNarrator()
         # Semantic memory is optional and fail-soft: it never gates a commit or a response.
         self.memory = memory or NullMemory()
+        self.openai_intent = openai_intent
 
     @staticmethod
     def world_id_for(turn: HostTurn, *, version: Literal[1, 2, 3, 4] | None = None) -> str:
@@ -458,6 +473,54 @@ class RisuBridge:
             if allow_narrative_fallback:
                 return GameEvent(kind=NARRATIVE_TURN_KIND, actor_id=turn.actor_id, payload={})
             raise
+
+    async def _openai_natural_intent(
+        self,
+        world_id: str,
+        identities: list[str],
+        turn: HostTurn,
+        parent: JournalEntry | None,
+        spec: RulebookSpec,
+    ) -> GameEvent:
+        assert self.openai_intent is not None
+        initial = self._ensure_world(world_id, spec)
+        state = parent.result.state if parent else initial
+        view = known_map(state, turn.actor_id)
+        exits = (
+            [{"key": exit_.key, "label": exit_.label} for exit_ in view.exits]
+            if view is not None
+            else []
+        )
+        actions = {
+            kind: model.model_json_schema()
+            for kind, model in rules_for(spec).payload_models.items()
+        }
+        call = ToolCall(
+            world_id=world_id,
+            branch_id="main",
+            event_id=identities[-1],
+            tool_call_key="risu-openai-intent-v1",
+            tool_name="openai-compat-intent",
+            tool_version="1",
+            protocol_version="saga-risu-openai-intent-v1",
+            arguments={
+                "text": turn.actions[-1].text,
+                "actor_id": turn.actor_id,
+                "ruleset": f"{spec.id}@{spec.version}",
+                "actors": sorted(state.actors),
+                "exits": exits,
+                "actions": actions,
+            },
+            context_hash=stable_model_hash(state),
+        )
+        try:
+            execution = await asyncio.wait_for(
+                asyncio.to_thread(self.repository.tool_tape.execute, call, self.openai_intent),
+                timeout=27,
+            )
+        except (TimeoutError, ToolExecutionPending):
+            raise ToolExecutionPending(PENDING) from None
+        return validate_rulebook_proposal(execution.result, spec=spec, actor_id=turn.actor_id)
 
     def _read_prefix(self, world_id: str, identities: list[str]) -> tuple[str, JournalEntry] | None:
         """The committed latest action and its branch, verified against the whole prefix."""
@@ -641,6 +704,14 @@ class RisuBridge:
                             actor_id=turn.actor_id,
                             payload=client_proposal.payload,
                         )
+                    elif self.openai_intent is not None:
+                        proposed = await self._openai_natural_intent(
+                            world_id,
+                            identities,
+                            turn,
+                            parent[1] if parent else None,
+                            spec,
+                        )
                     elif vertex_narrator is not None and spec.id == DEFAULT_SPEC.id:
                         proposed = await self._natural_intent(
                             world_id,
@@ -800,6 +871,7 @@ class RisuBridge:
             result=saved.result.model_copy(deep=True),
             memories=committed.memories,
             recent_dialogue=request.narration.context if request.narration else [],
+            risu_prompt=[msg.model_dump() for msg in request.risu_prompt],
             scene=committed.scene,
         )
         try:
@@ -832,6 +904,74 @@ class RisuBridge:
             "saga": committed.saga_payload(),
         }
 
+    async def prepare_stream(
+        self, request: CompletionRequest, *, vertex_credentials: SecretStr | None = None
+    ) -> AsyncIterator[str]:
+        """Commit first, then return an SSE stream of OpenAI-compatible chunks plus final saga."""
+        if (request.narration is None) != (vertex_credentials is None):
+            raise ValueError(
+                "Vertex narration requires its configuration and service-account JSON."
+            )
+        vertex_narrator = (
+            VertexNarrator(vertex_credentials) if vertex_credentials is not None else None
+        )
+        narrator = vertex_narrator if vertex_narrator is not None else self.narrator
+        committed = await self.commit_turn(request.saga, vertex_narrator=vertex_narrator)
+        saved = committed.entry
+        narration = NarrationRequest(
+            world_id=committed.world_id,
+            event=saved.committed.event.model_copy(deep=True),
+            result=saved.result.model_copy(deep=True),
+            memories=committed.memories,
+            recent_dialogue=request.narration.context if request.narration else [],
+            risu_prompt=[msg.model_dump() for msg in request.risu_prompt],
+            scene=committed.scene,
+        )
+        chunk_id = "chatcmpl-" + committed.event_id
+
+        def _chunk(
+            delta: dict[str, str], *, finish_reason: str | None = None, saga: dict | None = None
+        ) -> str:
+            payload: dict[str, Any] = {
+                "id": chunk_id,
+                "object": "chat.completion.chunk",
+                "created": 0,
+                "model": request.model,
+                "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}],
+            }
+            if saga is not None:
+                payload["saga"] = saga
+            return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+        async def _generate() -> AsyncIterator[str]:
+            yielded = False
+            try:
+                if isinstance(narrator, OpenAICompatNarrator):
+                    async for piece in narrator.stream(narration):
+                        yielded = True
+                        yield _chunk({"content": piece})
+                else:
+                    prose = await narrator.render(narration)
+                    if not isinstance(prose, str) or not prose.strip():
+                        raise ValueError("empty narrator response")
+                    yielded = True
+                    yield _chunk({"content": prose})
+            except Exception:
+                logger.warning("Risu streaming narrator failed after commit; using recorded facts")
+                if not yielded:
+                    prose = await FallbackNarrator().render(
+                        NarrationRequest(
+                            world_id=committed.world_id,
+                            event=saved.committed.event.model_copy(deep=True),
+                            result=saved.result.model_copy(deep=True),
+                        )
+                    )
+                    yield _chunk({"content": prose})
+            yield _chunk({}, finish_reason="stop", saga=committed.saga_payload())
+            yield "data: [DONE]\n\n"
+
+        return _generate()
+
 
 def _decode_vertex_secret(vertex_secret: SecretStr | None) -> SecretStr | None:
     if vertex_secret is None:
@@ -857,14 +997,20 @@ def router(bridge: RisuBridge) -> APIRouter:
             request, vertex_credentials=_decode_vertex_secret(vertex_secret)
         )
 
-    @routes.post("/v1/chat/completions")
+    @routes.post("/v1/chat/completions", response_model=None)
     async def complete(
         request: CompletionRequest,
         vertex_secret: Annotated[SecretStr | None, Header(alias="x-saga-vertex-secret")] = None,
-    ) -> dict:
-        return await bridge.complete(
-            request, vertex_credentials=_decode_vertex_secret(vertex_secret)
-        )
+    ) -> dict | StreamingResponse:
+        creds = _decode_vertex_secret(vertex_secret)
+        if request.stream:
+            stream = await bridge.prepare_stream(request, vertex_credentials=creds)
+            return StreamingResponse(
+                stream,
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-store"},
+            )
+        return await bridge.complete(request, vertex_credentials=creds)
 
     @routes.get("/v1/models")
     async def models() -> dict:

@@ -200,11 +200,18 @@
       ],
       "default": null
     },
+    "risu_prompt": {
+      "items": {
+        "$ref": "#/$defs/ChatMessage"
+      },
+      "maxItems": 256,
+      "title": "Risu Prompt",
+      "type": "array"
+    },
     "saga": {
       "$ref": "#/$defs/HostTurn"
     },
     "stream": {
-      "const": false,
       "default": false,
       "title": "Stream",
       "type": "boolean"

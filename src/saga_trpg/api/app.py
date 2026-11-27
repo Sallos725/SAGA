@@ -233,6 +233,30 @@ def create_app(
                 api_key=os.getenv("SAGA_NMOS_API_KEY") or None,
                 timeout_seconds=float(os.getenv("SAGA_NMOS_TIMEOUT_SECONDS", "2")),
             )
-        risu_bridge = RisuBridge(worlds, memory=memory)
+        narrator = None
+        openai_intent = None
+        llm_base_url = os.getenv("SAGA_LLM_BASE_URL", "").strip()
+        narrator_model = os.getenv("SAGA_NARRATOR_MODEL", "").strip()
+        if llm_base_url and narrator_model:
+            from saga_trpg.adapters.intent.openai_compat import OpenAICompatIntentTool
+            from saga_trpg.adapters.narrator.openai_compat import (
+                OpenAICompatConfig,
+                OpenAICompatNarrator,
+            )
+
+            intent_model = os.getenv("SAGA_INTENT_MODEL", "").strip() or None
+            config = OpenAICompatConfig.from_values(
+                base_url=llm_base_url,
+                narrator_model=narrator_model,
+                api_key=os.getenv("SAGA_LLM_API_KEY") or None,
+                intent_model=intent_model,
+                timeout_seconds=float(os.getenv("SAGA_LLM_TIMEOUT_SECONDS", "45")),
+            )
+            narrator = OpenAICompatNarrator(config)
+            if intent_model or os.getenv("SAGA_OPENAI_INTENT", "").strip() in ("1", "true", "yes"):
+                openai_intent = OpenAICompatIntentTool(config)
+        risu_bridge = RisuBridge(
+            worlds, narrator=narrator, memory=memory, openai_intent=openai_intent
+        )
     app.include_router(risu_router(risu_bridge))
     return app
