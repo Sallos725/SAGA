@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from saga_trpg.domain.models import MapState, WorldState
 
@@ -64,6 +64,7 @@ class KnownExit(BaseModel):
     kind: Literal["open", "door"]
     destination: str
     visited: bool
+    locked: bool = False
 
 
 class KnownMap(BaseModel):
@@ -73,11 +74,14 @@ class KnownMap(BaseModel):
     occupants: list[str]
     exits: list[KnownExit]
     visited: list[str]
+    loot: dict[str, int] = Field(default_factory=dict)
+    discovered_clues: dict[str, str] = Field(default_factory=dict)
 
 
 def known_map(state: WorldState, actor_id: str) -> KnownMap | None:
     """What `actor_id` knows: the current room in full, exits with destinations only where
-    visited or seen through an open passage, and the names of visited rooms."""
+    visited or seen through an open unlocked passage, available loot, discovered clues,
+    and the names of visited rooms."""
     actor = state.actors.get(actor_id)
     if state.map is None or actor is None or actor.location is None:
         return None
@@ -87,7 +91,8 @@ def known_map(state: WorldState, actor_id: str) -> KnownMap | None:
     for key in sorted(room.exits):
         exit_ = room.exits[key]
         visited = exit_.to_room in actor.visited_rooms
-        destination = rooms[exit_.to_room].name if visited or exit_.kind == "open" else UNKNOWN
+        can_see = visited or (exit_.kind == "open" and not exit_.locked)
+        destination = rooms[exit_.to_room].name if can_see else UNKNOWN
         exits.append(
             KnownExit(
                 key=key,
@@ -95,6 +100,7 @@ def known_map(state: WorldState, actor_id: str) -> KnownMap | None:
                 kind=exit_.kind,
                 destination=destination,
                 visited=visited,
+                locked=exit_.locked,
             )
         )
     occupants = sorted(
@@ -103,6 +109,12 @@ def known_map(state: WorldState, actor_id: str) -> KnownMap | None:
         if other_id != actor_id and other.location == actor.location
     )
     visited_names = sorted(rooms[room_id].name for room_id in actor.visited_rooms)
+    loot = {k: v for k, v in sorted(room.loot.items()) if v > 0}
+    discovered = {
+        clue_id: room.clues[clue_id]
+        for clue_id in sorted(room.discovered_clues)
+        if clue_id in room.clues
+    }
     return KnownMap(
         room_id=actor.location,
         room_name=room.name,
@@ -110,6 +122,8 @@ def known_map(state: WorldState, actor_id: str) -> KnownMap | None:
         occupants=occupants,
         exits=exits,
         visited=visited_names,
+        loot=loot,
+        discovered_clues=discovered,
     )
 
 
@@ -124,9 +138,20 @@ def render_known_map(view: KnownMap) -> str:
     lines = [f"{head} — {view.description}" if view.description else head]
     if view.occupants:
         lines.append("여기 있는 것: " + ", ".join(view.occupants))
+    if view.loot:
+        items = ", ".join(f"{k}×{v}" for k, v in sorted(view.loot.items()))
+        lines.append("여기 놓인 물품: " + items)
+    if view.discovered_clues:
+        clues = "; ".join(f"{k}: {v}" for k, v in sorted(view.discovered_clues.items()))
+        lines.append("발견한 단서: " + clues)
     lines.append("출구:")
     for exit_ in view.exits:
-        note = " (가봄)" if exit_.visited else ""
+        tags = []
+        if exit_.locked:
+            tags.append("잠김")
+        if exit_.visited:
+            tags.append("가봄")
+        note = f" ({', '.join(tags)})" if tags else ""
         lines.append(f"- {exit_.key}: {exit_.label} → {exit_.destination}{note}")
     if not view.exits:
         lines.append("- 없음")

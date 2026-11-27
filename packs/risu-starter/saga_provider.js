@@ -1,7 +1,7 @@
 //@name saga_runtime
 //@display-name SAGA SRD Demo
 //@api 3.0
-//@version 0.8.2
+//@version 0.9.0
 //@arg server_url string SAGA URL (default http://saga-runtime:4850)
 //@arg host_instance_id string Stable host identity (set it explicitly; empty generates one via plugin storage, which hung on one host)
 //@arg integration_mode string provider | hook (default: provider). hook uses RisuAI's own main model (presets & streaming) while SAGA adjudicates in beforeRequest/afterRequest.
@@ -11,7 +11,7 @@
 
 (() => {
   "use strict";
-  const VERSION = "0.8.2";
+  const VERSION = "0.9.0";
   const PROVIDER = "SAGA SRD Demo";
   const MARKER = "SAGA request ticket: ";
   const HOOK_MARKER = "[SAGA Hook Context]";
@@ -99,10 +99,20 @@
   function statusFooter(state) {
     const rolls = state.rolls.map(roll => escapeHtml(roll.expression) + " → [" + roll.raw.map(escapeHtml).join(", ") + "] = " + escapeHtml(roll.total));
     const line1 = displayLines(state).join(" · ");
+    const card = state.turn_card;
+    const cardParts = [];
+    if (card?.resolution) {
+      const r = card.resolution;
+      cardParts.push("⚖ " + escapeHtml(r.outcome) + " (" + escapeHtml(r.total) + " vs " + escapeHtml(r.target) + (r.damage != null ? ", 피해 " + escapeHtml(r.damage) : "") + ")");
+    }
+    if (Array.isArray(card?.changes) && card.changes.length) {
+      cardParts.push("Δ " + card.changes.slice(0, 4).map(escapeHtml).join(" · "));
+    }
     const line2 = ["🎲 " + (rolls.length ? rolls.join(" · ") : "주사위 없음"), "턴 " + escapeHtml(state.seq) + (state.replayed ? " · 기록 재사용" : ""),
       "<code>" + escapeHtml(state.event_id) + "</code>"].join(" · ");
+    const lines = [line1].concat(cardParts.length ? [cardParts.join(" · ")] : [], [line2]);
     return '<div style="margin-top:0.75em;padding-top:0.4em;border-top:1px solid rgba(128,128,128,0.35);font-size:0.78em;line-height:1.6;opacity:0.85;max-width:100%;overflow-wrap:anywhere;word-break:break-word">' +
-      line1 + "<br>" + line2 + "</div>";
+      lines.join("<br>") + "</div>";
   }
 
   function validSagaState(state) {
@@ -114,30 +124,41 @@
   // saga:rulebook:<id>@<version>:<sha256>. Only its verified content is forwarded; the backend
   // validates it again and pins a new world to it. Existing worlds keep their rulebook.
   const RULEBOOK_TAG = /^saga:rulebook:([a-z0-9][a-z0-9.-]{0,60})@([0-9]+\.[0-9]+\.[0-9]+):([0-9a-f]{64})$/;
+  const SCENARIO_TAG = /^saga:scenario:([a-z0-9][a-z0-9.-]{0,60})@([0-9]+\.[0-9]+\.[0-9]+):([0-9a-f]{64})$/;
   async function sha256Hex(text) {
     const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
     return Array.from(new Uint8Array(digest)).map(byte => byte.toString(16).padStart(2, "0")).join("");
   }
-  async function attachedRulebookInfo(api) {
+  async function attachedTaggedEntry(api, pattern, label) {
     if (typeof api.getCurrentLorebookEntries !== "function") return null;
     let entries;
     try { entries = await api.getCurrentLorebookEntries(); } catch { return null; }
     if (!Array.isArray(entries)) return null;
     const found = new Map();
     for (const entry of entries) {
-      const match = RULEBOOK_TAG.exec(String(entry?.comment ?? ""));
+      const match = pattern.exec(String(entry?.comment ?? ""));
       if (!match || typeof entry.content !== "string") continue;
       if (await sha256Hex(entry.content) !== match[3]) continue;
       found.set(match[1] + "@" + match[2], entry.content);
     }
     if (found.size > 1) {
-      throw new Error("SAGA 룰북 모듈이 여러 개 켜져 있습니다 (" + [...found.keys()].join(", ") + "). 하나만 켜고 다시 시도하세요.");
+      throw new Error(label + " 모듈이 여러 개 켜져 있습니다 (" + [...found.keys()].join(", ") + "). 하나만 켜고 다시 시도하세요.");
     }
     const [pair] = found.entries();
     return pair ? { id: pair[0], content: pair[1] } : null;
   }
+  async function attachedRulebookInfo(api) {
+    return attachedTaggedEntry(api, RULEBOOK_TAG, "SAGA 룰북");
+  }
   async function attachedRulebook(api) {
     const info = await attachedRulebookInfo(api);
+    return info ? { content: info.content } : null;
+  }
+  async function attachedScenarioInfo(api) {
+    return attachedTaggedEntry(api, SCENARIO_TAG, "SAGA 시나리오");
+  }
+  async function attachedScenario(api) {
+    const info = await attachedScenarioInfo(api);
     return info ? { content: info.content } : null;
   }
 
@@ -165,6 +186,7 @@
   function createClient(api, uuid = randomId) {
     const tickets = new Map();
     const pendingFooters = new Map();
+    const lastCommitted = new Map();
     let identityPromise;
     let busy = false;
     let disposed = false;
@@ -300,7 +322,7 @@
       }
     }
 
-    async function adjudicateHookTurn(snapshot, settings, rulebook) {
+    async function adjudicateHookTurn(snapshot, settings, rulebook, scenario) {
       const actions = snapshot.messages.filter(message => message.role === "user" && !message.comment)
         .map(message => ({ message_id: message.id, text: message.text, context_hidden: message.disabled }));
       if (!actions.length) throw new Error("실행할 사용자 메시지가 없습니다.");
@@ -316,6 +338,7 @@
         },
       };
       if (rulebook) body.saga.rulebook = rulebook;
+      if (scenario) body.saga.scenario = scenario;
       if (settings.useAuxIntent) {
         const proposal = await proposeWithRisuAux(actions.at(-1).text);
         if (proposal) body.client_proposal = proposal;
@@ -367,18 +390,20 @@
       }
 
       if (settings.integrationMode === "hook") {
-        // Hook mode activates automatically when a SAGA rulebook module is enabled,
+        // Hook mode activates automatically when a SAGA rulebook or scenario module is enabled,
         // or when this chat was manually toggled ON (default OFF).
         let snapshot;
         let rulebook;
+        let scenario;
         let active = false;
         try {
           snapshot = await current();
           rulebook = await attachedRulebook(api);
-          active = Boolean(rulebook) || await isChatHookEnabled(snapshot.chatId);
+          scenario = await attachedScenario(api);
+          active = Boolean(rulebook) || Boolean(scenario) || await isChatHookEnabled(snapshot.chatId);
         } catch (error) {
-          // Multiple conflicting rulebooks in an active chat must fail closed.
-          if (error instanceof Error && error.message.includes("SAGA 룰북 모듈이 여러 개")) {
+          // Multiple conflicting rulebooks/scenarios in an active chat must fail closed.
+          if (error instanceof Error && error.message.includes("모듈이 여러 개")) {
             throw error;
           }
           return clean;
@@ -393,7 +418,8 @@
         busy = true;
         try {
           await assertCurrent(snapshot, settings);
-          const committed = await adjudicateHookTurn(snapshot, settings, rulebook);
+          const committed = await adjudicateHookTurn(snapshot, settings, rulebook, scenario);
+          lastCommitted.set(snapshot.chatId, committed);
           pendingFooters.set(snapshot.chatId, { messageId: latest.id, state: committed });
           return [...clean, { role: "system", content: HOOK_MARKER + "\n" + committed.prompt_block }];
         } finally {
@@ -513,6 +539,10 @@
         }
         const rulebook = await attachedRulebook(api);
         if (rulebook) body.saga.rulebook = rulebook;
+        if (useV4) {
+          const scenario = await attachedScenario(api);
+          if (scenario) body.saga.scenario = scenario;
+        }
         const headers = { "content-type": "application/json" };
         if (settings.credentials) {
           // This header is fully masked by the pinned host's request logger; a JSON body is not.
@@ -548,6 +578,7 @@
         if (!validSagaState(state) || typeof prose !== "string") {
           throw new Error("SAGA 응답 형식이 잘못되었습니다.");
         }
+        lastCommitted.set(snapshot.chatId, state);
         const legacy = state.legacy_read_only ? "\n\n기존 v1 기록은 읽기 전용입니다. 새 행동은 새 채팅에서 시작하세요." : "";
         return { success: true, content: prose + "\n\n" + statusFooter(state) + legacy };
       } catch (error) {
@@ -557,14 +588,19 @@
       }
     }
 
+    function lastState(chatId) {
+      return lastCommitted.get(chatId) ?? null;
+    }
+
     function dispose() {
       disposed = true;
       tickets.clear();
       pendingFooters.clear();
+      lastCommitted.clear();
     }
 
     return {
-      current, config, readUiSettings, saveUiSettings, checkHealth,
+      current, config, readUiSettings, saveUiSettings, checkHealth, lastState,
       beforeRequest, afterRequest, provider,
       toggleChatHook, isChatHookEnabled, setChatHookEnabled, dispose,
     };
@@ -666,13 +702,19 @@
       try { rulebookInfo = await attachedRulebookInfo(api); }
       catch (e) { rulebookError = e instanceof Error ? e.message : String(e); }
 
+      let scenarioInfo = null;
+      let scenarioError = null;
+      try { scenarioInfo = await attachedScenarioInfo(api); }
+      catch (e) { scenarioError = e instanceof Error ? e.message : String(e); }
+
       const manualOn = snapshot ? await client.isChatHookEnabled(snapshot.chatId) : false;
-      const hookActive = Boolean(rulebookInfo) || manualOn;
+      const autoModule = Boolean(rulebookInfo) || Boolean(scenarioInfo);
+      const hookActive = autoModule || manualOn;
       const statusLabel = !snapshot
         ? "채팅 없음"
         : (settings?.integrationMode !== "hook"
           ? "Provider 모드 사용 중"
-          : (rulebookInfo ? "ON (룰북 모듈 자동)" : (manualOn ? "ON (이 채팅 수동)" : "OFF")));
+          : (autoModule ? "ON (모듈 자동)" : (manualOn ? "ON (이 채팅 수동)" : "OFF")));
 
       const badgeClass = (settings?.integrationMode === "hook" && hookActive) ? "saga-badge on" : "saga-badge off";
 
@@ -721,8 +763,51 @@
         ),
         el(doc, "div", { class: "saga-mono" }, "채팅 ID: " + (snapshot ? snapshot.chatId : "(열린 채팅 없음)")),
         el(doc, "div", { class: "saga-mono" }, "감지된 룰북 모듈: " + (rulebookError ? "오류 — " + rulebookError : (rulebookInfo ? rulebookInfo.id : "없음"))),
-        rulebookInfo ? el(doc, "div", { class: "saga-mono" }, "※ SAGA 룰북 모듈이 켜져 있으면 Hook 모드에서 자동 활성화됩니다.") : null,
+        el(doc, "div", { class: "saga-mono" }, "감지된 시나리오 모듈: " + (scenarioError ? "오류 — " + scenarioError : (scenarioInfo ? scenarioInfo.id : "없음"))),
+        autoModule ? el(doc, "div", { class: "saga-mono" }, "※ SAGA 모듈이 켜져 있으면 Hook 모드에서 자동 활성화됩니다.") : null,
       );
+
+      // B2 & B1: Scene Board and latest Turn Card from the last committed turn in this chat
+      const latest = snapshot ? client.lastState(snapshot.chatId) : null;
+      let sceneCard = null;
+      if (latest?.scene_board) {
+        const sb = latest.scene_board;
+        const people = (sb.participants ?? []).map(p =>
+          (p.is_player ? "★ " : "") + p.actor_id + " (" + p.hp + "/" + p.max_hp +
+          (p.conditions?.length ? ", " + p.conditions.join(",") : "") + ")"
+        );
+        const exits = (sb.exits ?? []).map(e =>
+          e.key + ": " + e.label + (e.locked ? " [잠김]" : "") + " → " + e.destination
+        );
+        const lootEntries = Object.entries(sb.room_loot ?? {}).map(([k, v]) => k + "×" + v);
+        const clueEntries = Object.entries(sb.discovered_clues ?? {}).map(([k, v]) => k + ": " + v);
+        const questEntries = (sb.quests ?? []).map(q =>
+          q.quest_id + " [" + (q.status ?? "active") + (q.stage != null ? " #" + q.stage : "") + "]" +
+          (q.objective ? " — " + q.objective : "")
+        );
+        sceneCard = el(doc, "div", { class: "saga-card" },
+          el(doc, "h3", {}, "현재 장면 보드 (B2)"),
+          sb.current_room ? el(doc, "div", { class: "saga-mono" }, "위치: " + sb.current_room) : null,
+          el(doc, "div", { class: "saga-mono" }, "참가자: " + (people.length ? people.join(" · ") : "없음")),
+          exits.length ? el(doc, "div", { class: "saga-mono" }, "출구: " + exits.join(" | ")) : null,
+          lootEntries.length ? el(doc, "div", { class: "saga-mono" }, "놓인 물품: " + lootEntries.join(", ")) : null,
+          clueEntries.length ? el(doc, "div", { class: "saga-mono" }, "발견한 단서: " + clueEntries.join(" | ")) : null,
+          questEntries.length ? el(doc, "div", { class: "saga-mono" }, "퀘스트: " + questEntries.join(" | ")) : null,
+        );
+      }
+      let turnCardEl = null;
+      if (latest?.turn_card) {
+        const tc = latest.turn_card;
+        const rollsTxt = (tc.rolls ?? []).map(r => r.expression + "→[" + r.raw.join(",") + "]=" + r.total).join(" · ");
+        turnCardEl = el(doc, "div", { class: "saga-card" },
+          el(doc, "h3", {}, "최근 판정 카드 (B1)"),
+          el(doc, "div", { class: "saga-mono" }, "턴 #" + tc.seq + " · " + tc.kind + (latest.replayed ? " (기록 재사용)" : "") + " · " + tc.event_id),
+          rollsTxt ? el(doc, "div", { class: "saga-mono" }, "주사위: " + rollsTxt) : null,
+          tc.resolution ? el(doc, "div", { class: "saga-mono" }, "결과: " + tc.resolution.outcome + " (" + tc.resolution.total + " vs " + tc.resolution.target + (tc.resolution.damage != null ? ", 피해 " + tc.resolution.damage : "") + ")") : null,
+          (tc.changes ?? []).length ? el(doc, "div", { class: "saga-mono" }, "변화: " + tc.changes.join(" | ")) : null,
+          (tc.facts ?? []).length ? el(doc, "div", { class: "saga-mono" }, "기록: " + tc.facts.join(" | ")) : null,
+        );
+      }
 
       // Card 2: Mode & options
       const curMode = settings?.integrationMode ?? "provider";
@@ -809,7 +894,7 @@
         el(doc, "div", { class: "saga-mono" }, "명령 예시: move north · attack opponent · check strength 10 · damage opponent 5"),
       );
 
-      wrap.replaceChildren(head, chatCard, modeCard, serverCard, helpCard, toast);
+      wrap.replaceChildren(...[head, chatCard, sceneCard, turnCardEl, modeCard, serverCard, helpCard, toast].filter(Boolean));
     }
 
     await draw();

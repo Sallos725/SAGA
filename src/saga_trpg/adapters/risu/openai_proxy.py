@@ -42,7 +42,7 @@ from saga_trpg.adapters.storage.sqlite import (
     SQLiteWorldRepository,
 )
 from saga_trpg.domain.events import NARRATIVE_TURN_KIND, GameEvent
-from saga_trpg.domain.maps import scene_text
+from saga_trpg.domain.maps import known_map, scene_text
 from saga_trpg.domain.models import WorldState
 from saga_trpg.domain.tools import ToolCall
 from saga_trpg.modules.srd_5_2_1.rules import ROLL_ACTIONS
@@ -309,6 +309,81 @@ class CommittedTurn:
             )
         return "\n".join(lines)
 
+    def turn_card(self) -> dict[str, Any]:
+        """B1: immutable roll/result/change card derived strictly from this committed entry."""
+        event = self.entry.committed.event
+        result = self.entry.result
+        changes = [f"{patch.path}: {patch.before} → {patch.after}" for patch in result.patches]
+        return {
+            "event_id": self.event_id,
+            "seq": self.entry.committed.seq,
+            "kind": event.kind,
+            "actor_id": event.actor_id,
+            "rolls": [roll.model_dump(mode="json") for roll in result.rolls],
+            "resolution": (
+                result.resolution.model_dump(mode="json") if result.resolution else None
+            ),
+            "changes": changes,
+            "facts": list(result.facts),
+        }
+
+    def scene_board(self, viewer: str = "player") -> dict[str, Any]:
+        """B2: active scene participant board; hides actors in unseen rooms (ADR 0009)."""
+        state = self.entry.result.state
+        view = known_map(state, viewer)
+        if view is not None:
+            visible_ids = [viewer, *view.occupants]
+        else:
+            visible_ids = sorted(state.actors)
+        participants = []
+        for aid in visible_ids:
+            actor = state.actors.get(aid)
+            if actor is None:
+                continue
+            participants.append(
+                {
+                    "actor_id": aid,
+                    "is_player": aid == viewer,
+                    "hp": actor.hp,
+                    "max_hp": actor.max_hp,
+                    "conditions": sorted(actor.conditions),
+                    "status": "incapacitated" if actor.hp <= 0 else "active",
+                }
+            )
+        quests = []
+        for qid, qval in sorted(state.quest_state.items()):
+            if isinstance(qval, dict):
+                quests.append(
+                    {
+                        "quest_id": qid,
+                        "stage": qval.get("stage"),
+                        "status": qval.get("status", "active"),
+                        "objective": qval.get("objective"),
+                    }
+                )
+            else:
+                quests.append({"quest_id": qid, "status": str(qval)})
+        return {
+            "current_room": view.room_name if view is not None else None,
+            "exits": (
+                [
+                    {
+                        "key": e.key,
+                        "label": e.label,
+                        "locked": e.locked,
+                        "destination": e.destination,
+                    }
+                    for e in view.exits
+                ]
+                if view is not None
+                else []
+            ),
+            "room_loot": view.loot if view is not None else {},
+            "discovered_clues": view.discovered_clues if view is not None else {},
+            "participants": participants,
+            "quests": quests,
+        }
+
     def saga_payload(self, *, include_prompt_block: bool = False) -> dict:
         data = {
             "schema_version": self.schema_version,
@@ -327,6 +402,11 @@ class CommittedTurn:
         if include_prompt_block:
             data["scene"] = self.scene
             data["prompt_block"] = self.prompt_block()
+            data["turn_card"] = self.turn_card()
+            data["scene_board"] = self.scene_board(viewer=self.entry.committed.event.actor_id)
+        elif self.schema_version >= 4:
+            data["turn_card"] = self.turn_card()
+            data["scene_board"] = self.scene_board(viewer=self.entry.committed.event.actor_id)
         return data
 
 

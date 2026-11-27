@@ -13,6 +13,10 @@ def _empty(value: Any) -> bool:
     return not value
 
 
+def _false(value: Any) -> bool:
+    return value is False
+
+
 # Fields added after storage v2 are excluded from dumps while unset or empty, so a state saved
 # before them keeps its exact JSON and hash (ADR 0009). Exclusion is by value, not
 # exclude_unset, because rules build states with model_copy(update=...).
@@ -40,6 +44,8 @@ class Exit(BaseModel):
     to_room: str = Field(min_length=1)
     label: str = Field(min_length=1, max_length=80)
     kind: Literal["open", "door"] = "open"
+    locked: bool = Field(default=False, exclude_if=_false)
+    key_item: str | None = Field(default=None, min_length=1, exclude_if=_absent)
 
 
 class Room(BaseModel):
@@ -48,6 +54,9 @@ class Room(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     description: str = Field(default="", max_length=2000)
     exits: dict[str, Exit] = Field(default_factory=dict)
+    loot: dict[str, int] = Field(default_factory=dict, exclude_if=_empty)
+    clues: dict[str, str] = Field(default_factory=dict, exclude_if=_empty)
+    discovered_clues: list[str] = Field(default_factory=list, exclude_if=_empty)
 
 
 class MapGenerator(BaseModel):

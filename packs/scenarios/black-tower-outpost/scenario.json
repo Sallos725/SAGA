@@ -84,6 +84,12 @@
       "courtyard": {
         "name": "전초기지 안뜰",
         "description": "비에 젖은 자갈 마당. 횃불이 문 양옆에서 흔들린다.",
+        "loot": {
+          "healing_herb": 1
+        },
+        "clues": {
+          "bootprints": "진흙 속에 지하 철문 쪽으로 이어진 큰 군화 자국이 찍혀 있다."
+        },
         "exits": {
           "north": {
             "to_room": "watchtower",
@@ -93,13 +99,18 @@
           "down": {
             "to_room": "cellar",
             "label": "지하 창고 철문",
-            "kind": "door"
+            "kind": "door",
+            "locked": true,
+            "key_item": "silver_key"
           }
         }
       },
       "watchtower": {
         "name": "북쪽 망루",
         "description": "안개 너머로 검은 탑의 윤곽이 희미하게 보이는 감시 초소.",
+        "loot": {
+          "silver_key": 1
+        },
         "exits": {
           "south": {
             "to_room": "courtyard",

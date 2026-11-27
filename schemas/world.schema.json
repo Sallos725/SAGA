@@ -82,6 +82,19 @@
     "Exit": {
       "additionalProperties": false,
       "properties": {
+        "key_item": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Key Item"
+        },
         "kind": {
           "default": "open",
           "enum": [
@@ -96,6 +109,11 @@
           "minLength": 1,
           "title": "Label",
           "type": "string"
+        },
+        "locked": {
+          "default": false,
+          "title": "Locked",
+          "type": "boolean"
         },
         "to_room": {
           "minLength": 1,
@@ -190,17 +208,38 @@
     "Room": {
       "additionalProperties": false,
       "properties": {
+        "clues": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Clues",
+          "type": "object"
+        },
         "description": {
           "default": "",
           "maxLength": 2000,
           "title": "Description",
           "type": "string"
         },
+        "discovered_clues": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Discovered Clues",
+          "type": "array"
+        },
         "exits": {
           "additionalProperties": {
             "$ref": "#/$defs/Exit"
           },
           "title": "Exits",
+          "type": "object"
+        },
+        "loot": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Loot",
           "type": "object"
         },
         "name": {
